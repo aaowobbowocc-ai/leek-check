@@ -1,0 +1,67 @@
+# 台股晨報 — {{ report_date }} ({{ weekday }})
+
+## ⚡ 三秒鐘決策區
+{% if defensive %}
+🔴 **今日防守模式 — 不建議開新倉**
+{% for r in defensive_reasons %}- {{ r }}
+{% endfor %}
+{% else %}
+{% if recommendations %}
+| 模式 | 推薦 | 買入區間 | 止損 | 目標 |
+|------|------|----------|------|------|
+{% for r in recommendations %}| {% if r.flags.get('day_trader_risk') %}⚠️ 注意{% elif r.flags.get('leader_divergence') %}⚠️ 謹慎{% else %}🟢 正常{% endif %} | {{ r.ticker }} | {{ r.entry_low }}–{{ r.entry_high }} | {{ r.stop }} | {{ r.target }} |
+{% endfor %}
+{% else %}
+（今日無達標標的，建議觀望）
+{% endif %}
+{% endif %}
+
+---
+
+## 大盤背景
+- 加權指數：{{ taiex_close | format_price }} {% if taiex_above_ma %}站上月線 ✅{% else %}跌破月線 ⚠️{% endif %}
+
+- TSMC ADR 夜盤：{{ overnight.tsmc_adr_change_pct | format_pct }}  | SOX：{{ overnight.sox_change_pct | format_pct }}  | VIX：{{ overnight.vix }}
+- 綜合判斷：**{{ regime_label }}**（vol_ratio {{ vol_ratio }}）
+
+---
+{% if not defensive and recommendations %}
+
+## 今日推薦詳細（分數 ≥ {{ min_score }}）
+{% for r in recommendations %}
+### 🎯 {{ r.ticker }}{% if company_names.get(r.ticker) %} ({{ company_names[r.ticker] }}){% endif %} — 綜合分 {{ r.score }}
+- **推薦買進區間**：{{ r.entry_low }} – {{ r.entry_high }}
+- **目標價**：{{ r.target }}（+{{ ((r.target / ((r.entry_low + r.entry_high) / 2) - 1) * 100) | round(1) }}%）
+- **止損價**：{{ r.stop }}（{{ (((r.stop / ((r.entry_low + r.entry_high) / 2)) - 1) * 100) | round(1) }}%）
+- **最大部位上限**：{{ r.max_position_pct }}% 總資金
+- **理由**：{{ r.reasons | join('；') }}
+{% if r.flags.get('day_trader_risk') %}
+- ⚠️ **隔日沖籌碼主導，建議低接，勿市價追**
+{% endif %}
+{% if r.flags.get('leader_divergence') %}
+- ⚠️ **龍頭背離（台積電疲弱），末升段風險，部位上限已減半**
+{% endif %}
+{% if r.flags.get('sector_weak') %}
+- ⚠️ **所屬族群偏弱，訊號可信度較低**
+{% endif %}
+
+{% endfor %}
+{% endif %}
+
+## 資產總覽
+- 現金：{{ portfolio.cash | format_amount }}
+- 存股市值：{{ portfolio.long_term_value | format_amount }}
+- 短線部位：{{ portfolio.short_term_value | format_amount }}
+- **淨值**：{{ portfolio.net_value | format_amount }}
+
+## 資金配置建議
+- 核心存股（不動）：{{ portfolio.long_term_value | format_amount }}
+- 短線可用（≤ {{ max_positions }} 檔）：{{ portfolio.short_term_budget | format_amount }}
+- 預備現金：{{ portfolio.reserve_cash | format_amount }}
+{% if drift_alert %}
+
+---
+## ⚠️ 模型漂移警示
+{{ drift_reason }}
+{% if force_paper %}**已觸發強制 Paper Trading 模式，請暫停實倉操作。**{% endif %}
+{% endif %}

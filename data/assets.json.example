@@ -1,0 +1,16 @@
+{
+  "user_uuid": "set-a-long-random-string-here-and-match-env-USER_UUID",
+  "cash": 520000,
+  "holdings": {
+    "long_term": [
+      { "ticker": "0050", "shares": 150, "cost": 135.2 },
+      { "ticker": "00878", "shares": 8000, "cost": 22.5 }
+    ],
+    "short_term": []
+  },
+  "risk_budget": {
+    "max_per_trade_pct": 2.0,
+    "max_single_position_pct": 20.0,
+    "max_concurrent_positions": 3
+  }
+}

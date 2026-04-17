@@ -1,0 +1,69 @@
+# 策略參數 — walk_forward 每月會滾動優化並覆寫此檔的「下一期」版本
+
+# ─────────────────────────────────────────
+# 因子權重（總和 = 1.00）
+# ─────────────────────────────────────────
+factor_weights:
+  chip_concentration: 0.25    # 籌碼集中度
+  sector_momentum:    0.10    # 族群動能
+  supply_chain:       0.20    # 供應鏈傳導
+  news_sentiment:     0.20    # LLM 新聞情緒
+  technical:          0.15    # 技術面
+  market_regime:      0.10    # 大盤背景
+
+# ─────────────────────────────────────────
+# 推薦門檻
+# ─────────────────────────────────────────
+recommendation:
+  min_score: 75               # 綜合分 ≥ 75 才進晨報
+  max_picks: 3                # 每日最多推薦 3 檔
+
+# ─────────────────────────────────────────
+# 風控參數
+# ─────────────────────────────────────────
+risk:
+  max_per_trade_pct: 2.0      # 單筆最大風險 = 總資金 2%
+  max_single_position_pct: 20.0
+  max_concurrent_positions: 3
+  kelly_fraction: 0.5         # Half-Kelly
+  atr_stop_multiplier: 2.0    # 止損 = 進場 − 2×ATR
+  atr_target_multiplier: 3.0  # 目標 = 進場 + 3×ATR
+  liquidity_volume_pct: 1.0   # 單筆 ≤ 前日成交量 1%
+
+# ─────────────────────────────────────────
+# 交易成本（台股）
+# ─────────────────────────────────────────
+costs:
+  buy_fee_rate: 0.001425      # 買進手續費
+  sell_fee_rate: 0.001425     # 賣出手續費
+  tax_rate: 0.003             # 賣出證交稅
+  slippage_rate: 0.001        # 滑價
+  tax_rate_discount: 1.0      # 當沖降稅 / 券商手續費折扣倍率（1.0 = 無折扣）
+
+# ─────────────────────────────────────────
+# 黑天鵝過濾（任一觸發 → 防守模式）
+# ─────────────────────────────────────────
+black_swan:
+  adr_drop_pct: -3.0          # TSMC ADR 昨夜跌幅
+  vix_threshold: 25.0
+  taiex_below_monthly_ma: true
+
+# ─────────────────────────────────────────
+# Regime Detector（波動機制）
+# ─────────────────────────────────────────
+regime:
+  lookback_days: 20
+  reference_years: 5
+  thresholds:
+    low: 0.8
+    normal_high: 1.3
+    high_crazy: 2.0
+  crazy_force_cash: true      # vol_ratio > 2.0 強制空手
+
+# ─────────────────────────────────────────
+# Concept Drift
+# ─────────────────────────────────────────
+concept_drift:
+  window_size: 5              # 滾動 5 筆交易
+  alert_threshold: 0.20       # sum|預測−實際| > 20% 觸發
+  force_paper_trading_after: 10

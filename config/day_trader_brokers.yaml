@@ -1,0 +1,28 @@
+# 常見隔日沖分點黑名單（持續更新）
+# 若前 15 大買超分點中，這些分點佔比 > 40% 則 flag day_trader_risk=True
+
+known_day_trader_branches:
+  - broker_id: "9200"       # 凱基
+    branch_name: "台北"
+    full: "凱基-台北"
+  - broker_id: "9600"       # 富邦
+    branch_name: "建國"
+    full: "富邦-建國"
+  - broker_id: "9A00"       # 元大
+    branch_name: "仁愛"
+    full: "元大-仁愛"
+  - broker_id: "1020"       # 合庫
+    branch_name: "敦南"
+    full: "合庫-敦南"
+  - broker_id: "6160"       # 群益金鼎
+    branch_name: "嘉義"
+    full: "群益金鼎-嘉義"
+  - broker_id: "8880"       # 國票
+    branch_name: "敦南"
+    full: "國票-敦南"
+
+# 觸發條件
+thresholds:
+  top_n_brokers: 15           # 看前幾大買超分點
+  ratio_threshold: 0.40       # 隔日沖分點佔比 > 40% → day_trader_risk=True
+  entry_discount_atr: 0.5     # 此類標的入手區間下修為 前收 − 0.5 × ATR
