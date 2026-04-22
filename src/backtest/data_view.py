@@ -34,6 +34,7 @@ class DailySnapshot:
     broker_by_ticker: dict[str, pd.DataFrame]
     concentration_by_ticker: dict[str, pd.DataFrame]
     margin_by_ticker: dict[str, pd.DataFrame]
+    pbr_by_ticker: dict[str, pd.DataFrame]
     taiex: pd.DataFrame
     overnight: dict        # OvernightReport（前一美股交易日收盤）
 
@@ -53,6 +54,12 @@ class DailySnapshot:
     def margin(self, ticker: str) -> pd.DataFrame:
         return _slice_before(
             self.margin_by_ticker.get(ticker, pd.DataFrame()), self.cutoff
+        )
+
+    def pbr(self, ticker: str) -> pd.DataFrame:
+        """PBR 歷史（PER/PBR/殖利率）— 嚴格 < cutoff，Phase 12 Valuation Guard 用。"""
+        return _slice_before(
+            self.pbr_by_ticker.get(ticker, pd.DataFrame()), self.cutoff
         )
 
     def broker_on(self, ticker: str, d: date) -> pd.DataFrame:
@@ -83,6 +90,7 @@ class HistoricalDataView:
         overnight_by_date: dict[date, dict],
         concentration_by_ticker: dict[str, pd.DataFrame] | None = None,
         margin_by_ticker: dict[str, pd.DataFrame] | None = None,
+        pbr_by_ticker: dict[str, pd.DataFrame] | None = None,
     ) -> None:
         self._ohlcv = {k: _normalize_dates(v) for k, v in ohlcv_by_ticker.items()}
         self._inst = {k: _normalize_dates(v) for k, v in institutional_by_ticker.items()}
@@ -92,6 +100,9 @@ class HistoricalDataView:
         }
         self._margin = {
             k: _normalize_dates(v) for k, v in (margin_by_ticker or {}).items()
+        }
+        self._pbr = {
+            k: _normalize_dates(v) for k, v in (pbr_by_ticker or {}).items()
         }
         self._taiex = _normalize_dates(taiex)
         self._overnight = overnight_by_date
@@ -105,6 +116,7 @@ class HistoricalDataView:
             broker_by_ticker=self._broker,
             concentration_by_ticker=self._concentration,
             margin_by_ticker=self._margin,
+            pbr_by_ticker=self._pbr,
             taiex=self._taiex,
             overnight=overnight,
         )

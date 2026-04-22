@@ -70,6 +70,26 @@ regime:
 # 2023 D-only 實測 +0.08 Sharpe 優於保留 penalty → 移除更簡潔且無退化風險。
 
 # ─────────────────────────────────────────
+# Valuation Guard（Phase 12 — 已結案關閉）
+# ─────────────────────────────────────────
+# Phase 12 目標：用 PBR 5 年百分位治 2023 Sharpe 0.67 弱點。
+# 驗收結果：
+#   - 12A（無 gate）：2023 Sharpe 0.67 → 0.11（−0.56 嚴重退化，AI 啟動年誤殺贏家）
+#   - 12B（regime-aware，bull 不扣分）：2023 仍 −0.10；2025 原本 +0.29 好處被 gate 關掉 → no-op
+#   - 根因：16 檔 AI / 半導體設備高度同向，PBR 百分位無差異化訊號（反映市場氣氛、非相對估值）
+# 決策：關閉 penalty，保留資料流水線（get_per_pbr / valuation_guard.py / TickerInputs.pbr
+#       / DailySnapshot.pbr / FactorBundle.pbr_overvalued）供 Phase 13 重用候選：
+#         - PBR velocity（短期擴張速度，非絕對百分位）
+#         - Volatility regime per-ticker
+#         - Chip decay（投信連買天數縮短預警）
+# penalty_points: 0 → 即使 FactorBundle.pbr_overvalued=True composite 也不扣分
+valuation:
+  threshold_percentile: 0.90
+  penalty_points: 0.0           # Phase 12 結案：penalty 關閉（保留欄位供 Phase 13）
+  lookback_years: 5
+  min_sample_size: 252
+
+# ─────────────────────────────────────────
 # Concept Drift
 # ─────────────────────────────────────────
 concept_drift:

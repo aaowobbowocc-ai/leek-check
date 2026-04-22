@@ -160,11 +160,15 @@ def fetch_chip_bundles(
     dict[str, pd.DataFrame],
     dict[str, pd.DataFrame],
     dict[str, pd.DataFrame],
+    dict[str, pd.DataFrame],
 ]:
     inst: dict[str, pd.DataFrame] = {}
     broker: dict[str, pd.DataFrame] = {}
     concentration: dict[str, pd.DataFrame] = {}
     margin: dict[str, pd.DataFrame] = {}
+    pbr: dict[str, pd.DataFrame] = {}
+    # PBR 5 年回看 → 抓取區間需比回測區間往前至少 5 年
+    pbr_start = date(start.year - 5, start.month, start.day) if start.month != 2 or start.day != 29 else date(start.year - 5, 2, 28)
     if finmind is None:
         print("  [!] FINMIND_TOKEN 未設定，籌碼資料留空（僅靠技術 + 供應鏈）", flush=True)
         for t in tickers:
@@ -172,7 +176,8 @@ def fetch_chip_bundles(
             broker[t] = pd.DataFrame()
             concentration[t] = pd.DataFrame()
             margin[t] = pd.DataFrame()
-        return inst, broker, concentration, margin
+            pbr[t] = pd.DataFrame()
+        return inst, broker, concentration, margin, pbr
     for i, t in enumerate(tickers, 1):
         print(f"  [{i}/{len(tickers)}] 抓 {t} 籌碼...", flush=True)
         try:
@@ -195,7 +200,12 @@ def fetch_chip_bundles(
         except Exception as e:
             print(f"    融資融券 失敗：{e}", flush=True)
             margin[t] = pd.DataFrame()
-    return inst, broker, concentration, margin
+        try:
+            pbr[t] = finmind.get_per_pbr(t, pbr_start, end)
+        except Exception as e:
+            print(f"    PBR 失敗：{e}", flush=True)
+            pbr[t] = pd.DataFrame()
+    return inst, broker, concentration, margin, pbr
 
 
 def build_view(
@@ -206,7 +216,7 @@ def build_view(
     overnight = fetch_overnight_series(start, end)
     token = os.environ.get("FINMIND_TOKEN", "")
     finmind = FinMindClient(token) if token else None
-    inst, broker, concentration, margin = fetch_chip_bundles(finmind, tickers, start, end)
+    inst, broker, concentration, margin, pbr = fetch_chip_bundles(finmind, tickers, start, end)
 
     view = HistoricalDataView(
         ohlcv_by_ticker=ohlcv,
@@ -214,6 +224,7 @@ def build_view(
         broker_by_ticker=broker,
         concentration_by_ticker=concentration,
         margin_by_ticker=margin,
+        pbr_by_ticker=pbr,
         taiex=taiex,
         overnight_by_date=overnight,
     )

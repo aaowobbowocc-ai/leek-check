@@ -9,6 +9,8 @@
      - day_trader_risk → 入手區間 = 前收 − 0.5 × ATR（避免市價衝進去）
      - leader_divergence → max_single_position_pct 減半
      - sector_weak → 扣 5 分
+     - pbr_overvalued（Phase 12，已結案關閉）→ strategy.yaml penalty_points=0 → no-op
+       （程式碼路徑保留供 Phase 13 重用；詳見 valuation yaml 區塊註解）
   5. 計算 ATR 止損 / 目標：entry − 2 × ATR、entry + 3 × ATR
   6. 依 recommendation.min_score 過濾，取 top max_picks
 
@@ -36,6 +38,9 @@ class FactorBundle:
     market: FactorScore
     atr: float
     prev_close: float
+    # Phase 12 — Valuation Guard：PBR 5 年百分位 > 門檻（由 pipeline 預計算）
+    pbr_overvalued: bool = False
+    pbr_percentile: float | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,10 @@ class CompositeScorer:
         self._sector_weak_penalty = float(
             cfg.get("sector", {}).get("weak_penalty_points", 5.0)
         )
+        # Phase 12 — Valuation Guard penalty（PBR 百分位過高 → composite 扣分）
+        self._valuation_penalty = float(
+            cfg.get("valuation", {}).get("penalty_points", 10.0)
+        )
         # Phase 11 定盤（D-only）：移除 sector_laggard_penalty
         # 驗證結果：rollback vs D-only 在 2024/2025 行為完全相同（penalty 被 breadth 防線幾乎總是 gate 掉），
         # 2023 D-only 實測 +0.08 Sharpe 優於保留 penalty → 移除更簡潔且無退化風險。
@@ -100,6 +109,10 @@ class CompositeScorer:
         if bundle.sector.flags.get("sector_weak"):
             weighted -= self._sector_weak_penalty / 100.0
 
+        # Phase 12 — PBR 百分位過高扣分（同機制）
+        if bundle.pbr_overvalued:
+            weighted -= self._valuation_penalty / 100.0
+
         score_100 = max(0.0, min(100.0, weighted * 100.0))
 
         entry_low, entry_high = self._entry_zone(bundle)
@@ -116,6 +129,15 @@ class CompositeScorer:
         reasons = self._collect_reasons(bundle)
         flags = self._merge_flags(bundle)
         breakdown = self._collect_breakdown(bundle)
+
+        if bundle.pbr_overvalued:
+            pct_txt = (
+                f"{bundle.pbr_percentile:.0%}" if bundle.pbr_percentile is not None else "≥90%"
+            )
+            reasons.append(f"⚠️ PBR 5 年百分位 {pct_txt}，估值偏高 −{self._valuation_penalty:.0f} 分")
+            flags["pbr_overvalued"] = True
+            if bundle.pbr_percentile is not None:
+                breakdown["valuation.pbr_percentile"] = float(bundle.pbr_percentile)
 
         return Recommendation(
             ticker=bundle.ticker,

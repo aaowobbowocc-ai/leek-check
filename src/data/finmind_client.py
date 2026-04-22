@@ -12,7 +12,8 @@ FinMind 資費方案 × 本模組可用功能（2026-04 現況）
 ─────────────────────────────────────────────────────────────
 | 方案            | 月費        | 解鎖本模組函式                                    |
 |-----------------|-------------|-------------------------------------------------|
-| Free (目前)     | $0          | get_institutional / get_margin                  |
+| Free (目前)     | $0          | get_institutional / get_margin / get_per_pbr /  |
+|                 |             |   get_foreign_ownership                         |
 | Backer          | NT$699      | + get_adjusted_price（還原股價）                 |
 |                 |             |   → 可補 yfinance 對中型台股的 2018 前資料缺洞    |
 | Sponsor (推薦)  | NT$999      | + get_broker_distribution（分點籌碼）            |
@@ -230,6 +231,40 @@ class FinMindClient:
             if col in out:
                 out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0)
         keep = [c for c in ("date", "foreign_pct", "foreign_shares", "shares_issued") if c in out]
+        return out[keep]
+
+    # ─────────────────────────────────────
+    # PER / PBR / 現金殖利率（每日）— Free 方案可用
+    # 用途：Phase 12 Valuation Guard — 計算 PBR 5 年歷史百分位，過高則 composite 扣分
+    # ─────────────────────────────────────
+    def get_per_pbr(self, ticker: str, start: date, end: date) -> pd.DataFrame:
+        """
+        回傳欄位: date | per | pbr | dividend_yield
+        FinMind TaiwanStockPER 欄位: PER | PBR | dividend_yield
+        """
+        return self._get(
+            dataset="TaiwanStockPER",
+            ticker=ticker,
+            start=start,
+            end=end,
+            normalize=self._norm_per_pbr,
+        )
+
+    @staticmethod
+    def _norm_per_pbr(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        out = df.rename(
+            columns={
+                "PER": "per",
+                "PBR": "pbr",
+                "dividend_yield": "dividend_yield",
+            }
+        ).copy()
+        for col in ("per", "pbr", "dividend_yield"):
+            if col in out:
+                out[col] = pd.to_numeric(out[col], errors="coerce")
+        keep = [c for c in ("date", "per", "pbr", "dividend_yield") if c in out]
         return out[keep]
 
     # ─────────────────────────────────────

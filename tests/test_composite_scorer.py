@@ -52,6 +52,8 @@ def _bundle(
     day_trader: bool = False,
     leader_div: bool = False,
     sector_weak: bool = False,
+    pbr_overvalued: bool = False,
+    pbr_percentile: float | None = None,
 ) -> FactorBundle:
     return FactorBundle(
         ticker=ticker,
@@ -63,6 +65,8 @@ def _bundle(
         market=FactorScore(value=market, reason="大盤理由"),
         atr=atr,
         prev_close=prev_close,
+        pbr_overvalued=pbr_overvalued,
+        pbr_percentile=pbr_percentile,
     )
 
 
@@ -131,6 +135,74 @@ def test_rank_filters_and_sorts(tmp_path: Path) -> None:
     # 確認降冪排序
     scores = [r.score for r in ranked]
     assert scores == sorted(scores, reverse=True)
+
+
+def _write_strategy_with_valuation(tmp_path: Path, penalty: float = 10.0) -> Path:
+    """寫一個啟用 valuation penalty 的 strategy.yaml。"""
+    path = tmp_path / "strategy_val.yaml"
+    path.write_text(
+        f"""factor_weights:
+  chip_concentration: 0.25
+  sector_momentum:    0.10
+  supply_chain:       0.20
+  news_sentiment:     0.20
+  technical:          0.15
+  market_regime:      0.10
+recommendation:
+  min_score: 0
+  max_picks: 5
+risk:
+  atr_stop_multiplier: 2.0
+  atr_target_multiplier: 3.0
+  max_single_position_pct: 20.0
+valuation:
+  threshold_percentile: 0.90
+  penalty_points: {penalty}
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_valuation_overvalued_deducts_score(tmp_path: Path) -> None:
+    """pbr_overvalued=True → composite 扣 10 分（與 sector_weak 同機制）。"""
+    scorer = CompositeScorer(_write_strategy_with_valuation(tmp_path, penalty=10.0))
+    normal = scorer.score(_bundle("A"))
+    over = scorer.score(_bundle("A", pbr_overvalued=True, pbr_percentile=0.95))
+    assert normal.score - over.score == pytest.approx(10.0, abs=0.2)
+
+
+def test_valuation_overvalued_exposes_flag_and_reason(tmp_path: Path) -> None:
+    """pbr_overvalued=True → Recommendation 應帶 flag + reason 字串供晨報顯示。"""
+    scorer = CompositeScorer(_write_strategy_with_valuation(tmp_path))
+    reco = scorer.score(_bundle("A", pbr_overvalued=True, pbr_percentile=0.93))
+    assert reco.flags.get("pbr_overvalued") is True
+    assert any("PBR" in r and "93%" in r for r in reco.reasons)
+    assert reco.breakdown.get("valuation.pbr_percentile") == pytest.approx(0.93)
+
+
+def test_valuation_clean_bundle_no_penalty(tmp_path: Path) -> None:
+    """pbr_overvalued=False → 不扣分、無 flag。"""
+    scorer = CompositeScorer(_write_strategy_with_valuation(tmp_path))
+    reco = scorer.score(_bundle("A", pbr_overvalued=False))
+    assert reco.flags.get("pbr_overvalued", False) is False
+    assert not any("PBR" in r for r in reco.reasons)
+
+
+def test_valuation_penalty_configurable(tmp_path: Path) -> None:
+    """penalty_points 應可由 strategy.yaml 覆寫（未來調校彈性）。"""
+    scorer_light = CompositeScorer(_write_strategy_with_valuation(tmp_path, penalty=5.0))
+    path2 = tmp_path / "heavy.yaml"
+    path2.write_text(
+        _write_strategy_with_valuation(tmp_path, penalty=15.0).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    scorer_heavy = CompositeScorer(path2)
+    normal = scorer_light.score(_bundle("A"))
+    light = scorer_light.score(_bundle("A", pbr_overvalued=True, pbr_percentile=0.95))
+    heavy = scorer_heavy.score(_bundle("A", pbr_overvalued=True, pbr_percentile=0.95))
+    assert normal.score - light.score == pytest.approx(5.0, abs=0.2)
+    assert normal.score - heavy.score == pytest.approx(15.0, abs=0.2)
 
 
 def test_rank_enforces_max_picks(tmp_path: Path) -> None:

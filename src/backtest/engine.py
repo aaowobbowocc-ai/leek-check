@@ -171,6 +171,7 @@ class BacktestEngine:
                     sentiment=None,  # 回測中情緒因子在 Phase 8d 加入
                     concentration=snapshot.concentration(tk),
                     margin=snapshot.margin(tk),
+                    pbr=snapshot.pbr(tk),
                 )
             )
 

@@ -39,6 +39,9 @@ from src.strategy.sentiment_factor import SentimentResult
 from src.strategy.supply_chain_factor import SupplyChainFactor
 from src.strategy.technical_factor import TechnicalFactor, atr_from_ohlcv
 
+# Phase 12 結案：valuation_guard 的 is_overvalued 已從 pipeline 移除（penalty 關閉）。
+# 模組本身保留，供 Phase 13 可能的 PBR-based 訊號重用。
+
 
 @dataclass(frozen=True)
 class TickerInputs:
@@ -54,6 +57,7 @@ class TickerInputs:
     today_open_close: tuple[float, float] | None = None  # 僅給 sector 紅 K 比例用（回測模擬日的開收；實盤晨報前留空）
     concentration: pd.DataFrame = field(default_factory=pd.DataFrame)  # 週集保股權分散表（Free 方案替代訊號）
     margin: pd.DataFrame = field(default_factory=pd.DataFrame)          # 融資融券（Phase 11）
+    pbr: pd.DataFrame = field(default_factory=pd.DataFrame)             # PER/PBR/殖利率（Phase 12 Valuation Guard）
 
 
 @dataclass(frozen=True)
@@ -190,6 +194,12 @@ class ScoringPipeline:
                 ticker_price_above_5ma_pct=tech_score.breakdown.get("price_above_ma_pct", 0.0),
             )
             news_score = _sentiment_to_factor(ti.sentiment)
+
+            # Phase 12 結案：Valuation Penalty 已關閉（pbr_overvalued 永遠 False）。
+            # PBR 資料流水線（get_per_pbr / TickerInputs.pbr / DailySnapshot.pbr / valuation_guard）
+            # 刻意保留作為未來 Phase 13 的基礎設施（如 PBR velocity、regime shift detector）。
+            # 失敗原因：16 檔 AI/半導體同向高，PBR 百分位無差異化訊號；regime-aware gating 也只是 no-op。
+            # 詳見 commit "Phase 12 結案"。
 
             bundles.append(
                 FactorBundle(

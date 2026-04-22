@@ -109,6 +109,38 @@ def test_view_missing_ticker_returns_empty() -> None:
     assert view.bar("9999", date(2024, 1, 10)) is None
 
 
+def test_view_pbr_never_leaks_cutoff() -> None:
+    """Phase 12 — snapshot.pbr(ticker) 嚴格 < cutoff，不得包含 cutoff 當天。"""
+    pbr_df = pd.DataFrame(
+        {
+            "date": [date(2024, 1, 1) + timedelta(days=i) for i in range(30)],
+            "pbr": [1.0 + i * 0.01 for i in range(30)],
+        }
+    )
+    view = HistoricalDataView(
+        ohlcv_by_ticker={},
+        institutional_by_ticker={},
+        broker_by_ticker={},
+        taiex=pd.DataFrame(),
+        overnight_by_date={},
+        pbr_by_ticker={"3413": pbr_df},
+    )
+    cutoff = date(2024, 1, 15)
+    snap = view.at(cutoff)
+    hist = snap.pbr("3413")
+    assert not hist.empty
+    max_date = pd.to_datetime(hist["date"]).dt.date.max()
+    assert max_date < cutoff
+    assert max_date == cutoff - timedelta(days=1)
+
+
+def test_view_pbr_missing_ticker_returns_empty() -> None:
+    """沒提供 pbr_by_ticker 的 ticker → 回空 DataFrame（voluntary 降級）。"""
+    view = HistoricalDataView({}, {}, {}, pd.DataFrame(), {})
+    snap = view.at(date(2024, 1, 10))
+    assert snap.pbr("9999").empty
+
+
 # ─────────────────────────────────────────
 # engine — end-to-end smoke test
 # ─────────────────────────────────────────

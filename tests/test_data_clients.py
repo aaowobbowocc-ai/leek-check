@@ -118,6 +118,40 @@ def test_finmind_fetches_when_no_cache(tmp_path: Path) -> None:
     assert result.iloc[0]["net_buy"] == 800_000
 
 
+def test_finmind_get_per_pbr_normalizes(tmp_path: Path) -> None:
+    """get_per_pbr 應把 FinMind 的 PER/PBR 欄位轉為小寫，並保留 dividend_yield。"""
+    api_response = {
+        "status": 200,
+        "data": [
+            {"date": "2024-01-02", "stock_id": "3413", "PER": "18.5", "PBR": "2.3", "dividend_yield": "1.5"},
+            {"date": "2024-01-03", "stock_id": "3413", "PER": "18.7", "PBR": "2.4", "dividend_yield": "1.5"},
+        ],
+    }
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = api_response
+    mock_resp.raise_for_status = MagicMock()
+
+    client = FinMindClient(token="fake", cache_dir=tmp_path)
+    with patch("requests.get", return_value=mock_resp):
+        result = client.get_per_pbr("3413", date(2024, 1, 1), date(2024, 1, 31))
+
+    assert set(result.columns) == {"date", "per", "pbr", "dividend_yield"}
+    assert result.iloc[0]["pbr"] == pytest.approx(2.3)
+    assert result.iloc[1]["per"] == pytest.approx(18.7)
+
+
+def test_finmind_get_per_pbr_empty_response(tmp_path: Path) -> None:
+    """空資料應優雅降級（不 raise）。"""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {"status": 200, "data": []}
+    mock_resp.raise_for_status = MagicMock()
+
+    client = FinMindClient(token="fake", cache_dir=tmp_path)
+    with patch("requests.get", return_value=mock_resp):
+        result = client.get_per_pbr("9999", date(2024, 1, 1), date(2024, 1, 31))
+    assert result.empty
+
+
 def test_finmind_raises_on_api_error(tmp_path: Path) -> None:
     api_response = {"status": 403, "msg": "Forbidden"}
     mock_resp = MagicMock()
