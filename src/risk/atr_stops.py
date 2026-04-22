@@ -22,6 +22,8 @@ class StopState:
     k_stop: float = 2.0
     k_target: float = 3.0
     locked_profit_steps: int = 0   # 已鎖利階數（0 / 1 / 2）
+    running_high: float = 0.0       # 進場後的累計高點（吊燈止損用）
+    chandelier_k: float = 2.0       # 吊燈止損乘數（最高價 − k × ATR）
 
 
 def initial_stops(
@@ -29,6 +31,7 @@ def initial_stops(
     atr: float,
     k_stop: float = 2.0,
     k_target: float = 3.0,
+    chandelier_k: float = 2.0,
 ) -> StopState:
     return StopState(
         entry=entry,
@@ -38,6 +41,8 @@ def initial_stops(
         k_stop=k_stop,
         k_target=k_target,
         locked_profit_steps=0,
+        running_high=entry,
+        chandelier_k=chandelier_k,
     )
 
 
@@ -46,12 +51,15 @@ def trail(state: StopState, latest_high: float) -> StopState:
     依最新高點更新鎖利狀態。
     - 股價達 entry + 1×ATR 且尚未鎖利 → 止損上移到成本
     - 股價達 entry + 2×ATR 且已達 step 1 → 止損上移到 entry + 1×ATR
+    - step 2 之後啟動吊燈止損（Chandelier Exit）：stop = max(stop, running_high − k × ATR)
+      抱住強勢主升段，同時在創高後回落時果斷退出
     """
     if state.atr <= 0:
         return state
 
     step = state.locked_profit_steps
     new_stop = state.stop
+    running_high = max(state.running_high, latest_high)
 
     if step < 1 and latest_high >= state.entry + 1.0 * state.atr:
         new_stop = max(new_stop, state.entry)
@@ -59,10 +67,16 @@ def trail(state: StopState, latest_high: float) -> StopState:
     if step < 2 and latest_high >= state.entry + 2.0 * state.atr:
         new_stop = max(new_stop, state.entry + 1.0 * state.atr)
         step = 2
+    if step >= 2:
+        chandelier = running_high - state.chandelier_k * state.atr
+        new_stop = max(new_stop, chandelier)
 
-    if new_stop == state.stop and step == state.locked_profit_steps:
+    if (new_stop == state.stop and step == state.locked_profit_steps
+            and running_high == state.running_high):
         return state
-    return replace(state, stop=new_stop, locked_profit_steps=step)
+    return replace(
+        state, stop=new_stop, locked_profit_steps=step, running_high=running_high
+    )
 
 
 def exit_signal(state: StopState, bar_low: float, bar_high: float) -> str | None:

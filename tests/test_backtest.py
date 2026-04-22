@@ -354,3 +354,97 @@ def test_backtest_engine_defensive_days_make_no_trades(tmp_path: Path) -> None:
     )
     # ADR_drop 閾值測試模式設為 -10.0，-15% 超過 → 防守 → 0 筆交易
     assert report.metrics.get("trades", 0) == 0
+
+
+# ─────────────────────────────────────────
+# walk_forward + survival_check
+# ─────────────────────────────────────────
+def _build_view_for_wf() -> HistoricalDataView:
+    ohlcv = {"3413": _fake_bullish_ohlcv("3413", n=400), "3680": _fake_bullish_ohlcv("3680", n=400)}
+    inst = {
+        "3413": _fake_inst_series(date(2024, 1, 1), 400),
+        "3680": _fake_inst_series(date(2024, 1, 1), 400),
+    }
+    all_broker = pd.concat(
+        [_fake_broker_single(date(2024, 1, 1) + timedelta(days=i)) for i in range(400)],
+        ignore_index=True,
+    )
+    broker = {"3413": all_broker, "3680": all_broker.copy()}
+    return HistoricalDataView(
+        ohlcv_by_ticker=ohlcv,
+        institutional_by_ticker=inst,
+        broker_by_ticker=broker,
+        taiex=_fake_taiex(n=400),
+        overnight_by_date={
+            date(2024, 1, 1) + timedelta(days=i): {
+                "tsmc_adr_change_pct": 0.3,
+                "nvda_change_pct": 0.5,
+                "sox_change_pct": 0.4,
+                "vix": 16.0,
+                "market_mode": "normal",
+            }
+            for i in range(400)
+        },
+    )
+
+
+def test_walk_forward_runs_on_synthetic_data(tmp_path: Path) -> None:
+    from src.backtest.walk_forward import run_walk_forward
+
+    strat = _write_strategy(tmp_path)
+    sect = _write_sector(tmp_path)
+    dt = _write_dt(tmp_path)
+
+    def factory() -> ScoringPipeline:
+        return ScoringPipeline(strat, sect, dt)
+
+    view = _build_view_for_wf()
+    calendar = [date(2024, 1, 1) + timedelta(days=i) for i in range(400)]
+
+    report = run_walk_forward(
+        view=view,
+        pipeline_factory=factory,
+        cost=CostConfig(),
+        trading_calendar=calendar,
+        watchlist=["3413", "3680"],
+        ticker_meta={
+            "3413": {"company_name": "京鼎", "shares_outstanding": 1_000_000_000},
+            "3680": {"company_name": "家登", "shares_outstanding": 1_000_000_000},
+        },
+        start=date(2024, 6, 1),
+        end=date(2024, 8, 1),
+        train_months=3,            # 測試用短期間
+        test_months=1,
+    )
+
+    # 至少產出 1 個視窗，且每個視窗的 chosen_preset 合法
+    assert len(report.windows) >= 1
+    for w in report.windows:
+        assert w.chosen_preset in {"default", "chip_heavy", "technical_heavy", "supply_chain_heavy"}
+        assert w.train_end <= w.test_start
+    # 整體權益曲線不得變負
+    if not report.equity_curve.empty:
+        assert report.equity_curve["equity"].min() > 0
+
+
+def test_survival_check_handles_missing_data(tmp_path: Path) -> None:
+    from src.backtest.survival_check import run_survival_check
+
+    def factory() -> ScoringPipeline:
+        return ScoringPipeline(
+            _write_strategy(tmp_path), _write_sector(tmp_path), _write_dt(tmp_path)
+        )
+
+    # 完全沒有 2018/2020/2022 的資料 → 三個視窗都應回報「無交易日資料」
+    view = HistoricalDataView({}, {}, {}, pd.DataFrame(), {})
+    results = run_survival_check(
+        view=view,
+        pipeline_factory=factory,
+        cost=CostConfig(),
+        trading_calendar=[],
+        watchlist=["3413"],
+        ticker_meta={"3413": {"company_name": "京鼎", "shares_outstanding": 1_000_000_000}},
+    )
+    assert len(results) == 3
+    assert all(not r.passed for r in results)
+    assert all("無交易日資料" in r.reason for r in results)

@@ -1,30 +1,52 @@
-# 產業分類（供「族群動能因子」使用）
-# 鍵為產業代號，值為該產業的股票代碼清單
+# 產業分類（供「族群動能因子」+「族群相對強弱 RS」使用）
+# 鍵為產業代號，值為該產業的股票代碼清單 + cluster（RS 分散用）
+#
+# cluster 用於 sector RS Top N 選取時強制跨 cluster 分散，避免
+# 「半導體設備 + 半導體材料」這類高度相關族群同時當 leader 的假分散。
 
 semi_equipment:     # 半導體設備
   name: "半導體設備"
+  cluster: "semi_downstream"
   tickers: [3413, 3680, 3131, 8996, 6274, 3588]
 
 abf_substrate:      # ABF 載板
   name: "ABF 載板"
+  cluster: "pcb_packaging"
   tickers: [3037, 3189, 6449]
 
 cooling:            # 散熱
   name: "伺服器散熱"
+  cluster: "cooling_ai_server"
   tickers: [3017, 3042, 6230]
 
 ai_server:          # AI 伺服器
   name: "AI 伺服器"
+  cluster: "cooling_ai_server"
   tickers: [2382, 3231, 2376, 2356]
 
 foundry:            # 晶圓代工
   name: "晶圓代工"
+  cluster: "semi_upstream"
   tickers: [2330, 2303, 6770]
 
-# 族群動能因子的觸發閾值
+# 族群動能因子的觸發閾值（Phase 5 原本就有）
 sector_momentum:
   min_triggers: 3           # 同族群 ≥ 3 檔同日觸發籌碼集中才給 bonus
   chip_threshold: 0.6       # 籌碼集中度因子 > 此值才算觸發
   bonus_points: 10          # 給標的額外加分
   weak_sector_penalty: 5    # 若族群紅 K 比例 < 30% 則扣分
   red_candle_ratio_min: 0.3
+
+# 族群相對強弱 RS（Phase 11 新增）
+# 每日對每個 sector 計算「20 日等權報酬 − TAIEX 20 日報酬」，
+# 取 Top N 跨不同 cluster 的族群為 leader、Bottom N 為 laggard
+relative_strength:
+  lookback_days: 20
+  top_n: 2                            # 分散配置：leader 數量
+  enforce_distinct_clusters: true     # Top N 須來自不同 cluster
+  leader_bonus: 0.0                   # 保留欄位 — 目前 flag 走 composite-level 加分
+  laggard_penalty: 0.0                # 保留欄位 — 目前 flag 走 composite-level 扣分
+  bottom_n: 2                         # laggard 族群數量（不強制 distinct cluster）
+  # composite-level 調整：寫在 strategy.yaml sector_rs 區段
+  # leader_bonus_points: 0.0（不促進）
+  # laggard_penalty_points: 變數 — 不同年份表現差異大，先走保守

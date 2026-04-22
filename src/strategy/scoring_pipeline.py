@@ -25,6 +25,7 @@ from src.data.adr_fetcher import OvernightReport
 from src.data.news_collector import NewsItem
 from src.risk.black_swan_filter import BlackSwanFilter, BlackSwanVerdict
 from src.risk.regime_detector import RegimeDetector, RegimeVerdict, apply_overrides
+from src.risk.trend_regime import TrendRegimeDetector
 from src.strategy.chip_factor import ChipFactor
 from src.strategy.composite_scorer import (
     CompositeScorer,
@@ -51,6 +52,8 @@ class TickerInputs:
     news: list[NewsItem] = field(default_factory=list)
     sentiment: SentimentResult | None = None  # 已由上游預跑好
     today_open_close: tuple[float, float] | None = None  # 僅給 sector 紅 K 比例用（回測模擬日的開收；實盤晨報前留空）
+    concentration: pd.DataFrame = field(default_factory=pd.DataFrame)  # 週集保股權分散表（Free 方案替代訊號）
+    margin: pd.DataFrame = field(default_factory=pd.DataFrame)          # 融資融券（Phase 11）
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,10 @@ class PipelineOutput:
     weights_used: dict[str, float]
     atr_stop_multiplier: float
     overnight: OvernightReport | None = None
+    trend: str = "sideways"
+    trend_reason: str = ""
+    position_scale: float = 1.0
+    min_score_effective: float = 0.0
 
 
 class ScoringPipeline:
@@ -89,17 +96,25 @@ class ScoringPipeline:
         self._composite = CompositeScorer(strategy_yaml)
         self._black_swan = BlackSwanFilter(strategy_yaml)
         self._regime = RegimeDetector(strategy_yaml)
+        self._trend = TrendRegimeDetector()
+
+    def set_base_weights(self, weights: dict[str, float] | None) -> None:
+        """供 walk-forward 覆寫因子基礎權重；傳 None 表示還原成 strategy.yaml 預設。"""
+        self._base_weights_override = weights
 
     def run(self, inp: PipelineInput) -> PipelineOutput:
         market_score = self._market.score(inp.taiex_daily)
         regime = self._regime.detect(inp.taiex_daily)
+        trend = self._trend.detect(inp.taiex_daily)
         bs = self._black_swan.check(
             tsmc_adr_change_pct=inp.overnight["tsmc_adr_change_pct"],
             vix=inp.overnight["vix"],
             taiex_below_ma=market_score.flags.get("below_monthly_ma", False),
         )
 
-        weights = apply_overrides(self._composite.default_weights, regime.weight_overrides)
+        base_weights = getattr(self, "_base_weights_override", None) or self._composite.default_weights
+        weights = apply_overrides(base_weights, regime.weight_overrides)
+        min_score_eff = self._composite.min_score + trend.min_score_delta
 
         if bs.defensive or regime.force_cash:
             return PipelineOutput(
@@ -112,7 +127,15 @@ class ScoringPipeline:
                 weights_used=weights,
                 atr_stop_multiplier=regime.atr_stop_multiplier,
                 overnight=inp.overnight,
+                trend=trend.trend,
+                trend_reason=trend.reason,
+                position_scale=trend.position_scale,
+                min_score_effective=min_score_eff,
             )
+
+        # 先算市場寬度（chip 的雙龍取珠 bonus 要依此 scale；sector penalty 也會讀它）
+        sector_closes: dict[str, pd.DataFrame] = {ti.ticker: ti.ohlcv for ti in inp.tickers}
+        breadth = self._trend.get_breadth_score(sector_closes)
 
         # 先跑每檔 chip 分數與今日 K 線，供 sector 因子參照
         chip_scores: dict[str, FactorScore] = {}
@@ -128,6 +151,10 @@ class ScoringPipeline:
                 ti.broker,
                 ti.shares_outstanding,
                 ti.recent_volume,
+                concentration=ti.concentration,
+                margin=ti.margin,
+                ohlcv=ti.ohlcv,
+                breadth=breadth,
             )
             peer_chip_vals[ti.ticker] = chip_scores[ti.ticker].value
             if ti.today_open_close is not None:
@@ -138,10 +165,22 @@ class ScoringPipeline:
             else:
                 prev_closes[ti.ticker] = 0.0
 
+        # Phase 11：族群相對強弱（sector RS）— 用每檔 < cutoff 的歷史收盤彙總族群報酬
+        sector_rs = self._sector.compute_sector_rs(sector_closes, inp.taiex_daily)
+        leader_set = self._sector.top_sectors(sector_rs)
+        laggard_set = self._sector.bottom_sectors(sector_rs)
+
         bundles: list[FactorBundle] = []
         for ti in inp.tickers:
             tech_score = self._tech.score(ti.ohlcv)
-            sector_score = self._sector.score(ti.ticker, peer_chip_vals, peer_candles)
+            sector_score = self._sector.score(
+                ti.ticker,
+                peer_chip_vals,
+                peer_candles,
+                leader_sectors=leader_set,
+                laggard_sectors=laggard_set,
+                sector_rs=sector_rs,
+            )
             supply_score = self._supply.score(
                 ti.ticker,
                 nvda_change_pct=inp.overnight["nvda_change_pct"],
@@ -170,6 +209,9 @@ class ScoringPipeline:
             bundles,
             weights=weights,
             atr_stop_multiplier=regime.atr_stop_multiplier,
+            atr_target_multiplier=trend.target_atr_mult_override,
+            min_score_delta=trend.min_score_delta,
+            trend=trend.trend,
         )
 
         return PipelineOutput(
@@ -182,6 +224,10 @@ class ScoringPipeline:
             weights_used=weights,
             atr_stop_multiplier=regime.atr_stop_multiplier,
             overnight=inp.overnight,
+            trend=trend.trend,
+            trend_reason=trend.reason,
+            position_scale=trend.position_scale,
+            min_score_effective=min_score_eff,
         )
 
 

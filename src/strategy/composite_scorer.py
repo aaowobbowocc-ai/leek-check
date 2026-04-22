@@ -46,6 +46,7 @@ class Recommendation:
     entry_high: float
     target: float
     stop: float
+    atr: float
     max_position_pct: float
     reasons: list[str] = field(default_factory=list)
     flags: dict[str, bool] = field(default_factory=dict)
@@ -72,18 +73,26 @@ class CompositeScorer:
         self._sector_weak_penalty = float(
             cfg.get("sector", {}).get("weak_penalty_points", 5.0)
         )
+        # Phase 11 定盤（D-only）：移除 sector_laggard_penalty
+        # 驗證結果：rollback vs D-only 在 2024/2025 行為完全相同（penalty 被 breadth 防線幾乎總是 gate 掉），
+        # 2023 D-only 實測 +0.08 Sharpe 優於保留 penalty → 移除更簡潔且無退化風險。
+        # SectorFactor 仍輸出 sector_leading / sector_lagging flags 供晨報顯示族群資訊，composite 層不再據此調分。
 
     def score(
         self,
         bundle: FactorBundle,
         weights: dict[str, float] | None = None,
         atr_stop_multiplier: float | None = None,
+        atr_target_multiplier: float | None = None,
+        trend: str | None = None,
     ) -> Recommendation:
         """
         回傳單檔推薦（不論分數是否達標，過濾在 rank() 做）。
 
         weights: 若提供則覆寫 yaml 權重（由 regime_detector 產生）
         atr_stop_multiplier: 若提供則覆寫（高波機制放寬至 2.5）
+        atr_target_multiplier: 若提供則覆寫（trend_regime sideways/bear 下調至 2.0）
+        trend: 保留參數供介面一致性（Phase 11.5 後 composite 層不再依此調分）
         """
         weighted = self._weighted_sum(bundle, weights or self._weights)
 
@@ -95,7 +104,8 @@ class CompositeScorer:
 
         entry_low, entry_high = self._entry_zone(bundle)
         stop_mult = atr_stop_multiplier if atr_stop_multiplier is not None else self._atr_stop_mult
-        target = bundle.prev_close + self._atr_target_mult * bundle.atr
+        target_mult = atr_target_multiplier if atr_target_multiplier is not None else self._atr_target_mult
+        target = bundle.prev_close + target_mult * bundle.atr
         stop = bundle.prev_close - stop_mult * bundle.atr
 
         # 龍頭背離 → 部位上限減半
@@ -114,6 +124,7 @@ class CompositeScorer:
             entry_high=round(entry_high, 2),
             target=round(target, 2),
             stop=round(stop, 2),
+            atr=round(bundle.atr, 4),
             max_position_pct=max_pos,
             reasons=reasons,
             flags=flags,
@@ -125,10 +136,28 @@ class CompositeScorer:
         bundles: list[FactorBundle],
         weights: dict[str, float] | None = None,
         atr_stop_multiplier: float | None = None,
+        atr_target_multiplier: float | None = None,
+        min_score_delta: float = 0.0,
+        trend: str | None = None,
     ) -> list[Recommendation]:
-        """對候選清單打分 → 依 score 排序 → 過濾未達標 → 截 top N。"""
-        recos = [self.score(b, weights=weights, atr_stop_multiplier=atr_stop_multiplier) for b in bundles]
-        qualified = [r for r in recos if r.score >= self._min_score]
+        """對候選清單打分 → 依 score 排序 → 過濾未達標 → 截 top N。
+
+        min_score_delta: 由 trend_regime 提供（bull=-5、bear=+15），直接加到 min_score 門檻。
+        atr_target_multiplier: 由 trend_regime 覆寫（sideways/bear=2.0、bull=None 沿用預設 4.0）。
+        trend: 保留供介面一致性；Phase 11.5 後 composite 層不再據此調分。
+        """
+        recos = [
+            self.score(
+                b,
+                weights=weights,
+                atr_stop_multiplier=atr_stop_multiplier,
+                atr_target_multiplier=atr_target_multiplier,
+                trend=trend,
+            )
+            for b in bundles
+        ]
+        threshold = self._min_score + min_score_delta
+        qualified = [r for r in recos if r.score >= threshold]
         qualified.sort(key=lambda r: r.score, reverse=True)
         return qualified[: self._max_picks]
 

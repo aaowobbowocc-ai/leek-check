@@ -27,7 +27,7 @@ import pandas as pd
 from src.backtest.cost_model import CostConfig, TradeResult, simulate_fill
 from src.backtest.data_view import HistoricalDataView
 from src.data.adr_fetcher import OvernightReport
-from src.risk.atr_stops import StopState, exit_signal, initial_stops, trail
+from src.risk.atr_stops import StopState, exit_signal, trail
 from src.risk.position_sizing import SizingInput, size_position
 from src.strategy.composite_scorer import Recommendation
 from src.strategy.scoring_pipeline import (
@@ -90,6 +90,9 @@ class BacktestEngine:
         avg_win_prior: float = 0.08,
         avg_loss_prior: float = 0.04,
         max_hold_days: int = 20,
+        k_stop: float = 1.5,
+        k_target: float = 4.0,
+        chandelier_k: float = 2.0,
     ) -> None:
         self._pipeline = pipeline
         self._view = view
@@ -103,6 +106,9 @@ class BacktestEngine:
         self._avg_win = avg_win_prior
         self._avg_loss = avg_loss_prior
         self._max_hold_days = max_hold_days
+        self._k_stop = k_stop
+        self._k_target = k_target
+        self._chandelier_k = chandelier_k
 
     def run(
         self,
@@ -163,6 +169,8 @@ class BacktestEngine:
                     recent_volume=recent_volume,
                     news=[],
                     sentiment=None,  # 回測中情緒因子在 Phase 8d 加入
+                    concentration=snapshot.concentration(tk),
+                    margin=snapshot.margin(tk),
                 )
             )
 
@@ -181,9 +189,9 @@ class BacktestEngine:
         if pipe_out.defensive:
             return
 
-        # 3. 嘗試進場
+        # 3. 嘗試進場（bear/sideways 用 trend.position_scale 縮部位）
         for reco in pipe_out.recommendations:
-            self._try_enter(d, reco)
+            self._try_enter(d, reco, position_scale=pipe_out.position_scale)
 
     def _process_exits(self, d: date) -> None:
         still_open: list[OpenPosition] = []
@@ -207,7 +215,7 @@ class BacktestEngine:
 
         self._open_positions = still_open
 
-    def _try_enter(self, d: date, reco: Recommendation) -> None:
+    def _try_enter(self, d: date, reco: Recommendation, position_scale: float = 1.0) -> None:
         bar = self._view.bar(reco.ticker, d)
         if bar is None:
             return
@@ -219,7 +227,7 @@ class BacktestEngine:
 
         entry_px = (fill_low + fill_high) / 2.0
 
-        # 部位規模
+        # 部位規模（bear 模式下 position_scale < 1.0 → 上限縮小）
         ohlcv_hist = self._view.at(d).ohlcv(reco.ticker)
         if ohlcv_hist.empty:
             return
@@ -235,22 +243,23 @@ class BacktestEngine:
             win_rate=self._win_rate,
             avg_win=self._avg_win,
             avg_loss=self._avg_loss,
-            max_single_position_pct=reco.max_position_pct,
+            max_single_position_pct=reco.max_position_pct * position_scale,
         )
         sized = size_position(spec)
         if sized.shares <= 0:
             return
 
-        stop_state = initial_stops(entry_px, atr=(reco.target - reco.stop) / 5.0)
-        # 以 reco 的 stop / target 覆寫（考慮 regime 的 stop multiplier）
+        # 用 composite_scorer 算出的真實 ATR，不再從 target/stop 反推
         stop_state = StopState(
             entry=entry_px,
-            atr=stop_state.atr,
+            atr=reco.atr,
             stop=reco.stop,
             target=reco.target,
-            k_stop=2.0,
-            k_target=3.0,
+            k_stop=self._k_stop,
+            k_target=self._k_target,
             locked_profit_steps=0,
+            running_high=entry_px,
+            chandelier_k=self._chandelier_k,
         )
         self._open_positions.append(
             OpenPosition(

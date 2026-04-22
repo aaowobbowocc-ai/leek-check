@@ -4,18 +4,18 @@
 # 因子權重（總和 = 1.00）
 # ─────────────────────────────────────────
 factor_weights:
-  chip_concentration: 0.25    # 籌碼集中度
-  sector_momentum:    0.10    # 族群動能
-  supply_chain:       0.20    # 供應鏈傳導
-  news_sentiment:     0.20    # LLM 新聞情緒
+  chip_concentration: 0.45    # 籌碼集中度（台股短線最強先行指標）
+  sector_momentum:    0.15    # 族群動能
+  supply_chain:       0.15    # 供應鏈傳導
+  news_sentiment:     0.10    # LLM 新聞情緒
   technical:          0.15    # 技術面
-  market_regime:      0.10    # 大盤背景
+  market_regime:      0.00    # 大盤背景（已由 black_swan + regime 外部處理，權重內歸零）
 
 # ─────────────────────────────────────────
 # 推薦門檻
 # ─────────────────────────────────────────
 recommendation:
-  min_score: 75               # 綜合分 ≥ 75 才進晨報
+  min_score: 62               # 綜合分 ≥ 62 才進晨報（精兵政策）
   max_picks: 3                # 每日最多推薦 3 檔
 
 # ─────────────────────────────────────────
@@ -26,8 +26,9 @@ risk:
   max_single_position_pct: 20.0
   max_concurrent_positions: 3
   kelly_fraction: 0.5         # Half-Kelly
-  atr_stop_multiplier: 2.0    # 止損 = 進場 − 2×ATR
-  atr_target_multiplier: 3.0  # 目標 = 進場 + 3×ATR
+  atr_stop_multiplier: 1.5    # 止損 = 進場 − 1.5×ATR（縮緊保本金）
+  atr_target_multiplier: 4.0  # 目標 = 進場 + 4.0×ATR（追求爆發力，理論 P/L = 2.67）
+  chandelier_k: 2.0            # 吊燈止損：+2 ATR 後 stop = 最高 − 2×ATR
   liquidity_volume_pct: 1.0   # 單筆 ≤ 前日成交量 1%
 
 # ─────────────────────────────────────────
@@ -59,6 +60,14 @@ regime:
     normal_high: 1.3
     high_crazy: 2.0
   crazy_force_cash: true      # vol_ratio > 2.0 強制空手
+
+# ─────────────────────────────────────────
+# Sector RS（Phase 11 定盤 — D-only）
+# ─────────────────────────────────────────
+# 設計原則：SectorFactor 仍計算族群相對強弱並輸出 sector_leading / sector_lagging flags
+# 供晨報顯示族群資訊，但 composite 層不再據此調分（已移除 laggard_penalty）。
+# 驗證結果：rollback vs D-only 在 2024/2025 Sharpe 完全相同（penalty 被 breadth 防線幾乎總是 gate 掉），
+# 2023 D-only 實測 +0.08 Sharpe 優於保留 penalty → 移除更簡潔且無退化風險。
 
 # ─────────────────────────────────────────
 # Concept Drift

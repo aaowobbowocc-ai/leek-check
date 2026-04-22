@@ -32,6 +32,8 @@ class DailySnapshot:
     ohlcv_by_ticker: dict[str, pd.DataFrame]
     institutional_by_ticker: dict[str, pd.DataFrame]
     broker_by_ticker: dict[str, pd.DataFrame]
+    concentration_by_ticker: dict[str, pd.DataFrame]
+    margin_by_ticker: dict[str, pd.DataFrame]
     taiex: pd.DataFrame
     overnight: dict        # OvernightReport（前一美股交易日收盤）
 
@@ -41,6 +43,16 @@ class DailySnapshot:
     def institutional(self, ticker: str) -> pd.DataFrame:
         return _slice_before(
             self.institutional_by_ticker.get(ticker, pd.DataFrame()), self.cutoff
+        )
+
+    def concentration(self, ticker: str) -> pd.DataFrame:
+        return _slice_before(
+            self.concentration_by_ticker.get(ticker, pd.DataFrame()), self.cutoff
+        )
+
+    def margin(self, ticker: str) -> pd.DataFrame:
+        return _slice_before(
+            self.margin_by_ticker.get(ticker, pd.DataFrame()), self.cutoff
         )
 
     def broker_on(self, ticker: str, d: date) -> pd.DataFrame:
@@ -69,10 +81,18 @@ class HistoricalDataView:
         broker_by_ticker: dict[str, pd.DataFrame],
         taiex: pd.DataFrame,
         overnight_by_date: dict[date, dict],
+        concentration_by_ticker: dict[str, pd.DataFrame] | None = None,
+        margin_by_ticker: dict[str, pd.DataFrame] | None = None,
     ) -> None:
         self._ohlcv = {k: _normalize_dates(v) for k, v in ohlcv_by_ticker.items()}
         self._inst = {k: _normalize_dates(v) for k, v in institutional_by_ticker.items()}
         self._broker = {k: _normalize_dates(v) for k, v in broker_by_ticker.items()}
+        self._concentration = {
+            k: _normalize_dates(v) for k, v in (concentration_by_ticker or {}).items()
+        }
+        self._margin = {
+            k: _normalize_dates(v) for k, v in (margin_by_ticker or {}).items()
+        }
         self._taiex = _normalize_dates(taiex)
         self._overnight = overnight_by_date
 
@@ -83,6 +103,8 @@ class HistoricalDataView:
             ohlcv_by_ticker=self._ohlcv,
             institutional_by_ticker=self._inst,
             broker_by_ticker=self._broker,
+            concentration_by_ticker=self._concentration,
+            margin_by_ticker=self._margin,
             taiex=self._taiex,
             overnight=overnight,
         )
