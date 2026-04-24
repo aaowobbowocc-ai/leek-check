@@ -30,6 +30,8 @@ risk:
   atr_target_multiplier: 4.0  # 目標 = 進場 + 4.0×ATR（追求爆發力，理論 P/L = 2.67）
   chandelier_k: 2.0            # 吊燈止損：+2 ATR 後 stop = 最高 − 2×ATR
   liquidity_volume_pct: 1.0   # 單筆 ≤ 前日成交量 1%
+# Phase 13 全數撤銷（2026-04-24）：structural_stop / bollinger_exit / macd_divergence
+# 均在 16 檔半導體設備 watchlist 實測無效或有害，詳見 atr_stops.py 檔頭註解。
 
 # ─────────────────────────────────────────
 # 交易成本（台股）
