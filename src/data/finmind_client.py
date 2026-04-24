@@ -268,6 +268,97 @@ class FinMindClient:
         return out[keep]
 
     # ─────────────────────────────────────
+    # 月營收（Phase 16 基本面因子用）
+    # ─────────────────────────────────────
+    def get_monthly_revenue(self, ticker: str, start: date, end: date) -> pd.DataFrame:
+        """
+        回傳欄位: date | revenue | revenue_month | revenue_year |
+                  revenue_yoy | revenue_mom
+        FinMind TaiwanStockMonthRevenue 的公告日即為 date。
+        """
+        return self._get(
+            dataset="TaiwanStockMonthRevenue",
+            ticker=ticker,
+            start=start,
+            end=end,
+            normalize=self._norm_monthly_revenue,
+        )
+
+    @staticmethod
+    def _norm_monthly_revenue(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        # FinMind 原欄位: date | revenue | revenue_month | revenue_year
+        #                | revenue_growth_rate (月增) | RevenueGrowthRate (年增)
+        out = df.rename(
+            columns={
+                "revenue_growth_rate": "revenue_mom",
+                "RevenueGrowthRate": "revenue_yoy",
+            }
+        ).copy()
+        for col in ("revenue", "revenue_yoy", "revenue_mom"):
+            if col in out:
+                out[col] = pd.to_numeric(out[col], errors="coerce")
+        keep = [c for c in ("date", "revenue", "revenue_month", "revenue_year",
+                             "revenue_yoy", "revenue_mom") if c in out]
+        return out[keep]
+
+    # ─────────────────────────────────────
+    # 財報（ROE / 毛利 / 負債比）
+    # ─────────────────────────────────────
+    def get_financial_statements(
+        self, ticker: str, start: date, end: date
+    ) -> pd.DataFrame:
+        """
+        回傳欄位: date | type | value
+        FinMind TaiwanStockFinancialStatements 為長格式（每列一個指標）。
+        呼叫端須 pivot 成寬格式，常用 type:
+          EPS, ROE, ROA, OperatingGrossProfitRate, NetIncomeRate,
+          DebtAssetRatio, CurrentRatio
+        """
+        return self._get(
+            dataset="TaiwanStockFinancialStatements",
+            ticker=ticker,
+            start=start,
+            end=end,
+            normalize=self._norm_financial_statements,
+        )
+
+    @staticmethod
+    def _norm_financial_statements(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+        keep = [c for c in ("date", "type", "value", "origin_name") if c in df]
+        out = df[keep].copy()
+        if "value" in out:
+            out["value"] = pd.to_numeric(out["value"], errors="coerce")
+        return out
+
+    # ─────────────────────────────────────
+    # 上市公司清單（全市場 universe 用）
+    # ─────────────────────────────────────
+    def get_all_listed_info(self) -> pd.DataFrame:
+        """
+        回傳欄位: stock_id | stock_name | industry_category | type
+        用途：Phase 16 全市場 screener 需要先列出所有在交易所上市 / 上櫃的股票代碼。
+        此 endpoint 只有一個 snapshot（不需 date 範圍）。
+        """
+        import requests
+
+        url = f"{_API_URL}?dataset=TaiwanStockInfo&token={self.token}"
+        try:
+            resp = requests.get(url, timeout=30)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+        except Exception as e:
+            return pd.DataFrame()
+        df = pd.DataFrame(data)
+        if df.empty:
+            return df
+        keep = [c for c in ("stock_id", "stock_name", "industry_category", "type") if c in df]
+        return df[keep]
+
+    # ─────────────────────────────────────
     # 融資融券
     # ─────────────────────────────────────
     def get_margin(self, ticker: str, start: date, end: date) -> pd.DataFrame:
