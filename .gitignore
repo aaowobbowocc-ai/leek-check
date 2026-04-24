@@ -8,6 +8,7 @@ config/.env
 data/assets.json
 data/cache/
 data/history/
+data/paper_trades/
 logs/
 .pytest_cache/
 .mypy_cache/
