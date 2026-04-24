@@ -49,13 +49,21 @@ class FugleClient:
 
     @staticmethod
     def _yfinance_quote(ticker: str) -> float:
+        import pandas as pd
         import yfinance as yf  # type: ignore
 
         tw_ticker = ticker if "." in ticker else f"{ticker}.TW"
         hist = yf.download(tw_ticker, period="5d", auto_adjust=True, progress=False)
         if hist.empty:
             raise ValueError(f"yfinance 無法取得 {tw_ticker} 的報價")
+        # 新版 yfinance 單 ticker 也回 MultiIndex columns → 展平
+        if isinstance(hist.columns, pd.MultiIndex):
+            hist.columns = hist.columns.get_level_values(0)
         close = hist["Close"].dropna()
         if close.empty:
             raise ValueError(f"yfinance {tw_ticker} 近 5 日無收盤價")
-        return float(close.iloc[-1])
+        last = close.iloc[-1]
+        # squeeze() 處理單一元素殘留 Series 的情境
+        if hasattr(last, "item"):
+            return float(last.item() if hasattr(last, "item") else last)
+        return float(last)

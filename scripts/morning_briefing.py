@@ -48,6 +48,7 @@ from src.data.finmind_client import FinMindClient
 from src.data.fugle_client import FugleClient
 from src.data.news_collector import NewsCollector
 from src.portfolio.asset_manager import AssetManager
+from src.portfolio.paper_tracker import record_daily as paper_record_daily
 from src.report.daily_report import render_morning_report, save_and_print
 from src.risk.concept_drift import ConceptDriftDetector
 from src.strategy.scoring_pipeline import (
@@ -76,6 +77,7 @@ NEWS_KEYWORDS_YAML = CONFIG / "news_keywords.yaml"
 ASSETS_JSON = ROOT / "data" / "assets.json"
 CACHE_DIR = ROOT / "data" / "cache"
 DRIFT_LOG = ROOT / "data" / "state" / "drift_log.parquet"
+PAPER_TRADES_DIR = ROOT / "data" / "paper_trades"
 
 
 def _load_watchlist() -> dict[str, str]:
@@ -160,17 +162,25 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
             logger.warning("    OHLCV 失敗: %s", e)
             continue
 
+        import pandas as pd
+        inst = broker = concentration = margin = pd.DataFrame()
         if finmind_token:
             try:
                 inst = finmind.get_institutional(ticker, start_date, as_of_date)
+            except Exception as e:
+                logger.warning("    FinMind institutional 失敗: %s", e)
+            try:
                 broker = finmind.get_broker_distribution(ticker, as_of_date - timedelta(days=3), as_of_date)
             except Exception as e:
-                logger.warning("    FinMind 失敗: %s", e)
-                import pandas as pd
-                inst, broker = pd.DataFrame(), pd.DataFrame()
-        else:
-            import pandas as pd
-            inst, broker = pd.DataFrame(), pd.DataFrame()
+                logger.warning("    FinMind broker 失敗: %s", e)
+            try:
+                concentration = finmind.get_foreign_ownership(ticker, start_date, as_of_date)
+            except Exception as e:
+                logger.warning("    FinMind 外資持股 失敗: %s", e)
+            try:
+                margin = finmind.get_margin(ticker, start_date, as_of_date)
+            except Exception as e:
+                logger.warning("    FinMind 融資融券 失敗: %s", e)
 
         if not ohlcv.empty:
             recent_vol = int(ohlcv.sort_values("date").iloc[-1]["volume"])
@@ -197,6 +207,8 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
                 shares_outstanding=shares.get(ticker, 1_000_000_000),
                 recent_volume=recent_vol,
                 sentiment=sentiment,
+                concentration=concentration,
+                margin=margin,
             )
         )
 
@@ -226,7 +238,12 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
     taiex_close = 0.0
     taiex_above_ma = True
     if not taiex.empty:
-        taiex_close = float(taiex.sort_values("date").iloc[-1]["close"])
+        taiex_sorted = taiex.sort_values("date")
+        taiex_close = float(taiex_sorted.iloc[-1]["close"])
+        # 月線 = 20 日 SMA（台股慣例），盤前判斷用前日收盤
+        if len(taiex_sorted) >= 20:
+            ma20 = float(taiex_sorted["close"].tail(20).mean())
+            taiex_above_ma = taiex_close > ma20
 
     report_md = render_morning_report(
         pipeline_out=pipe_out,
@@ -242,6 +259,18 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
 
     save_and_print(report_md, as_of_date)
     logger.info("晨報完成 → logs/%s.md", as_of_date)
+
+    # ── Paper Trading 快照（Phase 10）────────────
+    # 防守模式下 pipe_out.recommendations 為空，仍寫空檔以保留「當日系統有在跑」的軌跡
+    if not dry_run:
+        paper_path = paper_record_daily(
+            PAPER_TRADES_DIR, as_of_date, pipe_out.recommendations
+        )
+        n = len(pipe_out.recommendations)
+        logger.info(
+            "Paper trade 快照：%s 筆推薦 → %s",
+            n, paper_path.relative_to(ROOT),
+        )
 
 
 # ─────────────────────────────────────────
