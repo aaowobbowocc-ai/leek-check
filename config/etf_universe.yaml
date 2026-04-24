@@ -1,0 +1,40 @@
+# ETF 動能輪動池（Phase 15）
+#
+# 選擇原則：
+#   1. 純股票 ETF（不混比特幣 / 商品，避免波動特性破壞 momentum 判讀）
+#   2. 各自代表不同 beta / factor tilt，可輪動時有差異化
+#   3. 流動性充足（日均成交金額 > 1 億）
+#   4. 上市時間 ≥ 3 年（至少能跑 2020-2023 的壓力測試）
+#
+# 不包含：
+#   - 00893 (半導體反向) — 方向性反向，不適合 momentum
+#   - 00687B (長債) — 資產類別跨太大，簡化策略不處理
+#   - 比特幣 ETF — 波動 5-10x 股票，會讓 momentum 永遠輪到它
+
+etfs:
+  - ticker: "0050"
+    name: "元大台灣50"
+    tilt: "大盤核心"
+  - ticker: "00878"
+    name: "國泰永續高股息"
+    tilt: "高股息價值"
+  - ticker: "00891"
+    name: "中信關鍵半導體"
+    tilt: "半導體純 play"
+  - ticker: "00900"
+    name: "富邦特選高股息"
+    tilt: "高股息動能版"
+  - ticker: "00919"
+    name: "群益台灣精選高息"
+    tilt: "高息成長均衡"
+  - ticker: "00881"
+    name: "國泰台灣5G+"
+    tilt: "5G / 電信題材"
+
+# 策略參數
+strategy:
+  lookback_months: 6         # 評分用過去 6 個月報酬
+  top_n: 2                   # 每月選 top N 持有
+  rebalance_day: 1           # 每月第一個交易日 rebalance
+  equal_weight: true         # top N 間均分
+  cash_when_all_negative: true   # 全部 6 個月報酬為負 → 全現金防禦
