@@ -104,7 +104,7 @@ def main() -> None:
         )
         print(f"寫入：{industry_path}（{len(by_industry)} 個產業）")
 
-    print("\n✅ 完成。下一步（Phase 16 下次執行）：")
+    print("\n[OK] 完成。下一步（Phase 16 下次執行）：")
     print("  1. 建 scripts/quality_momentum_backtest.py 讀這份 universe")
     print("  2. 對每檔跑 compute_ticker_factors() → 橫斷面 z-score 合成")
     print("  3. 月選 top 20，回測 2020-2026 比較 0050")
