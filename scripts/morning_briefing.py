@@ -58,6 +58,13 @@ from src.report.allocation_advisor import (
     is_quarterly_rebalance_day,
     render_allocation_section,
 )
+from src.report.macro_dashboard import (
+    ETF_PREMIUM_REFERENCES,
+    compute_taiex_sp500_correlation,
+    estimate_etf_premium,
+    render_macro_section,
+    vix_status,
+)
 from src.report.daily_report import render_morning_report, save_and_print
 from src.risk.concept_drift import ConceptDriftDetector
 from src.strategy.scoring_pipeline import (
@@ -310,6 +317,52 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
 
     if advisor_md:
         report_md = report_md.rstrip() + "\n\n---\n\n" + advisor_md
+
+    # ── 全球宏觀儀表板（Phase 17c）──────────────────
+    macro_md = ""
+    try:
+        cache_yf = CACHE_DIR / "yfinance" / "tw_ohlcv"
+
+        # Correlation
+        sp500 = pd.DataFrame()
+        sp500_path = cache_yf / "^GSPC.parquet"
+        if sp500_path.exists():
+            sp500 = pd.read_parquet(sp500_path)
+        else:
+            # Fallback: 嘗試 yfinance 即時抓 ^GSPC（少量請求 OK）
+            try:
+                import yfinance as yf
+                raw = yf.download("^GSPC", period="6mo", progress=False, auto_adjust=True)
+                if isinstance(raw.columns, pd.MultiIndex):
+                    raw.columns = raw.columns.get_level_values(0)
+                sp500 = raw.reset_index().rename(columns={"Date": "date", "Close": "close"})
+                sp500["date"] = pd.to_datetime(sp500["date"]).dt.date
+            except Exception:
+                pass
+
+        corr = compute_taiex_sp500_correlation(taiex, sp500, window_days=60) if not taiex.empty else None
+        vix = vix_status(float(overnight.get("vix", 15.0))) if isinstance(overnight, dict) else vix_status(overnight.vix)
+
+        # ETF 折溢價（用快取資料）
+        usd_twd_rate = 32.0   # 預設值，後續可改用即時匯率
+        etf_premiums = []
+        for tw_tk, info in ETF_PREMIUM_REFERENCES.items():
+            tw_path = cache_yf / f"{tw_tk}.parquet"
+            ref_path = cache_yf / f"{info['ref']}.parquet"
+            if not tw_path.exists() or not ref_path.exists():
+                continue
+            tw_df = pd.read_parquet(tw_path)
+            ref_df = pd.read_parquet(ref_path)
+            p = estimate_etf_premium(tw_tk, tw_df, ref_df, usd_twd_rate)
+            if p is not None:
+                etf_premiums.append(p)
+
+        macro_md = render_macro_section(corr, vix, etf_premiums)
+    except Exception as e:
+        logger.warning("宏觀儀表板生成失敗: %s", e)
+
+    if macro_md:
+        report_md = report_md.rstrip() + "\n\n---\n\n" + macro_md
 
     save_and_print(report_md, as_of_date)
     logger.info("晨報完成 → logs/%s.md", as_of_date)
