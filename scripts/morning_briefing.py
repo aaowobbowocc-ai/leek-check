@@ -46,7 +46,10 @@ import yaml
 from src.data.adr_fetcher import get_overnight_report, get_tw_ohlcv_adjusted
 from src.data.finmind_client import FinMindClient
 from src.data.fugle_client import FugleClient
+from src.data.hybrid_client import HybridClient
+from src.data.mops_client import MOPSClient
 from src.data.news_collector import NewsCollector
+from src.data.twse_client import TWSEClient
 from src.portfolio.asset_manager import AssetManager
 from src.portfolio.paper_tracker import record_daily as paper_record_daily
 from src.report.allocation_advisor import (
@@ -144,7 +147,20 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
     watchlist = _load_watchlist()
     shares = _shares_outstanding()
     finmind_token = os.environ.get("FINMIND_TOKEN", "")
-    finmind = FinMindClient(token=finmind_token, cache_dir=CACHE_DIR / "finmind")
+    use_hybrid = os.environ.get("USE_HYBRID", "0") == "1"
+
+    if use_hybrid:
+        # Phase 17a：自抓器模式（取消 FinMind Sponsor 後的選擇）
+        # PER / 法人 / 月營收 走 TWSE/MOPS；分點籌碼仍用 FinMind（無替代）
+        finmind_backend = FinMindClient(token=finmind_token, cache_dir=CACHE_DIR / "finmind") if finmind_token else None
+        finmind = HybridClient(
+            twse=TWSEClient(),
+            mops=MOPSClient(),
+            finmind=finmind_backend,
+        )
+        logger.info("使用 HybridClient（自抓器模式：TWSE PER/法人 + MOPS 月營收）")
+    else:
+        finmind = FinMindClient(token=finmind_token, cache_dir=CACHE_DIR / "finmind")
     news_coll = NewsCollector(NEWS_KEYWORDS_YAML)
 
     # Claude 情緒分析
