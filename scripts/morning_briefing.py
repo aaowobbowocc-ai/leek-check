@@ -49,6 +49,12 @@ from src.data.fugle_client import FugleClient
 from src.data.news_collector import NewsCollector
 from src.portfolio.asset_manager import AssetManager
 from src.portfolio.paper_tracker import record_daily as paper_record_daily
+from src.report.allocation_advisor import (
+    StockTracker,
+    detect_regime,
+    is_quarterly_rebalance_day,
+    render_allocation_section,
+)
 from src.report.daily_report import render_morning_report, save_and_print
 from src.risk.concept_drift import ConceptDriftDetector
 from src.strategy.scoring_pipeline import (
@@ -256,6 +262,38 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
         taiex_above_ma=taiex_above_ma,
         asset_manager=am if am else None,
     )
+
+    # ── 全球配置 + 部位建議（Phase 17a）──────────────
+    advisor_md = ""
+    try:
+        regime = detect_regime(taiex) if not taiex.empty else None
+
+        # 個股追蹤：2345 智邦 OCO 停損停利
+        stock_trackers: list[StockTracker] = []
+        for tk, name, cost, stop, target in [
+            ("2345", "智邦", 2139.0, 1925.0, 2460.0),
+        ]:
+            try:
+                df = pd.read_parquet(ROOT / f"data/cache/yfinance/tw_ohlcv/{tk}.parquet")
+                cur = float(df.sort_values("date").iloc[-1]["close"])
+                stock_trackers.append(
+                    StockTracker(ticker=tk, name=name, cost=cost,
+                                  current=cur, stop_loss=stop, take_profit=target)
+                )
+            except Exception:
+                pass
+
+        advisor_md = render_allocation_section(
+            regime=regime,
+            stock_trackers=stock_trackers,
+            drift_checks=None,
+            is_rebalance_day=is_quarterly_rebalance_day(as_of_date),
+        )
+    except Exception as e:
+        logger.warning("配置建議生成失敗: %s", e)
+
+    if advisor_md:
+        report_md = report_md.rstrip() + "\n\n---\n\n" + advisor_md
 
     save_and_print(report_md, as_of_date)
     logger.info("晨報完成 → logs/%s.md", as_of_date)
