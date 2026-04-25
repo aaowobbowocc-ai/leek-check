@@ -38,6 +38,20 @@ ETF_PREMIUM_REFERENCES: dict[str, dict[str, str]] = {
     "00643": {"name": "FH 印度", "ref": "INDA", "ref_name": "iShares 印度"},
     "00885": {"name": "富邦越南", "ref": "VNM", "ref_name": "VanEck 越南"},
     "00662": {"name": "富邦 NASDAQ", "ref": "QQQ", "ref_name": "美股 NASDAQ-100"},
+    "00684R": {"name": "期日經反 1", "ref": "EWJ", "ref_name": "iShares 日本"},
+    "00657": {"name": "國泰美中台", "ref": "VOO", "ref_name": "美股大盤"},
+}
+
+# 全球建議配置 — 含日本價值（DXJ 10 年贏 EWJ 240pp，真正能 alpha 的市場）
+GLOBAL_ALLOCATION_TARGETS = {
+    "🇹🇼 TW 留存": {"target_pct": 28, "tickers": ["0050", "00878"]},
+    "🇺🇸 美股大盤": {"target_pct": 18, "tickers": ["VOO", "00646"]},
+    "🇯🇵 日本價值": {"target_pct": 8, "tickers": ["DXJ"]},  # 新增
+    "🇮🇳 印度": {"target_pct": 8, "tickers": ["INDA", "00643"]},
+    "🇻🇳 越南": {"target_pct": 4, "tickers": ["VNM", "00885"]},
+    "🛡️ 黃金": {"target_pct": 5, "tickers": ["GLD", "00635U"]},
+    "🎰 樂透小注": {"target_pct": 3, "tickers": []},  # 妖股雷達 + 早期 hunter
+    "💰 現金 buffer": {"target_pct": 26, "tickers": []},
 }
 
 

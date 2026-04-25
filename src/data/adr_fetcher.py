@@ -150,27 +150,43 @@ def get_tw_ohlcv_adjusted(
 
 
 def _yf_download(ticker: str, start: date, end: date) -> pd.DataFrame:
+    """
+    嘗試從 yfinance 抓 OHLCV。
+    台股 4 碼數字代號：先試 .TW（上市），空則 fallback .TWO（上櫃）。
+    這修補了之前漏抓所有上櫃股票（如 3595 山太士）的 bug。
+    """
     import yfinance as yf  # type: ignore
+    import pandas as _pd
 
-    tw_sym = ticker if ("." in ticker or ticker.startswith("^")) else f"{ticker}.TW"
-    # 多取一天確保 end 日有資料（yfinance end 是 exclusive）
-    raw = yf.download(
-        tw_sym,
-        start=start.isoformat(),
-        end=(end + timedelta(days=1)).isoformat(),
-        auto_adjust=True,
-        progress=False,
-    )
-    # yfinance ≥ 0.2.x 會回傳 MultiIndex columns，壓平成單層
-    if isinstance(raw.columns, __import__("pandas").MultiIndex):
-        raw.columns = raw.columns.get_level_values(0)
-    if raw.empty:
-        return pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+    # 已含 suffix（如 ^TWII / SPY）→ 直接用
+    if "." in ticker or ticker.startswith("^") or not ticker.replace(".", "").isdigit():
+        candidates = [ticker]
+    else:
+        # 4 碼數字台股 → 先 .TW，失敗 fallback .TWO（上櫃）
+        candidates = [f"{ticker}.TW", f"{ticker}.TWO"]
 
-    raw = raw.reset_index()
-    raw.columns = [c.lower() for c in raw.columns]
-    raw = raw.rename(columns={"index": "date"} if "index" in raw.columns else {})
-    raw["date"] = pd.to_datetime(raw["date"]).dt.date
-    return raw[["date", "open", "high", "low", "close", "volume"]].dropna(
-        subset=["close"]
-    )
+    end_iso = (end + timedelta(days=1)).isoformat()
+    for sym in candidates:
+        try:
+            raw = yf.download(
+                sym,
+                start=start.isoformat(),
+                end=end_iso,
+                auto_adjust=True,
+                progress=False,
+            )
+        except Exception:
+            continue
+        if isinstance(raw.columns, _pd.MultiIndex):
+            raw.columns = raw.columns.get_level_values(0)
+        if raw.empty or "Close" not in raw.columns:
+            continue
+        raw = raw.reset_index()
+        raw.columns = [c.lower() for c in raw.columns]
+        raw = raw.rename(columns={"index": "date"} if "index" in raw.columns else {})
+        raw["date"] = _pd.to_datetime(raw["date"]).dt.date
+        return raw[["date", "open", "high", "low", "close", "volume"]].dropna(
+            subset=["close"]
+        )
+
+    return _pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
