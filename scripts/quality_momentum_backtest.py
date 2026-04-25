@@ -44,6 +44,7 @@ except ImportError:
 from src.data.adr_fetcher import get_tw_ohlcv_adjusted
 from src.data.finmind_client import FinMindClient
 from src.strategy.quality_momentum import (
+    WEIGHT_PRESETS,
     FactorWeights,
     compute_ticker_factors,
     cross_sectional_score,
@@ -439,6 +440,9 @@ def main() -> None:
                     help="券商手續費折扣（1.0=標準, 0.3=三折）")
     ap.add_argument("--rebate-pct", type=float, default=0.0,
                     help="手續費月退比例（0=無退, 0.7=七成月退）")
+    ap.add_argument("--preset", type=str, default="balanced",
+                    choices=list(WEIGHT_PRESETS.keys()),
+                    help="因子權重 preset：balanced/momentum/value/quality/deep_value")
     args = ap.parse_args()
 
     start = date.fromisoformat(args.start)
@@ -447,7 +451,8 @@ def main() -> None:
 
     universe = load_universe(limit=args.universe_limit)
 
-    weights = FactorWeights()    # 預設 30/25/20/15/10
+    weights = WEIGHT_PRESETS[args.preset]
+    print(f"  使用 preset={args.preset}: {weights}")
     history, metrics = run_backtest(
         start=start, end=end, top_n=args.top_n,
         initial_equity=args.initial_equity,

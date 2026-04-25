@@ -56,6 +56,16 @@ class FactorWeights:
     revenue_growth: float = 0.10
 
 
+# 預設權重組合 — CLI 用 --preset 指定
+WEIGHT_PRESETS: dict[str, "FactorWeights"] = {
+    "balanced": FactorWeights(),                                        # 30/25/20/15/10
+    "momentum": FactorWeights(0.50, 0.20, 0.10, 0.10, 0.10),             # 動能掛帥
+    "value": FactorWeights(0.10, 0.30, 0.35, 0.15, 0.10),                # 價值優先（Magic Formula 風格）
+    "quality": FactorWeights(0.15, 0.40, 0.20, 0.15, 0.10),              # 品質優先（Buffett 風格）
+    "deep_value": FactorWeights(0.05, 0.20, 0.50, 0.15, 0.10),           # 深度價值（Graham 風格）
+}
+
+
 # ─────────────────────────────────────────
 # 個別因子計算
 # ─────────────────────────────────────────
