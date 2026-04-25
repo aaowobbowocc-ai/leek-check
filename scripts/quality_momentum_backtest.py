@@ -54,9 +54,9 @@ CACHE_YF = ROOT / "data" / "cache" / "yfinance"
 LOGS_DIR = ROOT / "logs"
 BENCHMARK_TICKER = "0050"
 
-# 個股成本（比 ETF 貴）
-BUY_FEE = 0.001425
-SELL_FEE = 0.001425
+# 個股成本（手續費 + 證交稅 + 滑價）
+# 預設 = 不折扣 + 0% 月退；user 用 --fee-discount 0.3 --rebate 0.7 套自己條件
+STD_FEE_RATE = 0.001425
 STOCK_TAX = 0.003
 SLIPPAGE = 0.001
 
@@ -72,51 +72,92 @@ class MonthlyRebalance:
     universe_size: int
 
 
-def roundtrip_cost() -> float:
-    return BUY_FEE + SELL_FEE + STOCK_TAX + SLIPPAGE * 2   # 往返約 0.785%
+def roundtrip_cost(fee_discount: float = 1.0, rebate_pct: float = 0.0) -> float:
+    """
+    fee_discount: 券商手續費折扣係數（1.0 = 標準費率, 0.3 = 三折）
+    rebate_pct:   手續費月退比例（0 = 沒退, 0.7 = 七成月退）
+    回傳：個股往返總成本比率（買賣手續費實付 + 證交稅 + 雙邊滑價）
+    """
+    effective_fee = STD_FEE_RATE * fee_discount * (1.0 - rebate_pct)
+    return effective_fee * 2 + STOCK_TAX + SLIPPAGE * 2
 
 
 def load_universe(limit: int | None = None) -> list[str]:
     raw = yaml.safe_load(UNIVERSE_PATH.read_text(encoding="utf-8"))
     tickers = sorted(raw.get("tickers", []))
+    # 排除 bulk_fetch 已知失敗的 tickers（避免每月對 delisted 股仍打 yfinance）
+    fail_log = LOGS_DIR / "bulk_fetch_failures.txt"
+    if fail_log.exists():
+        failed = set(fail_log.read_text(encoding="utf-8").strip().splitlines())
+        tickers = [t for t in tickers if t not in failed]
+        print(f"  排除 {len(failed)} 檔 bulk_fetch 失敗（剩 {len(tickers)}）")
     if limit:
         tickers = tickers[:limit]
     return tickers
 
 
+def _read_parquet_safe(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_parquet(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _normalize_per_pbr_inline(df: pd.DataFrame) -> pd.DataFrame:
+    """FinMind cache 存的是 raw（PER/PBR 大寫），這裡 lazy normalize。"""
+    if df.empty:
+        return df
+    out = df.rename(columns={"PER": "per", "PBR": "pbr"}).copy()
+    for c in ("per", "pbr", "dividend_yield"):
+        if c in out:
+            out[c] = pd.to_numeric(out[c], errors="coerce")
+    return out
+
+
+def _normalize_revenue_inline(df: pd.DataFrame) -> pd.DataFrame:
+    """補 revenue_yoy / revenue_mom 欄位，從 FinMind raw 命名。"""
+    if df.empty:
+        return df
+    out = df.rename(
+        columns={
+            "revenue_growth_rate": "revenue_mom",
+            "RevenueGrowthRate": "revenue_yoy",
+        }
+    ).copy()
+    # FinMind 沒直接給 YoY，自己從 revenue 序列算
+    if "revenue_yoy" not in out.columns and "revenue" in out.columns:
+        out = out.sort_values("date").reset_index(drop=True)
+        out["revenue_yoy"] = (
+            out["revenue"].astype(float) / out["revenue"].astype(float).shift(12) - 1
+        ) * 100.0
+    for c in ("revenue", "revenue_yoy", "revenue_mom"):
+        if c in out:
+            out[c] = pd.to_numeric(out[c], errors="coerce")
+    return out
+
+
 def load_ticker_bundle(
     ticker: str,
-    finmind: FinMindClient,
     start: date,
     end: date,
 ) -> dict[str, pd.DataFrame]:
-    """從快取讀某檔所有必要資料。API 失敗則回空 DataFrame。"""
-    ohlcv = pd.DataFrame()
-    try:
-        ohlcv = get_tw_ohlcv_adjusted(ticker, start, end, cache_dir=CACHE_YF)
-    except Exception:
-        pass
+    """
+    純從 parquet 快取讀 + lazy normalize（避免重打 FinMind API）。
+    bulk_fetch_universe.py 已預先填好快取。
+    """
+    cache_root = ROOT / "data" / "cache"
+    ohlcv = _read_parquet_safe(cache_root / "yfinance" / "tw_ohlcv" / f"{ticker}.parquet")
 
-    per_pbr = pd.DataFrame()
-    try:
-        per_pbr = finmind.get_per_pbr(ticker, start, end)
-    except Exception:
-        pass
-
-    financials = pd.DataFrame()
-    try:
-        # 多抓 2 年 buffer 供 TTM ROE 計算
-        fs_start = date(start.year - 2, start.month, 1)
-        financials = finmind.get_financial_statements(ticker, fs_start, end)
-    except Exception:
-        pass
-
-    revenue = pd.DataFrame()
-    try:
-        rev_start = date(start.year - 1, start.month, 1)
-        revenue = finmind.get_monthly_revenue(ticker, rev_start, end)
-    except Exception:
-        pass
+    finmind_root = cache_root / "finmind" / "finmind"
+    per_pbr = _normalize_per_pbr_inline(
+        _read_parquet_safe(finmind_root / f"TaiwanStockPER_{ticker}.parquet")
+    )
+    financials = _read_parquet_safe(finmind_root / f"TaiwanStockFinancialStatements_{ticker}.parquet")
+    revenue = _normalize_revenue_inline(
+        _read_parquet_safe(finmind_root / f"TaiwanStockMonthRevenue_{ticker}.parquet")
+    )
 
     return {"ohlcv": ohlcv, "per_pbr": per_pbr, "financials": financials, "revenue": revenue}
 
@@ -182,32 +223,39 @@ def run_backtest(
     initial_equity: float,
     universe: list[str],
     weights: FactorWeights,
-    finmind: FinMindClient,
+    fee_discount: float = 1.0,
+    rebate_pct: float = 0.0,
 ) -> tuple[list[MonthlyRebalance], dict]:
 
     rebalance_dates = month_starts(start, end)
-    print(f"[1/3] 載入 {len(universe)} 檔資料（從快取）", flush=True)
+    print(f"[1/3] 載入 {len(universe)} 檔資料（從 parquet 快取）", flush=True)
 
-    # 一次性讀入所有 ticker 資料（快取存在就很快）
     bundles: dict[str, dict[str, pd.DataFrame]] = {}
+    skipped_no_ohlcv = 0
     for i, tk in enumerate(universe, 1):
-        if i % 100 == 0 or i == len(universe):
+        if i % 200 == 0 or i == len(universe):
             print(f"    [{i}/{len(universe)}]", flush=True)
-        bundles[tk] = load_ticker_bundle(tk, finmind, start, end)
+        bundle = load_ticker_bundle(tk, start, end)
+        if bundle["ohlcv"].empty:
+            skipped_no_ohlcv += 1
+            continue
+        bundles[tk] = bundle
+    if skipped_no_ohlcv:
+        print(f"    跳過 {skipped_no_ohlcv} 檔無 OHLCV 快取", flush=True)
 
     # Benchmark
-    bm_ohlcv = pd.DataFrame()
-    try:
-        bm_ohlcv = get_tw_ohlcv_adjusted(BENCHMARK_TICKER, start, end, cache_dir=CACHE_YF)
-    except Exception:
-        pass
+    bm_ohlcv = _read_parquet_safe(
+        ROOT / "data" / "cache" / "yfinance" / "tw_ohlcv" / f"{BENCHMARK_TICKER}.parquet"
+    )
 
     print(f"[2/3] 回測：{len(rebalance_dates)} 個月 × top {top_n}", flush=True)
 
     cash = initial_equity
     holdings: dict[str, int] = {}
     history: list[MonthlyRebalance] = []
-    half_cost = roundtrip_cost() / 2
+    half_cost = roundtrip_cost(fee_discount=fee_discount, rebate_pct=rebate_pct) / 2
+    print(f"  往返成本：{roundtrip_cost(fee_discount, rebate_pct) * 100:.3f}% "
+          f"(fee_discount={fee_discount}, rebate={rebate_pct})", flush=True)
     t0 = time.time()
 
     for i, d in enumerate(rebalance_dates, 1):
@@ -387,22 +435,24 @@ def main() -> None:
     ap.add_argument("--initial-equity", type=float, default=1_000_000.0)
     ap.add_argument("--universe-limit", type=int, default=None,
                     help="只用 universe 前 N 檔（MVP 用 500 快跑）")
+    ap.add_argument("--fee-discount", type=float, default=1.0,
+                    help="券商手續費折扣（1.0=標準, 0.3=三折）")
+    ap.add_argument("--rebate-pct", type=float, default=0.0,
+                    help="手續費月退比例（0=無退, 0.7=七成月退）")
     args = ap.parse_args()
 
     start = date.fromisoformat(args.start)
     end = date.fromisoformat(args.end)
     LOGS_DIR.mkdir(exist_ok=True)
 
-    import os
-    token = os.environ.get("FINMIND_TOKEN", "")
-    finmind = FinMindClient(token=token)
     universe = load_universe(limit=args.universe_limit)
 
     weights = FactorWeights()    # 預設 30/25/20/15/10
     history, metrics = run_backtest(
         start=start, end=end, top_n=args.top_n,
         initial_equity=args.initial_equity,
-        universe=universe, weights=weights, finmind=finmind,
+        universe=universe, weights=weights,
+        fee_discount=args.fee_discount, rebate_pct=args.rebate_pct,
     )
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

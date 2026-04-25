@@ -113,21 +113,35 @@ def factor_value_earnings_yield(per_pbr: pd.DataFrame, as_of: date) -> float | N
 
 def factor_quality_roe(financials: pd.DataFrame, as_of: date) -> float | None:
     """
-    ROE (TTM 近似值): 取最近 4 季 ROE 平均（若不足則取最近一筆）。
+    Quality 因子（自動降級）：
+      - 優先用 ROE（如果 FinMind 該檔有 type=ROE）
+      - 否則用 EPS 年增率（最近 4 季 EPS 平均 vs 前 4 季）作為 quality 替代
+
     財報延後 3 個月才能看，避免 look-ahead。
     """
     if financials is None or financials.empty:
         return None
     df = financials.copy()
     df["date"] = pd.to_datetime(df["date"]).dt.date
-    cutoff = as_of - timedelta(days=90)         # 3 個月公告延遲假設
-    df = df[(df["date"] < cutoff) & (df["type"] == "ROE")].sort_values("date")
-    if df.empty:
+    cutoff = as_of - timedelta(days=90)
+    df = df[df["date"] < cutoff].sort_values("date")
+    if df.empty or "type" not in df.columns:
         return None
-    recent = df.tail(4)
-    if recent.empty:
-        return None
-    return float(recent["value"].mean())
+
+    # 路徑 A：直接用 ROE
+    roe_rows = df[df["type"] == "ROE"]
+    if not roe_rows.empty:
+        recent = roe_rows.tail(4)
+        return float(recent["value"].mean())
+
+    # 路徑 B：fallback 用 EPS 8 季資料 → (近 4 季均 / 前 4 季均 − 1)
+    eps_rows = df[df["type"] == "EPS"]
+    if len(eps_rows) >= 8:
+        recent_4 = float(eps_rows.tail(4)["value"].mean())
+        prior_4 = float(eps_rows.iloc[-8:-4]["value"].mean())
+        if prior_4 != 0:
+            return (recent_4 / prior_4 - 1.0) * 100.0   # 百分比
+    return None
 
 
 def factor_revenue_growth_yoy(revenue: pd.DataFrame, as_of: date) -> float | None:
