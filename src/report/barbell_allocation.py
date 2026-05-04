@@ -127,20 +127,54 @@ def _load_holdings() -> CurrentHoldings | None:
     )
 
 
+def _apply_hedge_tilt(target: dict[str, int]) -> tuple[dict[str, int], int, list[str]]:
+    """Apply hedge cash tilt: shift cash_tilt_pp from leverage/satellite to cash."""
+    try:
+        from .hedge_signals import compute_hedge_reading
+    except Exception:
+        return target, 0, []
+    h = compute_hedge_reading()
+    tilt = h.cash_tilt_pp
+    if tilt == 0:
+        return target, 0, h.notes
+    adjusted = dict(target)
+    # Take from leverage first, then satellite
+    take_from_leverage = min(adjusted["leverage_00631L"], tilt)
+    adjusted["leverage_00631L"] -= take_from_leverage
+    remaining = tilt - take_from_leverage
+    take_from_satellite = min(adjusted["satellite"], remaining)
+    adjusted["satellite"] -= take_from_satellite
+    remaining -= take_from_satellite
+    # If still need to take, reduce core (last resort)
+    if remaining > 0:
+        adjusted["core_0050"] -= remaining
+    adjusted["cash"] = 100 - adjusted["core_0050"] - adjusted["leverage_00631L"] - adjusted["satellite"]
+    return adjusted, tilt, h.notes
+
+
 def render_barbell_section() -> str:
     reading = compute_current_regime()
     if reading is None:
         return ""
 
-    target = ALLOCATION_TABLE.get(reading.regime)
-    if target is None:
+    base_target = ALLOCATION_TABLE.get(reading.regime)
+    if base_target is None:
         return ""
 
+    target, tilt, hedge_notes = _apply_hedge_tilt(base_target)
+
     lines = [
-        "## 💼 Barbell 配置建議（regime-aware）",
+        "## 💼 Barbell 配置建議（regime-aware + hedge overlay）",
         "",
         f"**當前 regime: `{reading.regime}`** （TAIEX dist MA200 {reading.dist_ma200:+.1f}%）",
         "",
+    ]
+    if tilt > 0:
+        lines.append(f"⚠️ **Hedge overlay 啟動**：cash +{tilt}pp（leverage/satellite 減倉）")
+        for note in hedge_notes:
+            lines.append(f"  - {note}")
+        lines.append("")
+    lines.extend([
         "### 目標配置",
         "",
         "| 類別 | 目標 % | 說明 |",
@@ -155,7 +189,7 @@ def render_barbell_section() -> str:
         "",
         f"**規則重點**：{REGIME_NOTES.get(reading.regime, '')}",
         "",
-    ]
+    ])
 
     # Compare with current holdings
     current = _load_holdings()
