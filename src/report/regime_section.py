@@ -35,19 +35,23 @@ class RegimeReading:
 
 
 REGIME_RULES = {
-    "CRASH": "🚨 CRASH - 全力部署現金，等 VIX 高點 30% 回落 → 加倍買 0050（89% win, fwd 20d +6%）",
-    "BEAR": "🟠 BEAR - hold 0050 不動，不加 00631L（daily reset decay）",
-    "SIDEWAYS": "🟡 SIDEWAYS - 0050 + Revenue YoY 衛星 20-30%（廣度因子適用區）",
-    "BULL_TREND": "🟢 BULL_TREND - 0050 加 20-30% 00631L 吃趨勢 (fwd 20d +2.32%)",
-    "STRONG_BULL": "🔴 STRONG_BULL - 減倉 20-30%，停 DCA，累積現金（fwd 20d -1.21% 是賣點）",
+    "CRASH": "🚨 CRASH - 鑽石買點！分批 5 日進場 0050 + 30% 00631L (Period B/C 100% win, +9.75-12.31%)",
+    "BEAR": "🟠 BEAR - hold 0050 不動，不加 00631L (decay)；可考慮 30-40% 現金等 CRASH 訊號",
+    "SIDEWAYS": "🟡 SIDEWAYS - 0050 + Revenue YoY 衛星 25%（跨 3 期都 +0.24~1.95% 穩定區）",
+    "BULL_TREND": "🟢 BULL_TREND - 0050 + 20-25% 00631L 吃趨勢（2020 後 +1.84~3.43% 穩定）",
+    "STRONG_BULL": (
+        "🔴 STRONG_BULL - 停 DCA + 累積現金。⚠️ 跨期不穩定: "
+        "2020-22 +0.31% (延續) / 2023-25 -2.13% (mean reversion)。"
+        "目前環境傾向後者，建議減倉 20%；激進派可 hold 不動但不加碼。"
+    ),
 }
 
 EXPECTED_FWD = {
-    "CRASH": "0050 +6.22% / 00631L +13.06% (89% win)",
-    "BEAR": "0050 +0.15% / 00631L +0.98% (44-48% win)",
-    "SIDEWAYS": "0050 +0.99% / 00631L +1.91% (65% win)",
-    "BULL_TREND": "0050 +2.32% / 00631L +3.96% (64% win)",
-    "STRONG_BULL": "0050 -1.21% / 00631L -3.14% (32-38% win) ⚠️",
+    "CRASH": "0050 +9.75% / 00631L +22.71% (100% win, n=34)",
+    "BEAR": "0050 +0.45% / 00631L +1.62% (47-51% win)",
+    "SIDEWAYS": "0050 +1.27% / 00631L +2.43% (66% win, 三期一致)",
+    "BULL_TREND": "0050 +2.33% / 00631L +3.83% (64% win)",
+    "STRONG_BULL": "0050 -0.62% (full) / 跨期 +0.31% vs -2.13% ⚠️ 不穩定",
 }
 
 
@@ -125,14 +129,14 @@ def render_regime_section() -> str:
         "",
         f"_歷史 fwd 20d: {reading.expected_fwd_20d}_",
         "",
-        "_分類規則 (5-regime mutually exclusive):_",
-        "- CRASH: 60d ret < -15% OR vol30 > 30%",
-        "- BEAR: dist MA200 < -5%（非 crash）",
+        "_分類規則 V2 (mutually exclusive，2026-05-04 修正):_",
+        "- CRASH: 60d ret < -15% AND vol30 > 25%",
+        "- BEAR: dist MA200 < -5% AND ret_60d < 0",
         "- SIDEWAYS: |dist MA200| < 5%",
         "- BULL_TREND: dist MA200 在 0-20%",
-        "- STRONG_BULL: dist MA200 > +20% AND vol30 < 18%",
+        "- STRONG_BULL: dist MA200 > +20%（vol gate 移除）",
         "",
-        "_實證 9 年 TAIEX (2017-2025), STRONG_BULL fwd 20d -1.21% 是 mean reversion 賣點_",
+        "_實證 9 年 TAIEX (2017-2025) + Period A/B/C walk-forward：CRASH 跨期 100% win（鑽石買點）；STRONG_BULL 跨期不穩定（+0.31% vs -2.13%）_",
         "",
     ]
     return "\n".join(lines)
