@@ -1243,6 +1243,40 @@ class Dashboard(tk.Tk):
         self.actions_tv.delete(*self.actions_tv.get_children())
         actions = []
 
+        # 1. Hero Action Advisor 的 Top 5 actions 也放進「下一個動作」面板
+        try:
+            from src.report.action_advisor import generate_actions
+            from src.report.regime_section import compute_current_regime
+            from src.report.hedge_signals import compute_hedge_reading
+            from src.report.barbell_allocation import (
+                ALLOCATION_TABLE, _apply_hedge_tilt, _load_holdings,
+            )
+            regime_r = compute_current_regime()
+            hedge_r = compute_hedge_reading()
+            holdings_dc = _load_holdings()
+            if regime_r and holdings_dc:
+                base_target = ALLOCATION_TABLE.get(regime_r.regime, {})
+                target, _, _ = _apply_hedge_tilt(base_target)
+                cash_total = holdings_dc.cash_pct / 100 * holdings_dc.total_value
+                hero_actions = generate_actions(
+                    regime_r, hedge_r, target, holdings_dc,
+                    holdings_dc.total_value, cash_total,
+                )
+                priority_map = {
+                    "critical": "must", "warning": "must",
+                    "action": "suggest", "tweak": "suggest",
+                    "hold": "watch", "info": "watch",
+                }
+                for a in hero_actions[:3]:  # 取前 3 高優先序
+                    if a.priority == "hold":
+                        continue
+                    tag = priority_map.get(a.priority, "watch")
+                    label = f"{a.icon} {a.label}"
+                    detail = f"NT${a.amount_twd:,}" if a.amount_twd > 0 else ""
+                    actions.append((tag, label, detail))
+        except Exception as e:
+            self._log(f"hero actions sync: {e}")
+
         # 先抓即時價判斷追價需求 + 警報觸發
         def get_price(tk_):
             try:
