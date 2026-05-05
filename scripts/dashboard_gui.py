@@ -427,6 +427,67 @@ class Dashboard(tk.Tk):
         self._build_recent_trades(right)
         self._build_event_log(right)
 
+    def _add_tooltip(self, widget, text: str):
+        """Tkinter native tooltip (hover 顯示說明)。"""
+        tooltip = None
+
+        def show(event):
+            nonlocal tooltip
+            if tooltip is not None:
+                return
+            x, y, _, _ = widget.bbox("insert") if hasattr(widget, "bbox") else (0, 0, 0, 0)
+            x = widget.winfo_rootx() + 20
+            y = widget.winfo_rooty() + widget.winfo_height() + 5
+            tooltip = tk.Toplevel(widget)
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{x}+{y}")
+            label = tk.Label(
+                tooltip, text=text, justify="left",
+                background="#2a2a2a", foreground="#e0e0e0",
+                relief="solid", borderwidth=1,
+                font=(self.UI_FONT, 9), wraplength=350, padx=8, pady=6,
+            )
+            label.pack()
+
+        def hide(event):
+            nonlocal tooltip
+            if tooltip is not None:
+                tooltip.destroy()
+                tooltip = None
+
+        widget.bind("<Enter>", show)
+        widget.bind("<Leave>", hide)
+
+    # 專業詞彙解說（給 _add_tooltip 用）
+    GLOSSARY = {
+        "z-score":
+            "標準差倍數。z=0 為平均值，|z|>2 通常視為極端事件 (約 95%以外的尾部)。"
+            "例: TX OI z=-2 = 外資台指期空單堆積至過去 252 日平均之下 2 個標準差。",
+        "pp":
+            "Percentage points (百分點). +24pp 不是 +24%。"
+            "例: 部位從 4% 變到 28% 是 +24pp 的差距。",
+        "regime":
+            "5-regime classifier (V2 2026-05-04):\n"
+            "• CRASH: 60d ret <-15% AND vol30 >25% (鑽石買點)\n"
+            "• BEAR: dist MA200 <-5% AND ret_60d <0\n"
+            "• SIDEWAYS: |dist MA200| <5%\n"
+            "• BULL_TREND: dist MA200 在 0-20%\n"
+            "• STRONG_BULL: dist MA200 >+20%",
+        "VIX":
+            "S&P 500 隱含波動度（30 日 forward）。"
+            ">30 = panic, <15 = complacency。"
+            "VIX/VIX3M 比值 >1.05 = term structure 警戒（短期恐慌 > 中期）。",
+        "TX OI":
+            "外資台指期 net open interest (淨未平倉)。"
+            "z<-2 = 外資極度偏空 → 歷史 10d TAIEX alpha +1.43% (mean reversion)。",
+        "barbell":
+            "8-bucket 槓鈴配置: 核心 TW + 美股 + 黃金 + 日股 + 槓桿 + 衛星 + legacy + 現金。"
+            "deltas 顯示與目標差距。",
+        "L4 流動性":
+            "日均成交額 > 10 億 NT$ 的大型股。"
+            "Revenue YoY portfolio 經 L4 filter 後 alpha +25.7%/yr (vs 0050 +21.7%)。",
+    }
+
     def _section(self, parent, title: str) -> ttk.Frame:
         frame = ttk.Frame(parent, style="Card.TFrame", padding=(15, 10))
         frame.pack(fill="x", pady=(0, 8))
@@ -495,10 +556,11 @@ class Dashboard(tk.Tk):
 
     def _build_v2_regime(self, parent):
         """V2 5-regime classifier (CRASH / BEAR / SIDEWAYS / BULL_TREND / STRONG_BULL)"""
-        body = self._section(parent, "🎯 市場 Regime V2 (5-regime classifier)")
+        body = self._section(parent, "🎯 市場 Regime V2 (5-regime classifier) ⓘ")
         self.v2_regime_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
                                           font=(self.UI_FONT, 13, "bold"))
         self.v2_regime_label.pack(anchor="w", pady=2)
+        self._add_tooltip(self.v2_regime_label, self.GLOSSARY["regime"])
         self.v2_regime_metrics = ttk.Label(body, text="", style="Card.TLabel",
                                             foreground=COLORS["fg_dim"])
         self.v2_regime_metrics.pack(anchor="w", pady=1)
@@ -508,18 +570,30 @@ class Dashboard(tk.Tk):
 
     def _build_hedge_signals(self, parent):
         """5 hedge signals overlay"""
-        body = self._section(parent, "🛡️ Hedge Signals (5-signal crash overlay)")
+        body = self._section(parent, "🛡️ Hedge Signals (5-signal crash overlay) ⓘ")
         self.hedge_tilt_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
                                            font=(self.UI_FONT, 12, "bold"))
         self.hedge_tilt_label.pack(anchor="w", pady=2)
+        self._add_tooltip(self.hedge_tilt_label,
+                           "Cash tilt: 因 hedge 訊號疊加而要超出 baseline 的現金比例。"
+                           "0pp = 正常；>10pp = 警戒；>20pp = 多重危機觸發。")
         self.hedge_signals_grid = ttk.Frame(body, style="Card.TFrame")
         self.hedge_signals_grid.pack(fill="x", pady=2)
         self.hedge_signal_labels = {}
+        sig_tooltips = {
+            "TX OI z": self.GLOSSARY["TX OI"],
+            "VIX": self.GLOSSARY["VIX"],
+            "VIX/VIX3M": "VIX (30d 隱含波動) / VIX3M (93d). >1.05 = 短期恐慌結構 (term backwardation).",
+            "TX basis": "TX 期貨 - TWII 現貨. |z|>2 = 極端結構 (informational only, OOS 1/3 robust).",
+            "SPY 隔夜": "SPY today close vs yesterday close (US 04:00 TW 時間). <-2% → TW 隔日 +0.86% reversion 傾向.",
+        }
         for i, sig in enumerate(["TX OI z", "VIX", "VIX/VIX3M", "TX basis", "SPY 隔夜"]):
             cell = ttk.Frame(self.hedge_signals_grid, style="Card.TFrame", padding=(4, 2))
             cell.grid(row=0, column=i, sticky="w", padx=(0, 12))
-            ttk.Label(cell, text=sig, style="Card.TLabel",
-                      foreground=COLORS["fg_dim"], font=(self.UI_FONT, 9)).pack(anchor="w")
+            name_lbl = ttk.Label(cell, text=sig + " ⓘ", style="Card.TLabel",
+                      foreground=COLORS["fg_dim"], font=(self.UI_FONT, 9))
+            name_lbl.pack(anchor="w")
+            self._add_tooltip(name_lbl, sig_tooltips.get(sig, ""))
             v = ttk.Label(cell, text="—", style="Card.TLabel",
                           font=(self.UI_FONT, 11, "bold"))
             v.pack(anchor="w")
@@ -527,7 +601,10 @@ class Dashboard(tk.Tk):
 
     def _build_barbell_target(self, parent):
         """Barbell allocation target vs current"""
-        body = self._section(parent, "💼 Barbell 配置（regime-aware target vs current）")
+        body = self._section(parent, "💼 Barbell 配置（regime-aware target vs current）ⓘ")
+        # Tooltip for the section title (need to grab the title label)
+        title_label = body.master.winfo_children()[0]  # the Section.TLabel
+        self._add_tooltip(title_label, self.GLOSSARY["barbell"])
         self.barbell_regime_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
                                                 font=(self.UI_FONT, 11, "bold"))
         self.barbell_regime_label.pack(anchor="w", pady=2)
@@ -1137,6 +1214,85 @@ class Dashboard(tk.Tk):
                                     values=(prio_text[tag], action, limit),
                                     tags=(tag,))
 
+    def _show_crash_modal(self, regime: str, hedge_tilt: int, hedge_notes: list):
+        """CRASH 級別警報 Modal — 半透明覆蓋，user 必須 acknowledge"""
+        if getattr(self, "_crash_modal_shown", False):
+            return  # 已顯示過，session 內不重複
+        self._crash_modal_shown = True
+
+        modal = tk.Toplevel(self)
+        modal.title("⚠️ 市場警報")
+        modal.configure(bg="#3a0d0d")  # 深紅
+        modal.geometry("600x420")
+        modal.transient(self)
+        modal.grab_set()
+
+        ttk.Label(modal,
+                  text=f"🚨 {regime} MODE 觸發 🚨",
+                  background="#3a0d0d", foreground="#ff6b6b",
+                  font=(self.UI_FONT, 18, "bold"),
+                  ).pack(pady=(20, 5))
+
+        ttk.Label(modal,
+                  text=f"當前市場狀態: {regime}",
+                  background="#3a0d0d", foreground="#fff",
+                  font=(self.UI_FONT, 12, "bold"),
+                  ).pack(pady=4)
+
+        if regime == "CRASH":
+            body_text = (
+                "歷史實證: CRASH 期 0050 fwd 20d +9.75% (100% win, n=34)\n"
+                "建議行動: 部署現金 60% 加碼 0050；可加 00631L 槓桿 15%\n"
+                "風險窗口: 等 VIX 從高點回落 30% 再大量加碼"
+            )
+        else:
+            body_text = "\n".join(hedge_notes[:3])
+
+        ttk.Label(modal,
+                  text=body_text,
+                  background="#3a0d0d", foreground="#ffd1d1",
+                  font=(self.UI_FONT, 11), wraplength=540, justify="left",
+                  ).pack(pady=10, padx=20)
+
+        if hedge_tilt > 0:
+            ttk.Label(modal,
+                      text=f"建議 cash tilt: +{hedge_tilt}pp 超出 baseline",
+                      background="#3a0d0d", foreground="#ffe0e0",
+                      font=(self.UI_FONT, 11, "bold"),
+                      ).pack(pady=4)
+
+        ttk.Label(modal,
+                  text="此警報僅在 session 內觸發一次。重啟 GUI 才會再次提醒。",
+                  background="#3a0d0d", foreground="#888",
+                  font=(self.UI_FONT, 9),
+                  ).pack(pady=4)
+
+        btn_frame = ttk.Frame(modal)
+        btn_frame.pack(pady=20)
+        ttk.Button(btn_frame, text="我知道了，進入 Dashboard",
+                   command=modal.destroy).pack()
+
+    def _check_crash_modal(self, regime, hedge_reading):
+        """檢查是否該觸發 CRASH modal"""
+        try:
+            if regime is None or hedge_reading is None:
+                return
+            # Trigger CRASH modal if:
+            # - regime == CRASH
+            # - OR hedge tilt >= 20pp (multi-signal hedge)
+            should_trigger = (
+                regime.regime == "CRASH"
+                or hedge_reading.cash_tilt_pp >= 20
+            )
+            if should_trigger:
+                self._show_crash_modal(
+                    regime.regime,
+                    hedge_reading.cash_tilt_pp,
+                    hedge_reading.notes,
+                )
+        except Exception as e:
+            self._log(f"CRASH modal check: {e}")
+
     def _update_hero_action(self):
         """🎯 Hero Action Panel update — re-runs every 60s tick.
         因 hedge / barbell / regime 都會 refresh，hero panel 跟著最新值更新。
@@ -1151,6 +1307,8 @@ class Dashboard(tk.Tk):
             regime_r = compute_current_regime()
             hedge_r = compute_hedge_reading()
             holdings = _load_holdings()
+            # CRASH modal trigger (one-time per session)
+            self._check_crash_modal(regime_r, hedge_r)
             if not (regime_r and holdings):
                 self.hero_status.config(text="資料不足", foreground=COLORS["fg_dim"])
                 return

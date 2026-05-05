@@ -850,6 +850,123 @@ def main():
             push_discord(hits, today)
 
 
+def _load_user_holdings_tickers() -> set:
+    """讀 assets.json 取得 user 持股 ticker 清單（用於 Discord 持倉關聯）"""
+    try:
+        import json as _json
+        p = ROOT / "data" / "assets.json"
+        if not p.exists():
+            return set()
+        data = _json.loads(p.read_text(encoding="utf-8"))
+        tickers: set = set()
+        for _, items in data.get("holdings", {}).items():
+            if isinstance(items, list):
+                for h in items:
+                    if isinstance(h, dict) and h.get("ticker"):
+                        tickers.add(str(h["ticker"]).strip())
+        return tickers
+    except Exception:
+        return set()
+
+
+def _push_executive_summary(hits, today, holdings_tickers: set) -> list:
+    """Discord Executive Summary — 30 秒掃完判斷今日重要性"""
+    m3_deploy = [h for h in hits if h["signal"] == "revenue_relative_yoy" and h.get("deploy_ready")]
+    m3_info = [h for h in hits if h["signal"] == "revenue_relative_yoy" and not h.get("deploy_ready")]
+    info_count = sum(1 for h in hits if h["signal"] in ("quiet_limitup", "quiet_limitdown_reversal")) + len(m3_info)
+    other_count = sum(1 for h in hits if h["signal"] in ("monster_limitup_foreign", "multifactor_S1_S3"))
+
+    # Hedge / Regime status (從現有 module 取)
+    hedge_text = ""
+    regime_text = ""
+    try:
+        sys.path.insert(0, str(ROOT))
+        from src.report.hedge_signals import compute_hedge_reading
+        from src.report.regime_section import compute_current_regime
+        h = compute_hedge_reading()
+        r = compute_current_regime()
+        if h and r:
+            regime_emoji = {"CRASH": "🚨", "STRONG_BULL": "🔴", "BEAR": "🟠"}.get(r.regime, "🟡")
+            regime_text = f"{regime_emoji} `{r.regime}` (TAIEX {r.dist_ma200:+.1f}% MA200)"
+            if h.cash_tilt_pp >= 10:
+                hedge_text = f"🚨 **Hedge tilt +{h.cash_tilt_pp}pp 警示**"
+            elif h.cash_tilt_pp > 0:
+                hedge_text = f"⚠️ Hedge tilt +{h.cash_tilt_pp}pp"
+            else:
+                hedge_text = f"✅ Hedge: 全部正常"
+    except Exception:
+        pass
+
+    # Persona 持倉關聯
+    persona_lines = []
+    if holdings_tickers and hits:
+        for h in hits:
+            tk = h.get("ticker", "")
+            if tk in holdings_tickers:
+                signal_label = {
+                    "revenue_relative_yoy": "月營收",
+                    "monster_limitup_foreign": "妖股",
+                    "multifactor_S1_S3": "多因子",
+                    "quiet_limitup": "量縮漲停",
+                    "quiet_limitdown_reversal": "量縮跌停反彈",
+                }.get(h["signal"], h["signal"])
+                persona_lines.append(f"  • {tk} 觸發 {signal_label} (你已持有)")
+
+    lines = []
+    lines.append(f"📊 **訊號日報 — {today}**")
+    lines.append(f"━━━━━━━━━━━━━━━━━━")
+    if regime_text:
+        lines.append(regime_text)
+    if hedge_text:
+        lines.append(hedge_text)
+    lines.append(
+        f"✅ Deploy-Ready: **{len(m3_deploy)}** | "
+        f"ℹ️ Informational: {info_count + other_count} | "
+        f"📨 Total: {len(hits)}"
+    )
+    lines.append(f"━━━━━━━━━━━━━━━━━━")
+    lines.append("")
+
+    # Top 行動 (從 action_advisor 取)
+    try:
+        from src.report.action_advisor import generate_actions
+        from src.report.hedge_signals import compute_hedge_reading
+        from src.report.regime_section import compute_current_regime
+        from src.report.barbell_allocation import (
+            ALLOCATION_TABLE, _apply_hedge_tilt, _load_holdings,
+        )
+        regime_r = compute_current_regime()
+        hedge_r = compute_hedge_reading()
+        holdings_dc = _load_holdings()
+        if regime_r and holdings_dc:
+            base_target = ALLOCATION_TABLE.get(regime_r.regime, {})
+            target, _, _ = _apply_hedge_tilt(base_target)
+            cash_total = holdings_dc.cash_pct / 100 * holdings_dc.total_value
+            actions = generate_actions(regime_r, hedge_r, target, holdings_dc,
+                                       holdings_dc.total_value, cash_total)
+            lines.append("**🎯 今日 Top 3 行動:**")
+            for i, a in enumerate(actions[:3], 1):
+                lines.append(f"  {i}. {a.icon} {a.label}")
+            lines.append("")
+            today_budget = min(int(cash_total * 0.1), 30000)
+            lines.append(
+                f"**💰 資金**: 現金 NT${cash_total:,.0f} ({holdings_dc.cash_pct:.0f}%) | "
+                f"今日建議 ≤ NT${today_budget:,}"
+            )
+            lines.append("")
+    except Exception as e:
+        lines.append(f"_action engine 失敗: {e}_")
+        lines.append("")
+
+    # Persona 警示
+    if persona_lines:
+        lines.append("**⚠️ 持倉關聯 (你已持有的標的觸發):**")
+        lines.extend(persona_lines)
+        lines.append("")
+
+    return lines
+
+
 def push_discord(hits, today):
     url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not url:
@@ -860,7 +977,13 @@ def push_discord(hits, today):
             return
     try:
         import requests
-        lines = [f"🚨 **Daily Scanner — {today}**", ""]
+        # === Executive Summary (新格式 P0) ===
+        holdings_tickers = _load_user_holdings_tickers()
+        lines = _push_executive_summary(hits, today, holdings_tickers)
+        lines.append("━━━━━━━━━━━━━━━━━━")
+        lines.append("**📋 詳細訊號**")
+        lines.append("")
+
         m1 = [h for h in hits if h["signal"] == "monster_limitup_foreign"]
         m2 = [h for h in hits if h["signal"] == "multifactor_S1_S3"]
         m3 = [h for h in hits if h["signal"] == "revenue_relative_yoy"]
