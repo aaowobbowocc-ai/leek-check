@@ -1,0 +1,165 @@
+# NT$497K 現金部署排程（v4 — 2026-05-05 修訂，3-AI critique 後撤回 EWY）
+#
+# 目標：把現金 61% 拉到 15-20% buffer 目標 → 需部署 NT$240-275K
+#
+# v4 修訂（2026-05-05, 3-AI critique 後）：
+#   - **撤回 EWY (3 批 NT$60K)**：1Y +187.5% 是 V-recovery 不是 alpha，禁買名單
+#   - 重新分配:
+#     - 既有 EWY 10% → 5% 加到 IAU/GLD 黃金 (corr 0.21 真分散)
+#     - 既有 EWY 10% → 5% 加到 TW core (0050)
+#   - 00635U 已部分 deploy (今天買 NT$95K，超過 5% 目標)
+#   - DXJ 維持，依 trigger 條件式加碼
+#
+# v3 (2026-04-29)：
+#   1. 動態限價（當下價 ±2%）+ 3 日掛單跳批
+#   2. 海外摩擦門檻 ≥ NT$25K/筆
+#
+# 每個 action 的 price_strategy 解讀：
+#   - "spot_pm2pct"  : 當下價 ±2%（推薦，dynamic）
+#   - "spot_pm5pct"  : 當下價 ±5%（寬鬆）
+#   - "fixed"        : 用 price 欄位（固定，僅特殊情境）
+#
+# 每天晨報自動秀「未來 7 日內 pending」+ 集中度警報 + 用即時報價算限價
+# 完成後手動改 status: done
+
+actions:
+  # ==== 5 月 ====
+  - id: ewy_batch_1
+    date: "2026-05-05"
+    ticker: EWY
+    status: cancelled  # 2026-05-05 v4: 3-AI critique 後撤回（追高禁買名單）
+    cancel_reason: "1Y +187.5% 是 V-recovery 不是 alpha；Gemini/Claude/GPT 共識禁買；
+                    與 0050 corr 0.60 假分散；資金重配到 IAU 黃金 + 0050"
+    note: "[CANCELLED] 韓國 ETF DCA 第 1/3 批"
+
+  - id: tw_etf_batch_1
+    date: "2026-05-12"
+    composite:
+      - {ticker: "0050", shares: 200, price_strategy: "spot_pm2pct", budget_twd: 18000}
+      - {ticker: "00881", shares: 250, price_strategy: "spot_pm2pct", budget_twd: 11500}
+      - {ticker: "00947", shares: 250, price_strategy: "spot_pm2pct", budget_twd: 7500}
+      - {ticker: "00646", shares: 350, price_strategy: "spot_pm2pct", budget_twd: 24500}
+    budget_twd: 61500
+    note: "TW + 美股 ETF 第 1 批 DCA (30% of target)"
+    status: pending
+    rationale: "60 萬資產 28% TW + 18% 美股大盤目標"
+    friction_estimate_pct: 0.10
+    skip_after_days: 3
+
+  # ==== 6 月 ====
+  - id: tw_etf_batch_2
+    date: "2026-06-02"
+    composite:
+      - {ticker: "0050", shares: 200, price_strategy: "spot_pm2pct", budget_twd: 18000}
+      - {ticker: "00881", shares: 250, price_strategy: "spot_pm2pct", budget_twd: 11500}
+      - {ticker: "00947", shares: 250, price_strategy: "spot_pm2pct", budget_twd: 7500}
+      - {ticker: "00646", shares: 350, price_strategy: "spot_pm2pct", budget_twd: 24500}
+    budget_twd: 61500
+    note: "TW ETF DCA 第 2 批 (30%)"
+    status: pending
+    friction_estimate_pct: 0.10
+    skip_after_days: 3
+
+  - id: ewy_batch_2
+    date: "2026-06-02"
+    ticker: EWY
+    status: cancelled  # 2026-05-05 v4: 同 ewy_batch_1
+    cancel_reason: "EWY 撤回，見 ewy_batch_1"
+    note: "[CANCELLED] EWY DCA 第 2/3 批"
+
+  - id: dxj_lump_entry
+    date: "2026-06-15"
+    ticker: DXJ
+    market: "US (永豐金複委託)"
+    shares: 12
+    price_strategy: "spot_pm2pct"
+    fallback_price_range: [75.00, 95.00]
+    budget_usd: 1000
+    budget_twd: 32000
+    note: "DXJ 日股 base 一次入場 (8% target)，後續看觸發再加碼"
+    status: pending
+    rationale: "16y backtest +12.33% CAGR；摩擦校準後不分批，等 trigger 加碼"
+    friction_estimate_pct: 0.50
+    skip_after_days: 3
+
+  # ==== 7 月 ====
+  - id: quarterly_rebalance_q3
+    date: "2026-07-01"
+    note: "季度再平衡：偏離 ±5% 才動，否則跳過"
+    status: pending
+    rationale: "config/strategy.yaml DCA framework Quarterly trigger"
+
+  - id: tw_etf_batch_3
+    date: "2026-07-07"
+    composite:
+      - {ticker: "0050", shares: 300, price_strategy: "spot_pm2pct", budget_twd: 27000}
+      - {ticker: "00881", shares: 300, price_strategy: "spot_pm2pct", budget_twd: 13800}
+      - {ticker: "00947", shares: 300, price_strategy: "spot_pm2pct", budget_twd: 9000}
+      - {ticker: "00646", shares: 500, price_strategy: "spot_pm2pct", budget_twd: 35000}
+    budget_twd: 84800
+    note: "TW ETF DCA 第 3 批 (40%, 收尾)"
+    status: pending
+    friction_estimate_pct: 0.10
+    skip_after_days: 3
+
+  - id: ewy_batch_3
+    date: "2026-07-14"
+    ticker: EWY
+    status: cancelled  # 2026-05-05 v4: 同 ewy_batch_1
+    cancel_reason: "EWY 撤回，見 ewy_batch_1"
+    note: "[CANCELLED] EWY DCA 第 3/3 批"
+
+  # ==== EWY 撤回後的重配置 (2026-05-05 新增) ====
+  - id: tw_core_extra_1
+    date: "2026-06-09"
+    ticker: "0050"
+    shares: 200
+    price_strategy: "spot_pm2pct"
+    budget_twd: 19000
+    note: "EWY 撤回重配置 (5/10): 加碼 0050 取代韓國配置"
+    status: pending
+    rationale: "3-AI critique 後 0050 目標從 28% → 33%。0050 vs EWY corr 0.60 (假分散)"
+    friction_estimate_pct: 0.10
+    skip_after_days: 3
+
+  - id: gold_iau_lump
+    date: "2026-09-01"
+    note: "EWY 撤回重配置 (5/10): IAU 黃金加碼到 10% 目標 (從 5% 升至 10%)"
+    rationale: "GLD/IAU corr 0.21 真分散；近 60d corr 0.09 AI boom 期最強對沖"
+    status: pending
+
+  # ==== 9 月（黃金延後評估）====
+  - id: gold_review
+    date: "2026-09-01"
+    note: "黃金配置評估：若 5% 目標仍想做，IAU ~360 股一次買；不急可跳過"
+    status: pending
+    rationale: "00635U 是 2 倍槓桿 ETF 不適合長持；IAU 才是實體黃金；user 2026-04-28 確認不急"
+
+# Pullback / 加碼 triggers — 條件式覆蓋固定排程
+triggers:
+  taiex_drop_2_5pct: "提前下一批 DCA（用現金 buffer）"
+  taiex_below_monthly: "暫停所有 DCA，等回站月線"
+  # ewy_drop_15pct_in_month: 已移除 (EWY 撤回 2026-05-05)
+  spy_drop_10pct_90d:
+    action: "DXJ 加碼 +6 股 (~NT$16K) → 共 18 股約 12% 配置"
+    rationale: "16y backtest 顯示 SPY 90 日跌 >10% 後 DXJ 90 日 alpha +3.71pp (z=4.24)"
+  jpy_surge_5pct_30d:
+    action: "DXJ 加碼 +6 股"
+    rationale: "alpha +5.22pp (z=5.44, win 88%)"
+
+# 摩擦門檻（晨報用以警告）
+friction_thresholds:
+  tw_account_min_twd: 5000      # 華南永昌：折扣後手續費極低
+  foreign_account_min_twd: 25000 # 永豐金複委託：$5 fee 攤到 < 0.65%
+  warn_if_friction_pct_above: 1.5  # 任何單筆摩擦 > 1.5% 提示重新評估
+
+# 完成後總部位（v4 — 2026-05-05 撤回 EWY 後）
+target_state:
+  tw_core: {pct: 33, twd: 198000, tickers: ["0050", "00881", "00947"], note: "EWY 重配置 +5pp"}
+  us_market: {pct: 18, twd: 108000, tickers: ["00646"], note: "貨幣分散，3-AI 共識保留 15-20%"}
+  japan: {pct: 5, twd: 30000, tickers: ["DXJ"], note: "trigger-based (SPY -10%/90d 或 JPY +5%/30d) 加碼"}
+  gold: {pct: 10, twd: 60000, tickers: ["IAU", "00635U"], note: "EWY 重配置 +5pp; corr 0.21 真分散"}
+  cash_buffer: {pct: 24, twd: 144000, note: "CRASH 子彈 (15% emergency + 9% opportunistic)"}
+  legacy_holdings: {pct: 5, twd: 30000, note: "2345 + 009819 + 2408 保留並設停損 -15%"}
+  # 子加總: 33 + 18 + 5 + 10 + 24 + 5 = 95%, 剩 5% portfolio drift 緩衝
+  # korea: {pct: 0} — EWY 撤回 (3-AI critique 2026-05-05)
