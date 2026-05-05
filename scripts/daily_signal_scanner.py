@@ -558,6 +558,31 @@ def scan_signal_3(tk, today):
         yoy_tier = "extreme (noise)"
         tier_label = "⚠️ 極端 YoY (base-effect 雜訊風險)"
 
+    # 2026-05-04 流動性 filter validation:
+    #   No filter: Full +30% / 1H +38% / 2H +15% (2H 輸 0050 -20pp)
+    #   L4 (>10億/日): Full +25.7% / 1H +23.3% / 2H +31.5% (2H 改善至 -5.8pp，可實單)
+    # 計算觸發前 60 日 avg dollar volume 作為 deploy_ready 判定
+    px2 = px.copy()
+    today_idx_arr = px2.index[px2["date"] == today]
+    if len(today_idx_arr) > 0:
+        today_idx = today_idx_arr[-1]
+        before = px2.iloc[max(0, today_idx - 60):today_idx]
+        if len(before) >= 30:
+            avg_dv_60d = float((before["close"] * before["volume"]).mean())
+        else:
+            avg_dv_60d = 0.0
+    else:
+        avg_dv_60d = 0.0
+
+    # L4 deploy threshold: 10 億/日（驗證後唯一 deployable level）
+    LIQUIDITY_L4 = 1e9
+    deploy_ready = avg_dv_60d >= LIQUIDITY_L4
+    liq_label = (
+        f"✅ L4 流動性 (>{LIQUIDITY_L4/1e8:.0f}億/日, 可實單)"
+        if deploy_ready
+        else f"⚠️ 流動性不足 ({avg_dv_60d/1e8:.1f}億/日 < L4，僅 informational)"
+    )
+
     return {
         "ticker": tk,
         "signal": "revenue_relative_yoy",
@@ -570,8 +595,12 @@ def scan_signal_3(tk, today):
         "revenue_month": f"{int(latest['revenue_year'])}-{int(latest['revenue_month']):02d}",
         "rev_month_num": rev_month,
         "days_since_announce": days_since,
-        "expected_alpha_60d": 3.95,  # baseline，不 month-adjust
-        "expected_alpha_60d_net": round(net_alpha(3.95), 2),  # G-6
+        "avg_dv_60d_yi": round(avg_dv_60d / 1e8, 1),  # 億/日
+        "deploy_ready": deploy_ready,
+        "liq_label": liq_label,
+        # L4 portfolio CAGR +25.7% (vs 0050 +21.7%, +4.0pp); 1H +15.5pp 強勝
+        "expected_alpha_60d": 4.0 if deploy_ready else 3.95,
+        "expected_alpha_60d_net": round(net_alpha(4.0 if deploy_ready else 3.95), 2),
     }
 
 
@@ -855,18 +884,34 @@ def push_discord(hits, today):
                 lines.append(f"  • **{h['ticker']}** @ {h['close']:.2f} "
                              f"vol z={h['vol_z']} retail={h['retail_pct']}%{warn}")
         if m3:
-            lines.append(f"\n**💰 月營收 Relative YoY（PEAD 後續走強）**")
-            lines.append(f"_條件：個股 YoY - 全市場 median YoY > +30%（公告後 0-3 天觸發）_")
-            lines.append(f"_驗證：max=20 yoy_asc portfolio 兩期 OOS 都 +17%/yr，1H 贏 0050 +9.8pp_")
-            lines.append(f"_⭐ 優先序：中度 YoY (30-50%) > 高 YoY > 極端 YoY（PEAD 甜蜜區）_")
-            # Sort by yoy ASC (preferred) so user sees sweet spot first
-            m3_sorted = sorted(m3, key=lambda h: h.get("yoy_pct", 999))
-            for h in m3_sorted:
-                warn = f" {h['confidence_warning']}" if h.get("govbank_anti_triggered") else ""
-                tier = h.get("tier_label", "")
-                lines.append(f"  • **{h['ticker']}** @ {h['close']:.2f} "
-                             f"YoY +{h['yoy_pct']}% (市場 {h['market_median_yoy']}%, "
-                             f"excess +{h['excess_yoy']}%) {tier}{warn}")
+            # 分組: deploy_ready (L4 流動性) vs informational only
+            m3_deploy = [h for h in m3 if h.get("deploy_ready")]
+            m3_info = [h for h in m3 if not h.get("deploy_ready")]
+
+            lines.append(f"\n**💰 月營收 Relative YoY（**唯一驗證 portfolio alpha 的 stock-picking 策略**）**")
+            lines.append(f"_驗證: max=20 yoy_asc + L4 (>10億/日) Full +25.7%/1H +23.3% 贏 0050 +4-15.5pp_")
+            lines.append(f"_⭐ 優先序: 中度 YoY (30-50%) > 高 > 極端_")
+
+            if m3_deploy:
+                lines.append(f"\n  **✅ Deploy-Ready (L4 流動性，可實單)**")
+                m3_deploy.sort(key=lambda h: h.get("yoy_pct", 999))  # yoy_asc
+                for h in m3_deploy:
+                    warn = f" {h['confidence_warning']}" if h.get("govbank_anti_triggered") else ""
+                    tier = h.get("tier_label", "")
+                    lines.append(f"    • **{h['ticker']}** @ {h['close']:.2f} "
+                                 f"YoY +{h['yoy_pct']}% (市場 {h['market_median_yoy']}%, "
+                                 f"excess +{h['excess_yoy']}%, {h['avg_dv_60d_yi']}億/日) {tier}{warn}")
+
+            if m3_info:
+                lines.append(f"\n  ⚠️ Informational only (流動性 < L4 10億/日，不建議實單)")
+                m3_info.sort(key=lambda h: h.get("yoy_pct", 999))
+                # 只顯示前 5 檔避免雜訊
+                for h in m3_info[:5]:
+                    tier = h.get("tier_label", "")
+                    lines.append(f"    • {h['ticker']} @ {h['close']:.2f} "
+                                 f"YoY +{h['yoy_pct']}% ({h['avg_dv_60d_yi']}億/日) {tier}")
+                if len(m3_info) > 5:
+                    lines.append(f"    ...（{len(m3_info) - 5} 檔未顯示）")
         if m4:
             lines.append(f"\n**📈 量縮漲停（市場警報，⚠️ 非個股 trade signal）**")
             lines.append(f"_2026-05-04 portfolio backtest 確認: 個股 alpha 是 crash-day market beta，不是 stock-picking_")
