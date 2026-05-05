@@ -287,6 +287,24 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
         asset_manager=am if am else None,
     )
 
+    # ── Hero Action Panel (P0, 2026-05-05 加入，永遠在最頂端) ──
+    try:
+        from src.report.action_advisor import render_hero_section
+        hero_md = render_hero_section()
+        if hero_md:
+            # Insert after the title and before existing content
+            # Find the title line and inject hero AFTER it
+            lines = report_md.split("\n")
+            insert_idx = 1  # after first line (title)
+            for i, line in enumerate(lines[:5]):
+                if line.startswith("#") and not line.startswith("##"):
+                    insert_idx = i + 1
+                    break
+            new_lines = lines[:insert_idx] + ["", hero_md, "---", ""] + lines[insert_idx:]
+            report_md = "\n".join(new_lines)
+    except Exception as e:
+        logger.warning("Hero Action Panel 失敗: %s", e)
+
     # ── 全球配置 + 部位建議（Phase 17a）──────────────
     advisor_md = ""
     try:

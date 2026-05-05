@@ -390,6 +390,7 @@ class Dashboard(tk.Tk):
             left_canvas.yview_scroll(-int(e.delta / 120), "units")
         left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
+        self._build_hero_action(left)          # Hero Action Panel (P0, 永遠最上)
         self._build_summary(left)
         self._build_v2_regime(left)            # V2 5-regime classifier (added 2026-05-05)
         self._build_hedge_signals(left)        # 5 hedge signals (added 2026-05-05)
@@ -459,6 +460,38 @@ class Dashboard(tk.Tk):
         self.regime_suspended = ttk.Label(body, text="", style="Card.TLabel",
                                            foreground=COLORS["red"])
         self.regime_suspended.pack(anchor="w", pady=1)
+
+    def _build_hero_action(self, parent):
+        """🎯 Hero Action Panel — 今日 Top 行動指令 (P0)"""
+        # Use prominent style to grab attention
+        frame = ttk.Frame(parent, style="Card.TFrame", padding=(15, 12))
+        frame.pack(fill="x", pady=(0, 8))
+        # Title with regime indicator
+        self.hero_title = ttk.Label(
+            frame, text="🎯 今日行動指令", style="Section.TLabel",
+            font=(self.UI_FONT, 14, "bold"),
+        )
+        self.hero_title.pack(anchor="w", pady=(0, 4))
+        # Regime status line
+        self.hero_status = ttk.Label(
+            frame, text="計算中...", style="Card.TLabel",
+            foreground=COLORS["fg_dim"],
+        )
+        self.hero_status.pack(anchor="w", pady=(0, 6))
+        # Actions list (5 lines)
+        self.hero_action_labels = []
+        for _ in range(5):
+            lbl = ttk.Label(frame, text="", style="Card.TLabel",
+                            wraplength=620, font=(self.UI_FONT, 11))
+            lbl.pack(anchor="w", pady=1)
+            self.hero_action_labels.append(lbl)
+        # Cash bar
+        self.hero_cash = ttk.Label(
+            frame, text="", style="Card.TLabel",
+            foreground=COLORS["yellow"],
+            font=(self.UI_FONT, 11, "bold"),
+        )
+        self.hero_cash.pack(anchor="w", pady=(8, 2))
 
     def _build_v2_regime(self, parent):
         """V2 5-regime classifier (CRASH / BEAR / SIDEWAYS / BULL_TREND / STRONG_BULL)"""
@@ -828,7 +861,7 @@ class Dashboard(tk.Tk):
             # DCA timing
             self._update_dca_timing(now)
 
-            # V2 regime + hedge + barbell (added 2026-05-05)
+            # V2 regime + hedge + barbell + hero (added 2026-05-05)
             try:
                 self._update_v2_regime()
             except Exception as e:
@@ -841,6 +874,11 @@ class Dashboard(tk.Tk):
                 self._update_barbell()
             except Exception as e:
                 self._log(f"barbell refresh: {e}")
+            # Hero panel must run LAST (depends on regime + hedge + barbell)
+            try:
+                self._update_hero_action()
+            except Exception as e:
+                self._log(f"hero action refresh: {e}")
 
             # Short watchlist
             self._update_short_watchlist(now)
@@ -1098,6 +1136,81 @@ class Dashboard(tk.Tk):
             self.actions_tv.insert("", "end",
                                     values=(prio_text[tag], action, limit),
                                     tags=(tag,))
+
+    def _update_hero_action(self):
+        """🎯 Hero Action Panel update — re-runs every 60s tick.
+        因 hedge / barbell / regime 都會 refresh，hero panel 跟著最新值更新。
+        """
+        try:
+            from src.report.action_advisor import generate_actions
+            from src.report.regime_section import compute_current_regime
+            from src.report.hedge_signals import compute_hedge_reading
+            from src.report.barbell_allocation import (
+                ALLOCATION_TABLE, _apply_hedge_tilt, _load_holdings,
+            )
+            regime_r = compute_current_regime()
+            hedge_r = compute_hedge_reading()
+            holdings = _load_holdings()
+            if not (regime_r and holdings):
+                self.hero_status.config(text="資料不足", foreground=COLORS["fg_dim"])
+                return
+
+            base_target = ALLOCATION_TABLE.get(regime_r.regime, {})
+            target, _, _ = _apply_hedge_tilt(base_target)
+            cash_total = holdings.cash_pct / 100 * holdings.total_value
+            actions = generate_actions(
+                regime_r, hedge_r, target, holdings,
+                holdings.total_value, cash_total,
+            )
+
+            # Status line
+            regime_color_map = {
+                "CRASH": COLORS["red"],
+                "BEAR": COLORS["yellow"],
+                "SIDEWAYS": COLORS["fg_dim"],
+                "BULL_TREND": COLORS["green"],
+                "STRONG_BULL": COLORS["red"],
+            }
+            status_color = regime_color_map.get(regime_r.regime, COLORS["fg"])
+            self.hero_status.config(
+                text=f"`{regime_r.regime}` | TAIEX {regime_r.dist_ma200:+.1f}% MA200 | "
+                     f"VIX {hedge_r.vix_current:.1f} | Hedge tilt: {hedge_r.cash_tilt_pp:+d}pp",
+                foreground=status_color,
+            )
+
+            # Update action labels (top 5)
+            priority_color = {
+                "critical": COLORS["red"], "warning": COLORS["yellow"],
+                "action": COLORS["fg"], "tweak": COLORS["fg_dim"],
+                "hold": COLORS["green"], "info": COLORS["fg_dim"],
+            }
+            priority_marker = {
+                "critical": "🚨", "warning": "⚠️", "action": "📌",
+                "tweak": "🔧", "hold": "✅", "info": "ℹ️",
+            }
+            for i in range(5):
+                if i < len(actions):
+                    a = actions[i]
+                    marker = priority_marker.get(a.priority, "•")
+                    text = f"{i+1}. {marker} {a.icon} {a.label}"
+                    if a.reason:
+                        text += f"   _{a.reason[:60]}_"
+                    self.hero_action_labels[i].config(
+                        text=text,
+                        foreground=priority_color.get(a.priority, COLORS["fg"]),
+                    )
+                else:
+                    self.hero_action_labels[i].config(text="")
+
+            # Cash bar
+            today_budget = min(int(cash_total * 0.1), 30000)
+            self.hero_cash.config(
+                text=f"💰 現金 NT${cash_total:,.0f} ({holdings.cash_pct:.0f}%) | "
+                     f"今日建議動用 ≤ NT${today_budget:,}",
+            )
+        except Exception as e:
+            self.hero_status.config(text=f"hero action error: {e}",
+                                     foreground=COLORS["red"])
 
     def _update_v2_regime(self):
         """V2 5-regime classifier update."""
