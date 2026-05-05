@@ -461,31 +461,48 @@ class Dashboard(tk.Tk):
     # 專業詞彙解說（給 _add_tooltip 用）
     GLOSSARY = {
         "z-score":
-            "標準差倍數。z=0 為平均值，|z|>2 通常視為極端事件 (約 95%以外的尾部)。"
-            "例: TX OI z=-2 = 外資台指期空單堆積至過去 252 日平均之下 2 個標準差。",
+            "「偏離程度」— 跟過去平均比，今天有多異常。\n"
+            "0 = 跟平均一樣\n"
+            "±1 = 正常範圍內\n"
+            "±2 = 極端事件（過去 252 日只有 5% 機會發生）\n"
+            "例: TX OI z=-2 表示外資台指期空單堆積到過去 252 日平均往下 2 個標準差，"
+            "歷史顯示這之後台股反而會反彈。",
         "pp":
-            "Percentage points (百分點). +24pp 不是 +24%。"
-            "例: 部位從 4% 變到 28% 是 +24pp 的差距。",
+            "百分點（不是百分比！）\n"
+            "+24pp = 「該佔的比例多了 24%」（從 4% → 28%）\n"
+            "不是「漲 24%」。例：你存款 100 萬，配置 4% 在台股 = 4 萬，"
+            "改成 28% = 28 萬，差額 +24pp = 24 萬。",
         "regime":
-            "5-regime classifier (V2 2026-05-04):\n"
-            "• CRASH: 60d ret <-15% AND vol30 >25% (鑽石買點)\n"
-            "• BEAR: dist MA200 <-5% AND ret_60d <0\n"
-            "• SIDEWAYS: |dist MA200| <5%\n"
-            "• BULL_TREND: dist MA200 在 0-20%\n"
-            "• STRONG_BULL: dist MA200 >+20%",
+            "市場狀態分 5 種:\n"
+            "• 市場崩盤中 (CRASH): 60 天跌 >15% 且大波動 → 鑽石買點\n"
+            "• 市場下跌中 (BEAR): 跌破 200 日均線 → 防禦\n"
+            "• 市場盤整 (SIDEWAYS): 在 200 日均線 ±5% → 個股策略適用\n"
+            "• 健康牛市 (BULL_TREND): 站上 200 日均線 0-20% → 持續持有\n"
+            "• 市場過熱 (STRONG_BULL): 大盤超 200 日均線 >20% → 警戒",
         "VIX":
-            "S&P 500 隱含波動度（30 日 forward）。"
-            ">30 = panic, <15 = complacency。"
-            "VIX/VIX3M 比值 >1.05 = term structure 警戒（短期恐慌 > 中期）。",
+            "美股恐慌指數 — 數字越大代表預期波動越大\n"
+            "<15 = 太平靜（市場可能 over-confident）\n"
+            "15-20 = 正常\n"
+            ">30 = 恐慌（暴跌時看到的水準）\n"
+            "VIX/VIX3M >1.05 表示短期恐慌已超過長期，常是大跌訊號",
         "TX OI":
-            "外資台指期 net open interest (淨未平倉)。"
-            "z<-2 = 外資極度偏空 → 歷史 10d TAIEX alpha +1.43% (mean reversion)。",
+            "外資台指期淨部位 — 外資手上多單減空單\n"
+            "z<-2 = 外資極度看空（空單堆積異常）\n"
+            "歷史顯示外資極度看空後 10 天反而台股漲 +1.43%（反向訊號）。",
         "barbell":
-            "8-bucket 槓鈴配置: 核心 TW + 美股 + 黃金 + 日股 + 槓桿 + 衛星 + legacy + 現金。"
-            "deltas 顯示與目標差距。",
+            "把資產分成 8 個 bucket（類別）：\n"
+            "1. 台股核心 (0050)\n"
+            "2. 美股分散 (00646)\n"
+            "3. 黃金避險 (IAU/00635U)\n"
+            "4. 日股 (DXJ)\n"
+            "5. 槓桿 ETF (00631L)\n"
+            "6. 營收成長股組合\n"
+            "7. 舊有個股\n"
+            "8. 現金\n"
+            "每個 bucket 該佔多少看市場狀態。",
         "L4 流動性":
-            "日均成交額 > 10 億 NT$ 的大型股。"
-            "Revenue YoY portfolio 經 L4 filter 後 alpha +25.7%/yr (vs 0050 +21.7%)。",
+            "日均成交超過 10 億 NT$ 的大型股 = 一般人買得進賣得出。\n"
+            "Revenue YoY 個股組合在 L4 大型股中表現最穩定（+25.7%/年）。",
     }
 
     def _section(self, parent, title: str, default_open: bool = True) -> ttk.Frame:
@@ -560,7 +577,7 @@ class Dashboard(tk.Tk):
         frame.pack(fill="x", pady=(0, 8))
         # Title with regime indicator
         self.hero_title = ttk.Label(
-            frame, text="🎯 今日行動指令", style="Section.TLabel",
+            frame, text="🎯 今天該做什麼（前 5 個動作）", style="Section.TLabel",
             font=(self.UI_FONT, 14, "bold"),
         )
         self.hero_title.pack(anchor="w", pady=(0, 4))
@@ -587,7 +604,7 @@ class Dashboard(tk.Tk):
 
     def _build_v2_regime(self, parent):
         """V2 5-regime classifier (CRASH / BEAR / SIDEWAYS / BULL_TREND / STRONG_BULL)"""
-        body = self._section(parent, "🎯 市場 Regime V2 (5-regime classifier) ⓘ")
+        body = self._section(parent, "🎯 今天市場狀態 ⓘ")
         self.v2_regime_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
                                           font=(self.UI_FONT, 13, "bold"))
         self.v2_regime_label.pack(anchor="w", pady=2)
@@ -601,7 +618,7 @@ class Dashboard(tk.Tk):
 
     def _build_hedge_signals(self, parent):
         """5 hedge signals overlay"""
-        body = self._section(parent, "🛡️ Hedge Signals (5-signal crash overlay) ⓘ")
+        body = self._section(parent, "🛡️ 危險警示器（5 個保險絲）ⓘ")
         self.hedge_tilt_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
                                            font=(self.UI_FONT, 12, "bold"))
         self.hedge_tilt_label.pack(anchor="w", pady=2)
@@ -632,7 +649,7 @@ class Dashboard(tk.Tk):
 
     def _build_barbell_target(self, parent):
         """Barbell allocation target vs current"""
-        body = self._section(parent, "💼 Barbell 配置（regime-aware target vs current）ⓘ")
+        body = self._section(parent, "💼 該怎麼分配你的錢 ⓘ")
         # Tooltip for the section title (need to grab the title label)
         title_label = body.master.winfo_children()[0]  # the Section.TLabel
         self._add_tooltip(title_label, self.GLOSSARY["barbell"])

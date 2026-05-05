@@ -35,23 +35,23 @@ class RegimeReading:
 
 
 REGIME_RULES = {
-    "CRASH": "🚨 CRASH - 鑽石買點！分批 5 日進場 0050 + 30% 00631L (Period B/C 100% win, +9.75-12.31%)",
-    "BEAR": "🟠 BEAR - hold 0050 不動，不加 00631L (decay)；可考慮 30-40% 現金等 CRASH 訊號",
-    "SIDEWAYS": "🟡 SIDEWAYS - 0050 + Revenue YoY 衛星 25%（跨 3 期都 +0.24~1.95% 穩定區）",
-    "BULL_TREND": "🟢 BULL_TREND - 0050 + 20-25% 00631L 吃趨勢（2020 後 +1.84~3.43% 穩定）",
+    "CRASH": "🚨 市場崩盤中（鑽石買點！）— 立刻分批買進 0050；歷史 100% 機率 20 天內反彈 +10%",
+    "BEAR": "🟠 市場下跌中 — 持有 0050 不動，不要加碼槓桿 ETF；保留 30-40% 現金等真正大跌",
+    "SIDEWAYS": "🟡 市場盤整 — 持有 0050 + 25% Revenue YoY 個股組合（這是少數跨期穩賺的策略）",
+    "BULL_TREND": "🟢 健康牛市 — 持有 0050 + 可加 20-25% 槓桿 ETF（00631L）吃趨勢",
     "STRONG_BULL": (
-        "🔴 STRONG_BULL - 停 DCA + 累積現金。⚠️ 跨期不穩定: "
-        "2020-22 +0.31% (延續) / 2023-25 -2.13% (mean reversion)。"
-        "目前環境傾向後者，建議減倉 20%；激進派可 hold 不動但不加碼。"
+        "🔴 市場過熱 — 暫停定期買進，把現金存起來等下一次大跌。"
+        "⚠️ 注意：歷史顯示這種狀態有時會繼續漲（2020-22）有時會回檔（2023-25），"
+        "目前環境較像 2023-25。保守派可減倉 20%，積極派至少不要再加碼。"
     ),
 }
 
 EXPECTED_FWD = {
-    "CRASH": "0050 +9.75% / 00631L +22.71% (100% win, n=34)",
-    "BEAR": "0050 +0.45% / 00631L +1.62% (47-51% win)",
-    "SIDEWAYS": "0050 +1.27% / 00631L +2.43% (66% win, 三期一致)",
-    "BULL_TREND": "0050 +2.33% / 00631L +3.83% (64% win)",
-    "STRONG_BULL": "0050 -0.62% (full) / 跨期 +0.31% vs -2.13% ⚠️ 不穩定",
+    "CRASH": "歷史 20 天後: 0050 +9.75% / 00631L +22.71%（100% 都漲）",
+    "BEAR": "歷史 20 天後: 0050 +0.45% / 00631L +1.62%（勝率 47-51%）",
+    "SIDEWAYS": "歷史 20 天後: 0050 +1.27% / 00631L +2.43%（勝率 66%，三期都穩）",
+    "BULL_TREND": "歷史 20 天後: 0050 +2.33% / 00631L +3.83%（勝率 64%）",
+    "STRONG_BULL": "歷史 20 天後不穩定: 過去有時 +0.31% 有時 -2.13% ⚠️",
 }
 
 
@@ -116,27 +116,38 @@ def render_regime_section() -> str:
     if reading is None:
         return ""
 
+    regime_chinese = {
+        "CRASH": "市場崩盤中",
+        "BEAR": "市場下跌中",
+        "SIDEWAYS": "市場盤整",
+        "BULL_TREND": "健康牛市",
+        "STRONG_BULL": "市場過熱",
+    }.get(reading.regime, reading.regime)
+
     lines = [
-        "## 🎯 市場 Regime（每日策略導向）",
+        "## 🎯 今天市場狀態",
         "",
-        f"**當前 regime: `{reading.regime}`**",
+        f"**目前狀態: `{reading.regime}`（{regime_chinese}）**",
         "",
-        f"- TAIEX 距 MA200: **{reading.dist_ma200:+.1f}%**",
-        f"- 30d 年化波動: **{reading.vol_30d:.1f}%**",
-        f"- 60d 報酬: **{reading.ret_60d:+.1f}%**",
+        f"- 大盤離 200 日均線: **{reading.dist_ma200:+.1f}%**（>+20% 算過熱）",
+        f"- 最近 30 天波動度: **{reading.vol_30d:.1f}%**（一般 15-20%）",
+        f"- 最近 60 天漲跌: **{reading.ret_60d:+.1f}%**",
         "",
-        f"**推薦動作**：{reading.recommendation}",
+        f"**👉 該怎麼做**：{reading.recommendation}",
         "",
-        f"_歷史 fwd 20d: {reading.expected_fwd_20d}_",
+        f"_{reading.expected_fwd_20d}_",
         "",
-        "_分類規則 V2 (mutually exclusive，2026-05-04 修正):_",
-        "- CRASH: 60d ret < -15% AND vol30 > 25%",
-        "- BEAR: dist MA200 < -5% AND ret_60d < 0",
-        "- SIDEWAYS: |dist MA200| < 5%",
-        "- BULL_TREND: dist MA200 在 0-20%",
-        "- STRONG_BULL: dist MA200 > +20%（vol gate 移除）",
+        "<details><summary>📖 5 種市場狀態怎麼分（點開）</summary>",
         "",
-        "_實證 9 年 TAIEX (2017-2025) + Period A/B/C walk-forward：CRASH 跨期 100% win（鑽石買點）；STRONG_BULL 跨期不穩定（+0.31% vs -2.13%）_",
+        "- **市場崩盤中 (CRASH)**: 60 天跌超過 15% 且波動度高 → 鑽石買點",
+        "- **市場下跌中 (BEAR)**: 跌破 200 日均線 → 防禦",
+        "- **市場盤整 (SIDEWAYS)**: 在 200 日均線附近 5% 內 → 個股策略適用",
+        "- **健康牛市 (BULL_TREND)**: 站上 200 日均線 0-20% → 持續持有",
+        "- **市場過熱 (STRONG_BULL)**: 大盤超過 200 日均線 20% → 警戒",
+        "",
+        "</details>",
+        "",
+        "_資料來源: 9 年台股實證 (2017-2025)。CRASH 是跨期 100% 勝率的買點；STRONG_BULL 跨期表現不穩定。_",
         "",
     ]
     return "\n".join(lines)

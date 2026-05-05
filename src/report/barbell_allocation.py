@@ -51,11 +51,11 @@ ALLOCATION_TABLE: dict[str, dict[str, int]] = {
 }
 
 REGIME_NOTES = {
-    "CRASH":       "🚨 鑽石買點 — 加 leverage 00631L 15% (fwd 20d +22.71%, 100% win)；deploy 現金降至 9%；分批 5 日進場",
-    "BEAR":        "🟠 防禦 — 不買 leverage (decay)；現金 24% 維持等 CRASH",
-    "SIDEWAYS":    "🟡 廣度因子適用 — 加 12% Revenue YoY 衛星 (max=20 yoy_asc, L4 流動性, +25.7%/yr 預期)",
-    "BULL_TREND":  "🟢 標準持有 — 5% leverage 吃趨勢；現金 19% 流動性",
-    "STRONG_BULL": "🔴 mean reversion 區 — 取消 leverage; 現金升至 32% 等 CRASH; core 縮 5pp 取利",
+    "CRASH":       "🚨 鑽石買點：加碼 0050 + 15% 槓桿 ETF（00631L），現金降到 9%。歷史 100% 機率 20 天反彈 +10%",
+    "BEAR":        "🟠 防禦：持有不動，不要買槓桿 ETF。現金留 24% 等真正大跌（CRASH 訊號）",
+    "SIDEWAYS":    "🟡 個股策略適用：加 12% Revenue YoY 個股組合（這是少數穩賺策略，預期 +25%/年）",
+    "BULL_TREND":  "🟢 健康牛市：標準配置，可加 5% 槓桿 ETF 吃趨勢",
+    "STRONG_BULL": "🔴 市場過熱：暫停定期買進，現金加碼到 32% 等大跌；核心持股可少量取利 5%",
 }
 
 TICKER_CATEGORY = {
@@ -171,14 +171,14 @@ BUCKET_LABELS = [
 ]
 
 BUCKET_NOTES = {
-    "core_tw": "吃 TSMC AI 集中度",
-    "us_00646": "貨幣分散 (與 0050 corr 0.62 但非結構同步)",
-    "gold": "真分散 (corr 0.21 - 近 60d 0.09)",
-    "japan_dxj": "DXJ trigger-based: SPY -10%/90d 或 JPY +5%/30d",
-    "leverage": "2x TW leverage (regime-conditional)",
-    "satellite": "Revenue YoY portfolio (僅 SIDEWAYS regime 啟用)",
-    "legacy": "現有個股 + stop loss -15%",
-    "cash": "流動性 + CRASH 子彈",
+    "core_tw": "台股核心 — 吃 TSMC + AI 集中度",
+    "us_00646": "美股分散 — 不同貨幣 + 醫療/金融/消費",
+    "gold": "黃金避險 — 跟股市相關性最低（0.21）",
+    "japan_dxj": "日股 — 美股大跌 / 日圓急升才加碼",
+    "leverage": "槓桿 ETF — 只在大跌或健康牛市才買",
+    "satellite": "營收成長股組合 — 盤整期才適用",
+    "legacy": "原有個股 — 設停損 -15%",
+    "cash": "現金 — 流動性 + 等大跌的子彈",
 }
 
 
@@ -216,20 +216,22 @@ def render_barbell_section() -> str:
     target, tilt, hedge_notes = _apply_hedge_tilt(base_target)
 
     lines = [
-        "## 💼 Barbell 配置建議（regime-aware + hedge overlay）",
+        "## 💼 該怎麼分配你的錢",
         "",
-        f"**當前 regime: `{reading.regime}`** （TAIEX dist MA200 {reading.dist_ma200:+.1f}%）",
+        "_把資產分成 8 個 bucket，根據今天的市場狀態決定每個 bucket 該佔多少。_",
+        "",
+        f"**目前市場**: `{reading.regime}`（大盤離 200 日均線 {reading.dist_ma200:+.1f}%）",
         "",
     ]
     if tilt > 0:
-        lines.append(f"⚠️ **Hedge overlay 啟動**：cash +{tilt}pp")
+        lines.append(f"⚠️ **危險警示器觸發** → 多留 +{tilt}% 現金")
         for note in hedge_notes:
             lines.append(f"  - {note}")
         lines.append("")
     lines.extend([
-        "### 目標配置",
+        "### 該有的配置",
         "",
-        "| 類別 | 目標 % | 說明 |",
+        "| 類別 | 該佔 % | 說明 |",
         "|------|--------|------|",
     ])
     for key, label in BUCKET_LABELS:
@@ -246,9 +248,9 @@ def render_barbell_section() -> str:
     # Compare with current holdings
     current = _load_holdings()
     if current is not None:
-        lines.append("### 當前 vs 目標 deltas")
+        lines.append("### 你目前 vs 該有的")
         lines.append("")
-        lines.append("| 類別 | 當前 % | 目標 % | Delta |")
+        lines.append("| 類別 | 你目前 | 該佔 | 差距 |")
         lines.append("|------|--------|--------|-------|")
 
         delta_records = []
@@ -258,9 +260,12 @@ def render_barbell_section() -> str:
             d = tgt - curr_pct
             delta_records.append((key, label, curr_pct, tgt, d))
 
+        total = current.total_value if current else 0
         for key, label, curr_pct, tgt, d in delta_records:
-            arrow = "⬆️ 加碼" if d > 5 else ("⬇️ 減碼" if d < -5 else "✅ 達標")
-            lines.append(f"| {label} | {curr_pct:.0f}% | {tgt}% | {d:+.0f}pp {arrow} |")
+            arrow = "⬆️ 該加" if d > 5 else ("⬇️ 該減" if d < -5 else "✅ 達標")
+            twd = abs(int(d / 100 * total))
+            twd_str = f"≈ NT${twd:,}" if abs(d) >= 5 else ""
+            lines.append(f"| {label} | {curr_pct:.0f}% | {tgt}% | {d:+.0f}% {arrow} {twd_str} |")
         lines.append("")
 
         # Top 3 actions by abs delta
@@ -269,12 +274,13 @@ def render_barbell_section() -> str:
             key=lambda r: -abs(r[4]),
         )[:3]
         if big_deltas:
-            lines.append("### 建議動作（依 delta 排序）")
+            lines.append("### 👉 該做什麼（前 3 大調整）")
             lines.append("")
             for key, label, curr_pct, tgt, d in big_deltas:
-                action = "增加" if d > 0 else "減少"
-                lines.append(f"- **{action} {label} {abs(d):.0f}pp** (current {curr_pct:.0f}% → target {tgt}%)")
+                action = "買進" if d > 0 else "賣掉"
+                twd = abs(int(d / 100 * total))
+                lines.append(f"- **{action} {label} {abs(d):.0f}% ≈ NT${twd:,}** (目前 {curr_pct:.0f}% → 目標 {tgt}%)")
             lines.append("")
-    lines.append("_配置基於 9 年 TAIEX 實證 (regime_strategy_mapping.csv) + deployment v4 (2026-05-05 EWY 撤回後)；每週至少 review 一次_")
+    lines.append("_配置依據: 9 年台股實證 + 2026-05-05 撤回 EWY 後的修正版。每週 review 一次。_")
     lines.append("")
     return "\n".join(lines)

@@ -285,30 +285,37 @@ def compute_hedge_reading() -> HedgeReading:
 def render_hedge_section() -> str:
     r = compute_hedge_reading()
     lines = [
-        "## 🛡️ Hedge Signals（regime-independent crash overlay）",
+        "## 🛡️ 危險警示器（5 個保險絲）",
         "",
-        "| Signal | Value | Threshold | Active |",
+        "_這 5 個指標獨立監控市場危險訊號。任 1 觸發 → 自動建議多留現金。_",
+        "",
+        "| 訊號 | 目前值 | 警戒線 | 狀態 |",
         "|--------|-------|-----------|--------|",
-        f"| Foreign TX OI z (252d) | **{r.foreign_tx_z:+.2f}** | < -2.0 | "
-        f"{'🚨 YES' if r.foreign_tx_signal else '✅ no'} |",
-        f"| VIX | **{r.vix_current:.1f}** | > 30 | "
-        f"{'🚨 YES' if r.vix_signal else '✅ no'} |",
-        f"| VIX/VIX3M ratio | **{r.vix_ratio:.3f}** | > 1.05 | "
-        f"{'🚨 YES' if r.vix_ratio_signal else '✅ no'} |",
-        f"| TX basis (60d z) | **{r.tx_basis_pts:+.0f}pts (z={r.tx_basis_z:+.2f})** | \\|z\\|>2 | "
-        f"{'ℹ️ extreme' if r.tx_basis_extreme else '✅ normal'} |",
-        f"| SPY overnight | **{r.spy_overnight_pct:+.2f}%** | < -2% | "
-        f"{'ℹ️ gap-down' if r.spy_gap_signal else '✅ normal'} |",
+        f"| 外資台指期偏空度 | **{r.foreign_tx_z:+.2f}** | < -2.0 | "
+        f"{'🚨 觸發' if r.foreign_tx_signal else '✅ 正常'} |",
+        f"| VIX 美股恐慌指數 | **{r.vix_current:.1f}** | > 30 | "
+        f"{'🚨 觸發' if r.vix_signal else '✅ 正常'} |",
+        f"| 美股短/中期恐慌比 | **{r.vix_ratio:.3f}** | > 1.05 | "
+        f"{'🚨 觸發' if r.vix_ratio_signal else '✅ 正常'} |",
+        f"| 台指期溢價/折價 | **{r.tx_basis_pts:+.0f}點** | 極端 | "
+        f"{'ℹ️ 極端' if r.tx_basis_extreme else '✅ 正常'} |",
+        f"| 美股隔夜漲跌 | **{r.spy_overnight_pct:+.2f}%** | < -2% | "
+        f"{'ℹ️ 大跌' if r.spy_gap_signal else '✅ 正常'} |",
         "",
-        f"**Cash tilt 建議**: {'+' + str(r.cash_tilt_pp) if r.cash_tilt_pp > 0 else '0'}pp 超出 barbell baseline",
+        f"**👉 建議多留現金**: {'+' + str(r.cash_tilt_pp) if r.cash_tilt_pp > 0 else '0'}pp（超出基準配置）",
         "",
     ]
     for note in r.notes:
         lines.append(f"- {note}")
     lines.append("")
-    lines.append("_TX OI 實證: 10d TAIEX alpha +1.43% (t=4.09, OOS 3/3)。VIX > 30 為 panic 指標。_")
-    lines.append("_VIX/VIX3M 為 risk indicator (3-AI 共識 2026-05-04 建議不作 entry signal — hindsight bias)。_")
-    lines.append("_TX 基差 informational only — full +3.38% deep premium 但 OOS 1/3 期 robust，僅顯示結構不疊加 tilt。_")
-    lines.append("_SPY overnight informational only — Big down -2~-3% fwd 1d +0.86% (70.6% win, n=34) 但 OOS 1/3 robust。_")
+    lines.append("<details><summary>📖 每個指標代表什麼（點開）</summary>")
+    lines.append("")
+    lines.append("- **外資台指期偏空度**：外資手上的台指期合約（多單-空單）統計偏離度，<-2 = 外資極度看空 → 歷史 10 天後台股反而上漲 +1.43%（反向訊號）")
+    lines.append("- **VIX**：美股 30 天預期波動度，>30 = 市場恐慌中")
+    lines.append("- **美股短/中期恐慌比 (VIX/VIX3M)**：>1.05 表示短期恐慌已超過長期，通常出現在市場大跌時")
+    lines.append("- **台指期溢價/折價**：期貨價 vs 現貨指數差距，極端值代表市場結構失衡")
+    lines.append("- **美股隔夜漲跌**：SPY 美國時間收盤 vs 前一天，<-2% 暗示明天台股可能跳空，但歷史顯示日內常反彈 +0.86%")
+    lines.append("")
+    lines.append("</details>")
     lines.append("")
     return "\n".join(lines)

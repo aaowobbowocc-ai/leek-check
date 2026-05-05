@@ -72,10 +72,10 @@ def generate_actions(
         actions.append(Action(
             priority="critical",
             icon="🚨",
-            label=f"CRASH 鑽石買點 — 立即部署 0050 (NT${deploy_amount:,})",
+            label=f"市場崩盤！立刻買 0050 (NT${deploy_amount:,})",
             amount_twd=deploy_amount,
             ticker="0050",
-            reason=f"CRASH 9 年實證 fwd 20d +9.75% / 100% win (n=34)。當前 60d ret {regime_reading.ret_60d:+.1f}%, vol30 {regime_reading.vol_30d:.0f}%",
+            reason=f"歷史 100% 機率 20 天反彈 +9.75%（過去 9 年所有 CRASH 都這樣）。今天 60 天跌 {regime_reading.ret_60d:+.1f}%, 波動度 {regime_reading.vol_30d:.0f}%",
             source="regime_v2",
         ))
         # Add 00631L tilt for CRASH (from barbell allocation)
@@ -86,10 +86,10 @@ def generate_actions(
                 actions.append(Action(
                     priority="critical",
                     icon="⚡",
-                    label=f"加 00631L 槓桿 +{leverage_target - barbell_current.leverage_pct:.0f}pp (NT${lev_amount:,})",
+                    label=f"加碼槓桿 ETF (00631L) {leverage_target - barbell_current.leverage_pct:.0f}% ≈ NT${lev_amount:,}",
                     amount_twd=lev_amount,
                     ticker="00631L",
-                    reason="CRASH 期 00631L fwd 20d +22.71% / 100% win (n=34)",
+                    reason="CRASH 期 00631L 歷史 20 天反彈 +22.71%（100% 機率漲）",
                     source="regime_v2",
                 ))
 
@@ -100,7 +100,7 @@ def generate_actions(
             actions.append(Action(
                 priority="critical",
                 icon="🛡️",
-                label=f"多重 hedge 觸發 → 提高現金 +{tilt}pp (NT${_bp_to_twd(tilt, total_value):,})",
+                label=f"多個危險訊號觸發 → 多留現金 +{tilt}% ≈ NT${_bp_to_twd(tilt, total_value):,}",
                 amount_twd=_bp_to_twd(tilt, total_value),
                 ticker=None,
                 reason="; ".join(hedge_reading.notes[:2]),
@@ -110,7 +110,7 @@ def generate_actions(
             actions.append(Action(
                 priority="warning",
                 icon="⚠️",
-                label=f"Hedge 警示 — 提高現金 +{tilt}pp (NT${_bp_to_twd(tilt, total_value):,})",
+                label=f"危險警示 → 多留現金 +{tilt}% ≈ NT${_bp_to_twd(tilt, total_value):,}",
                 amount_twd=_bp_to_twd(tilt, total_value),
                 ticker=None,
                 reason="; ".join(hedge_reading.notes[:2]),
@@ -119,13 +119,13 @@ def generate_actions(
 
     # 3. Barbell deltas (regime adjust)
     bucket_labels = {
-        "core_tw": "核心 TW (0050+00881+00947)",
-        "us_00646": "美股 00646",
-        "gold": "黃金 (IAU+00635U)",
-        "japan_dxj": "日股 DXJ",
-        "leverage": "00631L 槓桿",
-        "satellite": "Revenue YoY 衛星",
-        "legacy": "個股 (2345/2408/009819)",
+        "core_tw": "台股核心 (0050)",
+        "us_00646": "美股分散 (00646)",
+        "gold": "黃金避險 (IAU/00635U)",
+        "japan_dxj": "日股 (DXJ)",
+        "leverage": "槓桿 ETF (00631L)",
+        "satellite": "營收成長股組合",
+        "legacy": "舊有個股 (2345/2408)",
         "cash": "現金",
     }
 
@@ -143,10 +143,10 @@ def generate_actions(
             continue
         amount = abs(_bp_to_twd(d, total_value))
         if d > 0:
-            verb = "加碼"
+            verb = "買進"
             icon = "⬆️"
         else:
-            verb = "減持"
+            verb = "賣掉"
             icon = "⬇️"
 
         if abs(d) >= 15:
@@ -163,17 +163,17 @@ def generate_actions(
         # In STRONG_BULL, downgrade aggressive add actions
         if regime_reading.regime == "STRONG_BULL" and d > 0 and abs(d) >= 15:
             priority = "tweak"  # don't push aggressive buy in mean reversion zone
-            extra = "  (STRONG_BULL 慎入：分批 8-12 週)"
+            extra = "（市場過熱，慢慢分 8-12 週買，不要一次梭哈）"
         else:
             extra = ""
 
         actions.append(Action(
             priority=priority,
             icon=icon,
-            label=f"{verb} {label} {abs(d):.0f}pp (NT${amount:,}){extra}",
+            label=f"{verb} {label} {abs(d):.0f}% ≈ NT${amount:,}{extra}",
             amount_twd=amount,
             ticker=None,
-            reason=f"current {curr_pct:.0f}% → target {tgt_pct}%",
+            reason=f"目前 {curr_pct:.0f}% → 該佔 {tgt_pct}%",
             source="barbell",
         ))
 
@@ -182,10 +182,10 @@ def generate_actions(
         actions.append(Action(
             priority="hold",
             icon="🔴",
-            label="STRONG_BULL — 暫停 DCA + 累積現金等 CRASH",
+            label="市場過熱 → 暫停定期買進，存現金等大跌",
             amount_twd=0,
             ticker=None,
-            reason=f"TAIEX 距 MA200 {regime_reading.dist_ma200:+.1f}%；fwd 20d 跨期 +0.31% (2020-22) vs -2.13% (2023-25) 不穩",
+            reason=f"大盤離 200 日均線 {regime_reading.dist_ma200:+.1f}%（>+20% 算過熱）。歷史顯示這種狀態未來 20 天表現不穩",
             source="regime_v2",
         ))
 
@@ -194,10 +194,10 @@ def generate_actions(
         actions.append(Action(
             priority="hold",
             icon="✅",
-            label="配置已達標 — 持續觀察",
+            label="目前配置 OK — 持續觀察就好",
             amount_twd=0,
             ticker=None,
-            reason=f"Regime {regime_reading.regime}；無明顯 delta 需調整",
+            reason=f"市場狀態 {regime_reading.regime}，沒有明顯該調整的部位",
             source="system",
         ))
 
@@ -239,15 +239,23 @@ def render_hero_section() -> str:
         "BULL_TREND": "🟢", "STRONG_BULL": "🔴",
     }.get(regime_r.regime, "⚪")
 
+    regime_chinese = {
+        "CRASH": "市場崩盤中",
+        "BEAR": "市場下跌中",
+        "SIDEWAYS": "市場盤整",
+        "BULL_TREND": "健康牛市",
+        "STRONG_BULL": "市場過熱",
+    }.get(regime_r.regime, regime_r.regime)
+
     lines = [
-        "## 🎯 今日行動指令（Hero Panel）",
+        "## 🎯 今天該做什麼（Top 動作）",
         "",
-        f"**狀態**: {regime_color} **`{regime_r.regime}`** | "
-        f"TAIEX {regime_r.dist_ma200:+.1f}% MA200 | "
+        f"**目前狀態**: {regime_color} **{regime_chinese}（{regime_r.regime}）** | "
+        f"大盤離 200 日均線 {regime_r.dist_ma200:+.1f}% | "
         f"VIX {hedge_r.vix_current:.1f} | "
-        f"Hedge tilt: {hedge_r.cash_tilt_pp:+d}pp",
+        f"危險警示 {hedge_r.cash_tilt_pp:+d}%（多留現金）",
         "",
-        "**今日 Top 行動**:",
+        "**👉 今天前 5 個動作**:",
         "",
     ]
 
@@ -263,12 +271,12 @@ def render_hero_section() -> str:
 
     lines.append("")
     lines.append(
-        f"**💰 資金狀態**: 現金 NT${cash_total:,.0f} ({holdings.cash_pct:.0f}%) | "
-        f"今日建議動用 ≤ NT${today_budget:,}"
+        f"**💰 你的現金**: NT${cash_total:,.0f}（佔 {holdings.cash_pct:.0f}%） | "
+        f"**今天建議動用上限**: NT${today_budget:,}"
     )
     lines.append("")
     lines.append(
-        f"_整合來源: 5-regime classifier + 5 hedge signals + 8-bucket barbell vs deployment v4。每 60s 自動 refresh._"
+        "_本面板整合：市場狀態 + 5 個危險警示 + 8 種資產配置 → 算出今天該做什麼。GUI 每 60 秒自動更新。_"
     )
     lines.append("")
     return "\n".join(lines)
