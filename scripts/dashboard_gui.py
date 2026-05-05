@@ -66,19 +66,22 @@ LOG_DIR = ROOT / "logs"
 PYTHON = sys.executable
 
 # 深色主題色
+# 2026-05-05 visual polish: 更柔和的深色 + 對比清晰的 accent
 COLORS = {
-    "bg":       "#1e1e1e",
-    "bg2":      "#252525",
-    "bg3":      "#2d2d2d",
-    "fg":       "#d4d4d4",
-    "fg_dim":   "#808080",
-    "accent":   "#4ec9b0",
-    "yellow":   "#dcdcaa",
-    "green":    "#6a9955",
-    "red":      "#f48771",
-    "orange":   "#ce9178",
-    "blue":     "#569cd6",
-    "border":   "#3e3e42",
+    "bg":       "#16181d",   # 主背景（更深更柔）
+    "bg2":      "#1e2128",   # card 背景（微微帶藍灰）
+    "bg3":      "#2a2e37",   # hover / active
+    "fg":       "#e4e6eb",   # 主要文字（更亮易讀）
+    "fg_dim":   "#8b92a0",   # 次要文字
+    "accent":   "#5eead4",   # teal 主色（醒目但不刺眼）
+    "yellow":   "#fbbf24",   # warning amber
+    "green":    "#34d399",   # success emerald
+    "red":      "#f87171",   # danger coral
+    "orange":   "#fb923c",   # alert orange
+    "blue":     "#60a5fa",   # info blue
+    "purple":   "#a78bfa",   # special
+    "border":   "#2f343d",   # subtle dividers
+    "card_hi":  "#252934",   # highlighted card (CRASH/critical)
 }
 
 # DCA 計畫
@@ -396,16 +399,15 @@ class Dashboard(tk.Tk):
 
         self._build_hero_action(left)          # Hero Action Panel (P0, 永遠最上)
         self._build_summary(left)
-        self._build_v2_regime(left)            # V2 5-regime classifier (added 2026-05-05)
-        self._build_hedge_signals(left)        # 5 hedge signals (added 2026-05-05)
-        self._build_barbell_target(left)       # Barbell allocation (added 2026-05-05)
-        # self._build_regime_status(left)      # REMOVED: old strategy gate (與 V2 重複)
+        self._build_v2_regime(left)            # V2 5-regime classifier
+        self._build_hedge_signals(left)        # 5 hedge signals
+        self._build_barbell_target(left)       # Barbell allocation
+        self._build_holdings(left)             # 持股 (上移至 critical 區)
         self._build_overnight(left)
         self._build_dca_timing(left)
-        self._build_holdings(left)
         self._build_orb_signal(left)
         self._build_institutional_signal(left)
-        self._build_short_watchlist(left)
+        # self._build_short_watchlist(left)    # REMOVED 2026-05-05: 退勢空 dead-end (memory 確認)
         self._build_dca(left)
 
         # ── 右側：動作 + 事件 log（也加 scrollbar）──
@@ -509,17 +511,16 @@ class Dashboard(tk.Tk):
             "Revenue YoY 個股組合在 L4 大型股中表現最穩定（+25.7%/年）。",
     }
 
-    def _section(self, parent, title: str, default_open: bool = True) -> ttk.Frame:
-        """Section with collapsible toggle (P1 progressive disclosure 2026-05-05).
+    def _section(self, parent, title: str, default_open: bool = True,
+                  badge: str | None = None, badge_color: str | None = None) -> ttk.Frame:
+        """Section with collapsible toggle + status badge (2026-05-05 polish).
 
-        Click title → expand/collapse body.
-        critical sections (regime/hedge/barbell/hero/holdings) 預設展開；
-        次要 (ORB/dca timing/overnight) 預設摺疊以減少 scroll。
+        Click title → expand/collapse body. Status badge shows on right side.
         """
-        frame = ttk.Frame(parent, style="Card.TFrame", padding=(15, 10))
-        frame.pack(fill="x", pady=(0, 8))
+        frame = ttk.Frame(parent, style="Card.TFrame", padding=(18, 14))
+        frame.pack(fill="x", pady=(0, 10))
 
-        # Header (clickable)
+        # Header (clickable, with badge on right)
         header = ttk.Frame(frame, style="Card.TFrame")
         header.pack(fill="x")
         arrow = "▼" if default_open else "▶"
@@ -529,9 +530,19 @@ class Dashboard(tk.Tk):
         )
         title_label.pack(side="left", anchor="w")
 
+        # Status badge (e.g., 暫停中, 活躍, 觀察)
+        if badge:
+            badge_label = ttk.Label(
+                header, text=f" {badge} ",
+                background=badge_color or COLORS["bg3"],
+                foreground=COLORS["fg"],
+                font=(self.UI_FONT, 10, "bold"),
+            )
+            badge_label.pack(side="right", padx=(0, 4))
+
         body = ttk.Frame(frame, style="Card.TFrame")
         if default_open:
-            body.pack(fill="x", pady=(6, 0))
+            body.pack(fill="x", pady=(8, 0))
 
         is_open = [default_open]
 
@@ -541,7 +552,7 @@ class Dashboard(tk.Tk):
                 title_label.config(text=f"▶ {title}")
                 is_open[0] = False
             else:
-                body.pack(fill="x", pady=(6, 0))
+                body.pack(fill="x", pady=(8, 0))
                 title_label.config(text=f"▼ {title}")
                 is_open[0] = True
 
@@ -575,36 +586,45 @@ class Dashboard(tk.Tk):
         self.regime_suspended.pack(anchor="w", pady=1)
 
     def _build_hero_action(self, parent):
-        """🎯 Hero Action Panel — 今日 Top 行動指令 (P0)"""
-        # Use prominent style to grab attention
-        frame = ttk.Frame(parent, style="Card.TFrame", padding=(15, 12))
-        frame.pack(fill="x", pady=(0, 8))
-        # Title with regime indicator
+        """🎯 Hero Action Panel — 今日 Top 行動指令 (P0, prominent visual)"""
+        # Outer frame with colored border for emphasis
+        self.hero_outer = tk.Frame(parent, background=COLORS["accent"], padx=2, pady=2)
+        self.hero_outer.pack(fill="x", pady=(0, 12))
+        frame = ttk.Frame(self.hero_outer, style="Card.TFrame", padding=(20, 16))
+        frame.pack(fill="x")
+        # Title
         self.hero_title = ttk.Label(
             frame, text="🎯 今天該做什麼（前 5 個動作）", style="Section.TLabel",
-            font=(self.UI_FONT, 16, "bold"),
+            font=(self.UI_FONT, 18, "bold"),
         )
-        self.hero_title.pack(anchor="w", pady=(0, 4))
+        self.hero_title.pack(anchor="w", pady=(0, 8))
         # Regime status line
         self.hero_status = ttk.Label(
             frame, text="計算中...", style="Card.TLabel",
             foreground=COLORS["fg_dim"],
+            font=(self.UI_FONT, 14, "bold"),
         )
-        self.hero_status.pack(anchor="w", pady=(0, 6))
+        self.hero_status.pack(anchor="w", pady=(0, 10))
+        # Divider
+        sep = tk.Frame(frame, background=COLORS["border"], height=1)
+        sep.pack(fill="x", pady=(0, 8))
         # Actions list (5 lines)
         self.hero_action_labels = []
         for _ in range(5):
             lbl = ttk.Label(frame, text="", style="Card.TLabel",
-                            wraplength=620, font=(self.UI_FONT, 13))
-            lbl.pack(anchor="w", pady=1)
+                            wraplength=620, font=(self.UI_FONT, 14))
+            lbl.pack(anchor="w", pady=2)
             self.hero_action_labels.append(lbl)
-        # Cash bar
-        self.hero_cash = ttk.Label(
-            frame, text="", style="Card.TLabel",
+        # Cash bar with subtle background highlight
+        cash_box = tk.Frame(frame, background=COLORS["bg3"])
+        cash_box.pack(fill="x", pady=(12, 0), ipadx=12, ipady=8)
+        self.hero_cash = tk.Label(
+            cash_box, text="",
+            background=COLORS["bg3"],
             foreground=COLORS["yellow"],
-            font=(self.UI_FONT, 13, "bold"),
+            font=(self.UI_FONT, 14, "bold"),
         )
-        self.hero_cash.pack(anchor="w", pady=(8, 2))
+        self.hero_cash.pack(anchor="w")
 
     def _build_v2_regime(self, parent):
         """V2 5-regime classifier (CRASH / BEAR / SIDEWAYS / BULL_TREND / STRONG_BULL)"""
@@ -621,35 +641,43 @@ class Dashboard(tk.Tk):
         self.v2_regime_action.pack(anchor="w", pady=2)
 
     def _build_hedge_signals(self, parent):
-        """5 hedge signals overlay"""
+        """5 hedge signals overlay (visual: 5 cards in a row)"""
         body = self._section(parent, "🛡️ 危險警示器（5 個保險絲）ⓘ")
         self.hedge_tilt_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
-                                           font=(self.UI_FONT, 16, "bold"))
-        self.hedge_tilt_label.pack(anchor="w", pady=2)
+                                           font=(self.UI_FONT, 15, "bold"))
+        self.hedge_tilt_label.pack(anchor="w", pady=(0, 12))
         self._add_tooltip(self.hedge_tilt_label,
-                           "Cash tilt: 因 hedge 訊號疊加而要超出 baseline 的現金比例。"
-                           "0pp = 正常；>10pp = 警戒；>20pp = 多重危機觸發。")
-        self.hedge_signals_grid = ttk.Frame(body, style="Card.TFrame")
+                           "危險警示量化結果：5 個指標獨立監控市場危險訊號。\n"
+                           "每觸發一個 → 自動建議多留現金（cash tilt）。\n"
+                           "0% = 正常；+10% 以上 = 警戒；+20% 以上 = 多重危機。")
+        self.hedge_signals_grid = tk.Frame(body, background=COLORS["bg2"])
         self.hedge_signals_grid.pack(fill="x", pady=2)
         self.hedge_signal_labels = {}
-        sig_tooltips = {
-            "TX OI z": self.GLOSSARY["TX OI"],
-            "VIX": self.GLOSSARY["VIX"],
-            "VIX/VIX3M": "VIX (30d 隱含波動) / VIX3M (93d). >1.05 = 短期恐慌結構 (term backwardation).",
-            "TX basis": "TX 期貨 - TWII 現貨. |z|>2 = 極端結構 (informational only, OOS 1/3 robust).",
-            "SPY 隔夜": "SPY today close vs yesterday close (US 04:00 TW 時間). <-2% → TW 隔日 +0.86% reversion 傾向.",
-        }
-        for i, sig in enumerate(["TX OI z", "VIX", "VIX/VIX3M", "TX basis", "SPY 隔夜"]):
-            cell = ttk.Frame(self.hedge_signals_grid, style="Card.TFrame", padding=(4, 2))
-            cell.grid(row=0, column=i, sticky="w", padx=(0, 12))
-            name_lbl = ttk.Label(cell, text=sig + " ⓘ", style="Card.TLabel",
-                      foreground=COLORS["fg_dim"], font=(self.UI_FONT, 13))
+        sig_meta = [
+            ("TX OI z", "外資台指期", self.GLOSSARY["TX OI"]),
+            ("VIX", "VIX 恐慌", self.GLOSSARY["VIX"]),
+            ("VIX/VIX3M", "短/中恐慌比", "VIX (30 日預期波動) / VIX3M (93 日預期波動). >1.05 表示短期恐慌已超過長期。"),
+            ("TX basis", "台指期溢價", "TX 期貨 - TWII 現貨差. |z|>2 = 極端結構 (僅參考)."),
+            ("SPY 隔夜", "美股隔夜", "SPY 美國時間收盤 vs 前一天. <-2% 暗示明天台股可能跳空."),
+        ]
+        for i, (key, name, tip) in enumerate(sig_meta):
+            cell_border = tk.Frame(self.hedge_signals_grid,
+                                    background=COLORS["border"],
+                                    padx=1, pady=1)
+            cell_border.grid(row=0, column=i, sticky="nsew", padx=4, pady=2)
+            cell = tk.Frame(cell_border, background=COLORS["bg3"], padx=12, pady=10)
+            cell.pack(fill="both", expand=True)
+            name_lbl = tk.Label(cell, text=name + " ⓘ",
+                      background=COLORS["bg3"], foreground=COLORS["fg_dim"],
+                      font=(self.UI_FONT, 11))
             name_lbl.pack(anchor="w")
-            self._add_tooltip(name_lbl, sig_tooltips.get(sig, ""))
-            v = ttk.Label(cell, text="—", style="Card.TLabel",
-                          font=(self.UI_FONT, 13, "bold"))
-            v.pack(anchor="w")
-            self.hedge_signal_labels[sig] = v
+            self._add_tooltip(name_lbl, tip)
+            v = tk.Label(cell, text="—",
+                          background=COLORS["bg3"], foreground=COLORS["fg"],
+                          font=(self.UI_FONT, 15, "bold"))
+            v.pack(anchor="w", pady=(4, 0))
+            self.hedge_signal_labels[key] = v
+            self.hedge_signals_grid.grid_columnconfigure(i, weight=1)
 
     def _build_barbell_target(self, parent):
         """Barbell allocation target vs current"""
@@ -724,7 +752,12 @@ class Dashboard(tk.Tk):
         self.holdings_tv = tv
 
     def _build_orb_signal(self, parent):
-        body = self._section(parent, "🎯 今日 ORB 訊號 (paper trade)", default_open=False)
+        body = self._section(
+            parent, "🎯 今日 ORB 訊號 (paper trade)",
+            default_open=False,
+            badge="STRONG_BULL 暫停",
+            badge_color=COLORS["orange"],
+        )
         cols = ("ticker", "name", "rule", "status", "detail")
         tv = ttk.Treeview(body, columns=cols, show="headings", height=2)
         for c, w, txt in [
@@ -1373,18 +1406,31 @@ class Dashboard(tk.Tk):
                 holdings.total_value, cash_total,
             )
 
-            # Status line
+            # Status line + outer border color (regime-aware)
             regime_color_map = {
                 "CRASH": COLORS["red"],
-                "BEAR": COLORS["yellow"],
+                "BEAR": COLORS["orange"],
                 "SIDEWAYS": COLORS["fg_dim"],
                 "BULL_TREND": COLORS["green"],
                 "STRONG_BULL": COLORS["red"],
             }
+            regime_chinese = {
+                "CRASH": "市場崩盤中",
+                "BEAR": "市場下跌中",
+                "SIDEWAYS": "市場盤整",
+                "BULL_TREND": "健康牛市",
+                "STRONG_BULL": "市場過熱",
+            }
             status_color = regime_color_map.get(regime_r.regime, COLORS["fg"])
+            zh = regime_chinese.get(regime_r.regime, regime_r.regime)
+            # Update border color
+            try:
+                self.hero_outer.config(background=status_color)
+            except Exception:
+                pass
             self.hero_status.config(
-                text=f"`{regime_r.regime}` | TAIEX {regime_r.dist_ma200:+.1f}% MA200 | "
-                     f"VIX {hedge_r.vix_current:.1f} | Hedge tilt: {hedge_r.cash_tilt_pp:+d}pp",
+                text=f"{zh} ({regime_r.regime}) | 大盤離 200 日均線 {regime_r.dist_ma200:+.1f}% | "
+                     f"VIX {hedge_r.vix_current:.1f} | 危險警示 +{hedge_r.cash_tilt_pp}%（多留現金）",
                 foreground=status_color,
             )
 
