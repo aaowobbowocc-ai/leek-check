@@ -290,24 +290,28 @@ class Dashboard(tk.Tk):
         s.configure("Card.TFrame", background=COLORS["bg2"], relief="flat")
         s.configure("TLabel", background=COLORS["bg"], foreground=COLORS["fg"])
         s.configure("Card.TLabel", background=COLORS["bg2"])
-        s.configure("Title.TLabel", font=(self.UI_FONT, 18, "bold"),
+        # 2026-05-05 user feedback: 字放大 + 字體清楚
+        # 整體放大 ~30%（11→14, 13→16, 18→22）
+        s.configure("Title.TLabel", font=(self.UI_FONT, 22, "bold"),
                     foreground=COLORS["accent"])
-        s.configure("Section.TLabel", font=(self.UI_FONT, 13, "bold"),
+        s.configure("Section.TLabel", font=(self.UI_FONT, 16, "bold"),
                     foreground=COLORS["accent"])
-        s.configure("Big.TLabel", font=(self.UI_FONT, 16, "bold"),
+        s.configure("Big.TLabel", font=(self.UI_FONT, 19, "bold"),
                     foreground=COLORS["fg"], background=COLORS["bg2"])
-        s.configure("Status.TLabel", font=(self.UI_FONT, 12),
+        s.configure("Status.TLabel", font=(self.UI_FONT, 14),
                     background=COLORS["bg"])
+        s.configure("Card.TLabel", font=(self.UI_FONT, 13),
+                    background=COLORS["bg2"])
         s.configure("Treeview", background=COLORS["bg2"], foreground=COLORS["fg"],
                     fieldbackground=COLORS["bg2"], borderwidth=0,
-                    rowheight=32, font=(self.UI_FONT, 11))
+                    rowheight=38, font=(self.UI_FONT, 13))
         s.configure("Treeview.Heading", background=COLORS["bg3"],
                     foreground=COLORS["accent"],
-                    font=(self.UI_FONT, 11, "bold"), borderwidth=0)
+                    font=(self.UI_FONT, 13, "bold"), borderwidth=0)
         s.map("Treeview.Heading", background=[("active", COLORS["bg3"])])
         s.map("Treeview", background=[("selected", COLORS["bg3"])])
         s.configure("TButton", background=COLORS["bg3"], foreground=COLORS["fg"],
-                    font=(self.UI_FONT, 11), borderwidth=0, padding=10)
+                    font=(self.UI_FONT, 13), borderwidth=0, padding=10)
         s.map("TButton",
               background=[("active", COLORS["accent"]), ("pressed", COLORS["accent"])],
               foreground=[("active", COLORS["bg"]), ("pressed", COLORS["bg"])])
@@ -358,7 +362,7 @@ class Dashboard(tk.Tk):
         ttk.Button(btn_row, text="❓ 說明", command=self.show_help).pack(side="left", padx=2)
         self.daemon_status_label = ttk.Label(
             btn_row, text="🟢 自動偵測中 (09:20 / 13:25)",
-            foreground=COLORS["green"], font=(self.UI_FONT, 11, "bold"))
+            foreground=COLORS["green"], font=(self.UI_FONT, 13, "bold"))
         self.daemon_status_label.pack(side="right")
 
         # ── 主內容區 (左右，可滾動) ──
@@ -445,7 +449,7 @@ class Dashboard(tk.Tk):
                 tooltip, text=text, justify="left",
                 background="#2a2a2a", foreground="#e0e0e0",
                 relief="solid", borderwidth=1,
-                font=(self.UI_FONT, 9), wraplength=350, padx=8, pady=6,
+                font=(self.UI_FONT, 13), wraplength=350, padx=8, pady=6,
             )
             label.pack()
 
@@ -561,7 +565,7 @@ class Dashboard(tk.Tk):
     def _build_regime_status(self, parent):
         body = self._section(parent, "📊 Regime + 策略 Gate (自動暫停 regime-dep 策略)")
         self.regime_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
-                                       font=(self.UI_FONT, 12, "bold"))
+                                       font=(self.UI_FONT, 16, "bold"))
         self.regime_label.pack(anchor="w", pady=2)
         self.regime_active = ttk.Label(body, text="", style="Card.TLabel",
                                         foreground=COLORS["green"])
@@ -578,7 +582,7 @@ class Dashboard(tk.Tk):
         # Title with regime indicator
         self.hero_title = ttk.Label(
             frame, text="🎯 今天該做什麼（前 5 個動作）", style="Section.TLabel",
-            font=(self.UI_FONT, 14, "bold"),
+            font=(self.UI_FONT, 16, "bold"),
         )
         self.hero_title.pack(anchor="w", pady=(0, 4))
         # Regime status line
@@ -591,14 +595,14 @@ class Dashboard(tk.Tk):
         self.hero_action_labels = []
         for _ in range(5):
             lbl = ttk.Label(frame, text="", style="Card.TLabel",
-                            wraplength=620, font=(self.UI_FONT, 11))
+                            wraplength=620, font=(self.UI_FONT, 13))
             lbl.pack(anchor="w", pady=1)
             self.hero_action_labels.append(lbl)
         # Cash bar
         self.hero_cash = ttk.Label(
             frame, text="", style="Card.TLabel",
             foreground=COLORS["yellow"],
-            font=(self.UI_FONT, 11, "bold"),
+            font=(self.UI_FONT, 13, "bold"),
         )
         self.hero_cash.pack(anchor="w", pady=(8, 2))
 
@@ -620,7 +624,7 @@ class Dashboard(tk.Tk):
         """5 hedge signals overlay"""
         body = self._section(parent, "🛡️ 危險警示器（5 個保險絲）ⓘ")
         self.hedge_tilt_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
-                                           font=(self.UI_FONT, 12, "bold"))
+                                           font=(self.UI_FONT, 16, "bold"))
         self.hedge_tilt_label.pack(anchor="w", pady=2)
         self._add_tooltip(self.hedge_tilt_label,
                            "Cash tilt: 因 hedge 訊號疊加而要超出 baseline 的現金比例。"
@@ -639,11 +643,11 @@ class Dashboard(tk.Tk):
             cell = ttk.Frame(self.hedge_signals_grid, style="Card.TFrame", padding=(4, 2))
             cell.grid(row=0, column=i, sticky="w", padx=(0, 12))
             name_lbl = ttk.Label(cell, text=sig + " ⓘ", style="Card.TLabel",
-                      foreground=COLORS["fg_dim"], font=(self.UI_FONT, 9))
+                      foreground=COLORS["fg_dim"], font=(self.UI_FONT, 13))
             name_lbl.pack(anchor="w")
             self._add_tooltip(name_lbl, sig_tooltips.get(sig, ""))
             v = ttk.Label(cell, text="—", style="Card.TLabel",
-                          font=(self.UI_FONT, 11, "bold"))
+                          font=(self.UI_FONT, 13, "bold"))
             v.pack(anchor="w")
             self.hedge_signal_labels[sig] = v
 
@@ -654,7 +658,7 @@ class Dashboard(tk.Tk):
         title_label = body.master.winfo_children()[0]  # the Section.TLabel
         self._add_tooltip(title_label, self.GLOSSARY["barbell"])
         self.barbell_regime_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
-                                                font=(self.UI_FONT, 11, "bold"))
+                                                font=(self.UI_FONT, 13, "bold"))
         self.barbell_regime_label.pack(anchor="w", pady=2)
         # Table-like grid: bucket / current / target / delta
         self.barbell_grid = ttk.Frame(body, style="Card.TFrame")
@@ -663,7 +667,7 @@ class Dashboard(tk.Tk):
         # Header
         for j, h in enumerate(["類別", "當前", "目標", "Δ"]):
             ttk.Label(self.barbell_grid, text=h, style="Card.TLabel",
-                      foreground=COLORS["fg_dim"], font=(self.UI_FONT, 9, "bold")
+                      foreground=COLORS["fg_dim"], font=(self.UI_FONT, 13, "bold")
                       ).grid(row=0, column=j, sticky="w", padx=(0, 12))
         self.barbell_actions_label = ttk.Label(body, text="", style="Card.TLabel",
                                                 wraplength=600)
@@ -672,7 +676,7 @@ class Dashboard(tk.Tk):
     def _build_dca_timing(self, parent):
         body = self._section(parent, "📅 今日 DCA Timing 評分（基於 9 年日曆 anomaly）", default_open=False)
         self.dca_timing_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
-                                           font=(self.UI_FONT, 12, "bold"))
+                                           font=(self.UI_FONT, 16, "bold"))
         self.dca_timing_label.pack(anchor="w", pady=2)
         self.dca_timing_detail = ttk.Label(body, text="", style="Card.TLabel",
                                             foreground=COLORS["fg_dim"])
@@ -820,7 +824,7 @@ class Dashboard(tk.Tk):
         text.tag_configure("h2", foreground=COLORS["accent"],
                            font=(self.UI_FONT, 13, "bold"), spacing1=6)
         text.tag_configure("h3", foreground=COLORS["yellow"],
-                           font=(self.UI_FONT, 12, "bold"), spacing1=4)
+                           font=(self.UI_FONT, 16, "bold"), spacing1=4)
         text.tag_configure("alert", foreground=COLORS["red"])
         text.tag_configure("good", foreground=COLORS["green"])
         text.tag_configure("warn", foreground=COLORS["yellow"])
@@ -1278,13 +1282,13 @@ class Dashboard(tk.Tk):
         ttk.Label(modal,
                   text=f"🚨 {regime} MODE 觸發 🚨",
                   background="#3a0d0d", foreground="#ff6b6b",
-                  font=(self.UI_FONT, 18, "bold"),
+                  font=(self.UI_FONT, 22, "bold"),
                   ).pack(pady=(20, 5))
 
         ttk.Label(modal,
                   text=f"當前市場狀態: {regime}",
                   background="#3a0d0d", foreground="#fff",
-                  font=(self.UI_FONT, 12, "bold"),
+                  font=(self.UI_FONT, 16, "bold"),
                   ).pack(pady=4)
 
         if regime == "CRASH":
@@ -1299,20 +1303,20 @@ class Dashboard(tk.Tk):
         ttk.Label(modal,
                   text=body_text,
                   background="#3a0d0d", foreground="#ffd1d1",
-                  font=(self.UI_FONT, 11), wraplength=540, justify="left",
+                  font=(self.UI_FONT, 13), wraplength=540, justify="left",
                   ).pack(pady=10, padx=20)
 
         if hedge_tilt > 0:
             ttk.Label(modal,
                       text=f"建議 cash tilt: +{hedge_tilt}pp 超出 baseline",
                       background="#3a0d0d", foreground="#ffe0e0",
-                      font=(self.UI_FONT, 11, "bold"),
+                      font=(self.UI_FONT, 13, "bold"),
                       ).pack(pady=4)
 
         ttk.Label(modal,
                   text="此警報僅在 session 內觸發一次。重啟 GUI 才會再次提醒。",
                   background="#3a0d0d", foreground="#888",
-                  font=(self.UI_FONT, 9),
+                  font=(self.UI_FONT, 13),
                   ).pack(pady=4)
 
         btn_frame = ttk.Frame(modal)
@@ -2062,7 +2066,7 @@ class Dashboard(tk.Tk):
         toolbar = ttk.Frame(win, padding=(8, 8, 8, 4))
         toolbar.pack(fill="x")
         ttk.Label(toolbar, text=f"📄 {path.name}",
-                  font=(self.UI_FONT, 12, "bold")).pack(side="left")
+                  font=(self.UI_FONT, 16, "bold")).pack(side="left")
         ttk.Label(toolbar, text="  搜尋：").pack(side="left", padx=(20, 2))
         search_var = tk.StringVar()
         search_entry = ttk.Entry(toolbar, textvariable=search_var, width=24)
@@ -2251,7 +2255,7 @@ class Dashboard(tk.Tk):
         ttk.Label(row7, text="備註:", style="Card.TLabel", width=10).pack(side="left")
         note_var = tk.StringVar()
         ttk.Entry(row7, textvariable=note_var, width=30,
-                  font=(self.UI_FONT, 11)).pack(side="left", padx=5)
+                  font=(self.UI_FONT, 13)).pack(side="left", padx=5)
 
         # ── 試算區 ──
         ttk.Label(frm, text="── 試算 ──", style="Section.TLabel").pack(pady=(15, 5))
@@ -2350,7 +2354,7 @@ class Dashboard(tk.Tk):
         text = scrolledtext.ScrolledText(
             help_win, bg=COLORS["bg2"], fg=COLORS["fg"],
             insertbackground=COLORS["fg"], borderwidth=0, padx=20, pady=15,
-            font=(self.UI_FONT, 11), wrap="word",
+            font=(self.UI_FONT, 13), wrap="word",
         )
         text.pack(fill="both", expand=True)
 
