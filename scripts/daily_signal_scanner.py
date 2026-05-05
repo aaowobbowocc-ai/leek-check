@@ -747,17 +747,19 @@ def main():
             h["combo_alpha_60d"] = 18.94  # OOS 2023-2025 +12.94%, MCPT pass
             h["combo_warning"] = "n=53 累積中，僅 2023-2025 OOS 通過"
         elif n == 2:
-            # 2026-05-04 3-AI critique 後修正：
-            #   重跑 n=578 mean +8.6% (memory +8.78% 一致), MCPT p=0.005
-            #   但 2020 outlier 主導 (剝除後 mean 剩 +4%, 接近 baseline 4.8%)
-            #   存活者偏差未量化 / 流動性 filter 缺失
-            #   real-world expected alpha: 0~3pp, 不再宣稱 +8.78%
-            h["combo_label"] = "🥇 雙重共識（⚠️ alpha 受 2020 outlier 主導）"
-            h["combo_alpha_60d"] = 4.0  # 剝離 2020 後保守估計
+            # 2026-05-04 3-AI critique + survivorship stress test 後修正:
+            #   原 backtest mean +8.6% (n=578) MCPT p=0.005
+            #   但 stress test 顯示在 5% 下市率時 alpha 已 break-even
+            #   Claude 估 TW 9 年實際下市率 5-10% → 真實 alpha 接近 0 或負
+            #   2020 outlier 剝離後也僅 +4% (vs baseline +4.8%)
+            #   結論：保留 scanner 偵測但不再宣稱有 portfolio alpha
+            h["combo_label"] = "🥇 雙重共識（⚠️ informational only）"
+            h["combo_alpha_60d"] = 0.0  # survivorship-adjusted ≈ 0
             h["combo_warning"] = (
-                "3-AI 共識 (2026-05-04): 真實 alpha 可能僅 0-3pp。"
-                "2020 vs 非 2020 表現差異大、47% win 肥尾、未控制存活者偏差。"
-                "建議單筆 ≤ 2% portfolio。"
+                "⚠️ 3-AI critique + stress test (2026-05-04): "
+                "real-world expected alpha ≈ 0 (survivorship bias 5%+ 下市率假設下)。"
+                "保留 informational signal 但不建議 deploy 為 portfolio 策略。"
+                "若實單，單筆 ≤ 1% portfolio 並設 -15% stop loss。"
             )
 
     if not hits:
