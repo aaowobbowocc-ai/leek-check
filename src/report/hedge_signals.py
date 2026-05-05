@@ -1,7 +1,7 @@
 """
 Hedge Signals — Crash Hedge Layer (overlays barbell allocation)
 
-Four hedge signals from independent data sources:
+Five hedge signals from independent data sources:
 
 1. Foreign TX OI z-score (memory: project_foreign_tx_oi_alpha.md)
    - Source: futures_institutional (FinMind, TX 台指期)
@@ -29,6 +29,14 @@ Four hedge signals from independent data sources:
    - 但 OOS 1/3 期 robust，跨期翻轉 → INFORMATIONAL only
    - Use: 顯示當前 basis 結構作 awareness，極端值不疊加 cash tilt（避免 over-fit）
 
+5. SPY overnight gap → TW next-day reversion (added 2026-05-05)
+   - Source: SPY (^SPX 含 ETF) close vs prior close
+   - Trigger: SPY overnight ret < -2% → TW 隔日 0050 傾向反彈
+   - Empirical: Big down (-3~-2%) fwd 1d +0.86% / 70.6% win / t=+2.65 ✅
+   - 但 OOS 1/3 期 robust (Period 2023-25 n=7 outlier)
+   - Use: INFORMATIONAL — 提示「SPY 隔夜大跌 → 0050 開盤可能 gap 但日內 reversion」
+   - 不疊加 cash tilt（樣本太小、OOS 不穩）
+
 Output: hedge_active flag + recommended cash tilt (+0% normal / +5-25% on hedge)
 """
 from __future__ import annotations
@@ -45,6 +53,7 @@ TX_DAILY_PATH = ROOT / "data" / "cache" / "finmind" / "extras" / "futures_daily.
 TWII_PATH = ROOT / "data" / "cache" / "yfinance" / "tw_ohlcv" / "^TWII.parquet"
 VIX_PATH = ROOT / "data" / "cache" / "yfinance" / "global" / "VIX_full.parquet"
 VIX3M_PATH = ROOT / "data" / "cache" / "yfinance" / "global" / "VIX3M.parquet"
+SPY_PATH = ROOT / "data" / "cache" / "yfinance" / "global" / "SPY_full.parquet"
 
 
 @dataclass
@@ -58,6 +67,8 @@ class HedgeReading:
     tx_basis_pts: float          # TX - TWII basis (點數)
     tx_basis_z: float            # 60d z-score of basis
     tx_basis_extreme: bool       # |z| > 2.0 (informational, not actioned)
+    spy_overnight_pct: float     # SPY 隔夜 return %
+    spy_gap_signal: bool         # True if < -2% (informational only)
     cash_tilt_pp: int            # Recommended cash tilt over baseline (+0 / +5-25)
     notes: list[str]             # Human-readable explanations
 
@@ -147,6 +158,25 @@ def get_tx_basis() -> tuple[float, float]:
         return float("nan"), float("nan")
 
 
+def get_spy_overnight() -> float:
+    """SPY today close vs yesterday close (隔夜 ret %).
+
+    For TW investor: SPY closes ~04:00 TW time, TW opens 09:00 next day.
+    So today's SPY overnight return = SPY's gap that TW will react to at open.
+    """
+    if not SPY_PATH.exists():
+        return float("nan")
+    try:
+        df = pd.read_parquet(SPY_PATH)
+        df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
+        df = df.sort_values("date").reset_index(drop=True)
+        if len(df) < 2:
+            return float("nan")
+        return (df["close"].iloc[-1] / df["close"].iloc[-2] - 1) * 100
+    except Exception:
+        return float("nan")
+
+
 def get_vix_ratio() -> float:
     """Compute current VIX / VIX3M ratio (term structure proxy).
 
@@ -175,6 +205,7 @@ def compute_hedge_reading() -> HedgeReading:
     vix = get_current_vix()
     vix_ratio = get_vix_ratio()
     tx_basis, tx_basis_z = get_tx_basis()
+    spy_overnight = get_spy_overnight()
     notes = []
 
     foreign_signal = (not np.isnan(z)) and z < -2.0
@@ -184,6 +215,9 @@ def compute_hedge_reading() -> HedgeReading:
     vix_ratio_signal = (not np.isnan(vix_ratio)) and vix_ratio > 1.05
     # TX basis |z| > 2 = extreme structure (informational only, OOS 1/3 robust)
     tx_basis_extreme = (not np.isnan(tx_basis_z)) and abs(tx_basis_z) > 2
+    # SPY overnight < -2% → 0050 隔日 fwd 1d +0.86% (70.6% win) historical
+    # OOS 1/3 期 robust → informational only
+    spy_gap_signal = (not np.isnan(spy_overnight)) and spy_overnight < -2.0
 
     cash_tilt = 0
     # Stack tilts (each signal adds independently)
@@ -207,6 +241,13 @@ def compute_hedge_reading() -> HedgeReading:
         direction = "premium" if tx_basis_z > 0 else "discount"
         notes.append(f"ℹ️ TX 基差 {tx_basis:+.0f}pts (z={tx_basis_z:+.2f}) extreme {direction} — informational only")
 
+    # SPY overnight gap: informational only
+    if spy_gap_signal:
+        notes.append(
+            f"ℹ️ SPY 隔夜 {spy_overnight:+.2f}% (< -2%) → 0050 開盤可能 gap-down 但日內 reversion 傾向 "
+            f"(歷史 fwd 1d +0.86%, 70.6% win)"
+        )
+
     if cash_tilt == 0:
         if not np.isnan(z):
             notes.append(f"✅ Foreign TX OI z={z:+.2f}（正常區間）")
@@ -216,6 +257,8 @@ def compute_hedge_reading() -> HedgeReading:
             notes.append(f"✅ VIX/VIX3M = {vix_ratio:.3f}（contango，正常）")
         if not np.isnan(tx_basis):
             notes.append(f"✅ TX 基差 {tx_basis:+.0f}pts (z={tx_basis_z:+.2f}, 正常結構)")
+        if not np.isnan(spy_overnight) and not spy_gap_signal:
+            notes.append(f"✅ SPY 隔夜 {spy_overnight:+.2f}%（正常）")
     elif foreign_signal and vix_signal:
         notes.insert(0, f"🚨 多重 hedge 觸發 (Foreign TX + VIX{'+ ratio' if vix_ratio_signal else ''}) → 總 cash tilt +{cash_tilt}pp")
 
@@ -232,6 +275,8 @@ def compute_hedge_reading() -> HedgeReading:
         tx_basis_pts=tx_basis if not np.isnan(tx_basis) else 0.0,
         tx_basis_z=tx_basis_z if not np.isnan(tx_basis_z) else 0.0,
         tx_basis_extreme=tx_basis_extreme,
+        spy_overnight_pct=spy_overnight if not np.isnan(spy_overnight) else 0.0,
+        spy_gap_signal=spy_gap_signal,
         cash_tilt_pp=cash_tilt,
         notes=notes,
     )
@@ -252,6 +297,8 @@ def render_hedge_section() -> str:
         f"{'🚨 YES' if r.vix_ratio_signal else '✅ no'} |",
         f"| TX basis (60d z) | **{r.tx_basis_pts:+.0f}pts (z={r.tx_basis_z:+.2f})** | \\|z\\|>2 | "
         f"{'ℹ️ extreme' if r.tx_basis_extreme else '✅ normal'} |",
+        f"| SPY overnight | **{r.spy_overnight_pct:+.2f}%** | < -2% | "
+        f"{'ℹ️ gap-down' if r.spy_gap_signal else '✅ normal'} |",
         "",
         f"**Cash tilt 建議**: {'+' + str(r.cash_tilt_pp) if r.cash_tilt_pp > 0 else '0'}pp 超出 barbell baseline",
         "",
@@ -262,5 +309,6 @@ def render_hedge_section() -> str:
     lines.append("_TX OI 實證: 10d TAIEX alpha +1.43% (t=4.09, OOS 3/3)。VIX > 30 為 panic 指標。_")
     lines.append("_VIX/VIX3M 為 risk indicator (3-AI 共識 2026-05-04 建議不作 entry signal — hindsight bias)。_")
     lines.append("_TX 基差 informational only — full +3.38% deep premium 但 OOS 1/3 期 robust，僅顯示結構不疊加 tilt。_")
+    lines.append("_SPY overnight informational only — Big down -2~-3% fwd 1d +0.86% (70.6% win, n=34) 但 OOS 1/3 robust。_")
     lines.append("")
     return "\n".join(lines)
