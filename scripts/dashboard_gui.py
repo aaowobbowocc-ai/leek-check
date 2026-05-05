@@ -418,6 +418,7 @@ class Dashboard(tk.Tk):
             left_canvas.yview_scroll(-int(e.delta / 120), "units")
         left_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
+        self._build_paper_trade(left)          # Shioaji Paper Trade (新加 2026-05-05)
         self._build_hero_action(left)          # Hero Action Panel (P0, 永遠最上)
         self._build_summary(left)
         self._build_v2_regime(left)            # V2 5-regime classifier
@@ -651,6 +652,66 @@ class Dashboard(tk.Tk):
             wraplength=400, justify="left",
         )
         self.overview_action_label.pack(anchor="w", pady=(4, 0))
+
+    def _build_paper_trade(self, parent):
+        """🤖 Shioaji 模擬單 Dashboard"""
+        body = self._section(
+            parent, "🤖 Shioaji 模擬單（4 策略 paper trade）",
+            default_open=True,
+            badge="模擬",
+            badge_color=COLORS["blue"],
+        )
+        self._add_tooltip(
+            body.master.winfo_children()[0],
+            "4 策略 paper trade 自動執行：\n"
+            "1. Pair 2408-2344 DRAM (z>2.5 進)\n"
+            "2. Revenue YoY Deploy-Ready (scanner deploy-ready)\n"
+            "3. 0050 自營商連買 3d (4/4 regime robust)\n"
+            "4. CRASH Watcher (regime=CRASH 觸發)\n"
+            "每 NT$30K/slot, 模擬單不會真送單。",
+        )
+        # Stats summary row
+        stats_row = tk.Frame(body, background=COLORS["bg2"])
+        stats_row.pack(fill="x", pady=(0, 8))
+        self.paper_stats_labels = {}
+        for i, key in enumerate(["Open", "Closed", "PnL", "Win%"]):
+            cell = tk.Frame(stats_row, background=COLORS["bg3"], padx=10, pady=6)
+            cell.grid(row=0, column=i, sticky="nsew", padx=4)
+            tk.Label(cell, text=key, background=COLORS["bg3"],
+                      foreground=COLORS["fg_dim"], font=(self.UI_FONT, 11)).pack(anchor="w")
+            v = tk.Label(cell, text="—", background=COLORS["bg3"],
+                          foreground=COLORS["fg"], font=(self.UI_FONT, 14, "bold"))
+            v.pack(anchor="w")
+            self.paper_stats_labels[key] = v
+            stats_row.grid_columnconfigure(i, weight=1)
+
+        # Open positions table
+        tk.Label(body, text="🟢 開倉中:", background=COLORS["bg2"],
+                  foreground=COLORS["fg"], font=(self.UI_FONT, 13, "bold")).pack(anchor="w", pady=(4, 2))
+        cols = ("strategy", "ticker", "shares", "entry", "days", "pnl")
+        self.paper_open_tv = ttk.Treeview(body, columns=cols, show="headings", height=4)
+        for c, w, t in [("strategy", 130, "策略"), ("ticker", 90, "標的"),
+                          ("shares", 70, "股數"), ("entry", 80, "進價"),
+                          ("days", 60, "天數"), ("pnl", 110, "未實現")]:
+            self.paper_open_tv.heading(c, text=t)
+            self.paper_open_tv.column(c, width=w, anchor="w")
+        self.paper_open_tv.tag_configure("up", foreground=COLORS["green"])
+        self.paper_open_tv.tag_configure("down", foreground=COLORS["red"])
+        self.paper_open_tv.pack(fill="x", pady=(0, 6))
+
+        # Closed trades table (last 5)
+        tk.Label(body, text="📜 最近 5 筆平倉:", background=COLORS["bg2"],
+                  foreground=COLORS["fg"], font=(self.UI_FONT, 13, "bold")).pack(anchor="w", pady=(4, 2))
+        cols2 = ("strategy", "ticker", "exit_date", "days", "pnl")
+        self.paper_closed_tv = ttk.Treeview(body, columns=cols2, show="headings", height=5)
+        for c, w, t in [("strategy", 130, "策略"), ("ticker", 90, "標的"),
+                          ("exit_date", 100, "平倉日"),
+                          ("days", 60, "天數"), ("pnl", 130, "已實現")]:
+            self.paper_closed_tv.heading(c, text=t)
+            self.paper_closed_tv.column(c, width=w, anchor="w")
+        self.paper_closed_tv.tag_configure("up", foreground=COLORS["green"])
+        self.paper_closed_tv.tag_configure("down", foreground=COLORS["red"])
+        self.paper_closed_tv.pack(fill="x", pady=(0, 4))
 
     def _build_hero_action(self, parent):
         """🎯 Hero Action Panel — 今日 Top 行動指令 (P0, prominent visual)"""
@@ -1133,6 +1194,11 @@ class Dashboard(tk.Tk):
                 self._update_status_overview()
             except Exception as e:
                 self._log(f"status overview refresh: {e}")
+            # Shioaji paper trade dashboard
+            try:
+                self._update_paper_trade()
+            except Exception as e:
+                self._log(f"paper trade refresh: {e}")
 
             # Short watchlist
             # self._update_short_watchlist(now)  # REMOVED 2026-05-05: 退勢空 dead-end
@@ -1421,6 +1487,100 @@ class Dashboard(tk.Tk):
             self.actions_tv.insert("", "end",
                                     values=(prio_text[tag], action, limit),
                                     tags=(tag,))
+
+    def _update_paper_trade(self):
+        """Shioaji paper trade dashboard update"""
+        try:
+            from datetime import date as _date
+            pos_path = ROOT / "data" / "paper_trades" / "shioaji_positions.csv"
+            trades_path = ROOT / "data" / "paper_trades" / "shioaji_trades.csv"
+
+            positions = pd.read_csv(pos_path) if pos_path.exists() else pd.DataFrame()
+            trades = pd.read_csv(trades_path) if trades_path.exists() else pd.DataFrame()
+
+            # Stats
+            open_pos = positions[positions["status"] == "open"] if not positions.empty else pd.DataFrame()
+            closed = trades  # all in trades csv are closed
+
+            n_open = len(open_pos)
+            n_closed = len(closed)
+            total_pnl = 0
+            win_pct = 0
+            if not closed.empty:
+                closed_pnl = pd.to_numeric(closed["pnl_twd"], errors="coerce").fillna(0)
+                total_pnl = closed_pnl.sum()
+                win_pct = (closed_pnl > 0).mean() * 100 if len(closed_pnl) > 0 else 0
+
+            self.paper_stats_labels["Open"].config(text=str(n_open))
+            self.paper_stats_labels["Closed"].config(text=str(n_closed))
+            pnl_color = COLORS["green"] if total_pnl > 0 else (COLORS["red"] if total_pnl < 0 else COLORS["fg_dim"])
+            self.paper_stats_labels["PnL"].config(
+                text=f"NT${total_pnl:+,.0f}", foreground=pnl_color,
+            )
+            self.paper_stats_labels["Win%"].config(text=f"{win_pct:.0f}%" if n_closed > 0 else "—")
+
+            # Open positions table
+            self.paper_open_tv.delete(*self.paper_open_tv.get_children())
+            if not open_pos.empty:
+                today_ts = pd.Timestamp(_date.today())
+                for _, row in open_pos.iterrows():
+                    entry_dt = pd.to_datetime(row["entry_date"])
+                    days_held = (today_ts - entry_dt).days
+                    leg_a = str(row.get("leg_a_ticker", ""))
+                    shares = int(row.get("leg_a_shares", 0))
+                    entry_p = float(row.get("leg_a_entry", 0))
+                    # Get current price for unrealized PnL
+                    cur_p = fetch_price(leg_a) if leg_a else 0
+                    if cur_p > 0 and entry_p > 0:
+                        unreal_pnl = (cur_p - entry_p) * shares
+                        unreal_pct = (cur_p / entry_p - 1) * 100 * (1 if shares > 0 else -1)
+                        pnl_str = f"NT${unreal_pnl:+,.0f} ({unreal_pct:+.1f}%)"
+                        tag = "up" if unreal_pnl > 0 else "down"
+                    else:
+                        pnl_str = "—"
+                        tag = ""
+                    leg_b = row.get("leg_b_ticker", "")
+                    ticker_disp = f"{leg_a}/{leg_b}" if leg_b and str(leg_b) not in ("nan", "") else leg_a
+                    shares_disp = f"{shares:+d}" if leg_b else f"{shares}"
+                    self.paper_open_tv.insert(
+                        "", "end", values=(
+                            row.get("strategy", "")[:14],
+                            ticker_disp[:10],
+                            shares_disp,
+                            f"{entry_p:.2f}",
+                            f"{days_held}d",
+                            pnl_str,
+                        ),
+                        tags=(tag,),
+                    )
+
+            # Closed trades (last 5, descending)
+            self.paper_closed_tv.delete(*self.paper_closed_tv.get_children())
+            if not closed.empty:
+                closed_sorted = closed.sort_values("exit_date", ascending=False).head(5)
+                for _, row in closed_sorted.iterrows():
+                    entry_dt = pd.to_datetime(row["entry_date"])
+                    exit_dt = pd.to_datetime(row["exit_date"])
+                    days_held = (exit_dt - entry_dt).days
+                    pnl = float(row.get("pnl_twd", 0))
+                    pct = float(row.get("net_pct", 0))
+                    pnl_str = f"NT${pnl:+,.0f} ({pct:+.1f}%)"
+                    tag = "up" if pnl > 0 else "down"
+                    leg_a = str(row.get("leg_a_ticker", ""))
+                    leg_b = row.get("leg_b_ticker", "")
+                    ticker_disp = f"{leg_a}/{leg_b}" if leg_b and str(leg_b) not in ("nan", "") else leg_a
+                    self.paper_closed_tv.insert(
+                        "", "end", values=(
+                            row.get("strategy", "")[:14],
+                            ticker_disp[:10],
+                            exit_dt.strftime("%m-%d"),
+                            f"{days_held}d",
+                            pnl_str,
+                        ),
+                        tags=(tag,),
+                    )
+        except Exception as e:
+            self._log(f"paper trade UI: {e}")
 
     def _update_status_overview(self):
         """右側總覽：總資產 / 現金 / regime / 警示 / 今日重點 (60s tick)"""
