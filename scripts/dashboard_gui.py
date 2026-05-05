@@ -84,13 +84,14 @@ COLORS = {
     "card_hi":  "#252934",   # highlighted card (CRASH/critical)
 }
 
-# DCA 計畫
+# DCA 計畫 (v4, 2026-05-05 EWY 撤回後)
 DCA_PLAN = {
     "0050":  {"target": 1000, "first_batch": (300, "88.5-90.5"), "limit_high": 90.5},
     "00881": {"target": 1100, "first_batch": (350, "45.0-46.5"), "limit_high": 46.5},
     "00947": {"target": 1000, "first_batch": (300, "29.5-30.5"), "limit_high": 30.5},
     "00646": {"target": 1700, "first_batch": (500, "69.5-71.0"), "limit_high": 71.0},
-    "EWY":   {"target": 12,   "first_batch": (2,   "152-156 USD"), "limit_high": 156},
+    # EWY removed (3-AI critique 2026-05-04: 1Y +187.5% 是 V-recovery 不是 alpha，禁買名單)
+    "00635U": {"target": 2000, "first_batch": (1000, "47-48"), "limit_high": 48},  # 黃金 (10% target)
 }
 
 ORB_RULES = {
@@ -140,6 +141,25 @@ def _yf_symbol(ticker: str) -> str:
     return ticker
 
 
+def _read_cached_last_close(ticker: str) -> float:
+    """Fallback: 從本地 parquet cache 讀最後一筆收盤價（避免 yfinance 404 時顯示 0）"""
+    try:
+        from pathlib import Path
+        import pandas as pd
+        candidates = [
+            Path("data/cache/yfinance/tw_ohlcv") / f"{ticker}.parquet",
+            Path("data/cache/yfinance/global") / f"{ticker}.parquet",
+        ]
+        for p in candidates:
+            if p.exists():
+                df = pd.read_parquet(p, columns=["close"])
+                if not df.empty:
+                    return float(df["close"].iloc[-1])
+    except Exception:
+        pass
+    return 0.0
+
+
 def fetch_price(ticker: str) -> float:
     try:
         import yfinance as yf
@@ -156,7 +176,8 @@ def fetch_price(ticker: str) -> float:
             return float(hist.iloc[-1]["Close"])
     except Exception:
         pass
-    return 0.0
+    # Fallback to cached parquet (避免 404 時 P&L 顯示 -100%)
+    return _read_cached_last_close(ticker)
 
 
 EXTRA_NAMES = {
@@ -428,6 +449,7 @@ class Dashboard(tk.Tk):
         right_canvas.bind("<Configure>",
                           lambda e: right_canvas.itemconfig(right_win, width=e.width))
 
+        self._build_status_overview(right)  # 今日總覽 (新加 2026-05-05 填補右側空白)
         self._build_actions(right)
         self._build_system_signals(right)
         self._build_recent_trades(right)
@@ -585,6 +607,51 @@ class Dashboard(tk.Tk):
                                            foreground=COLORS["red"])
         self.regime_suspended.pack(anchor="w", pady=1)
 
+    def _build_status_overview(self, parent):
+        """今日狀態總覽 (右側 top, 填補空白)"""
+        body = self._section(parent, "📊 今日總覽")
+
+        # Total value + cash
+        self.overview_value_label = tk.Label(
+            body, text="總資產 計算中...",
+            background=COLORS["bg2"], foreground=COLORS["fg"],
+            font=(self.UI_FONT, 16, "bold"),
+        )
+        self.overview_value_label.pack(anchor="w", pady=(0, 4))
+        self.overview_cash_label = tk.Label(
+            body, text="現金 —",
+            background=COLORS["bg2"], foreground=COLORS["fg_dim"],
+            font=(self.UI_FONT, 12),
+        )
+        self.overview_cash_label.pack(anchor="w", pady=(0, 8))
+
+        # Regime + hedge mini status
+        sep = tk.Frame(body, background=COLORS["border"], height=1)
+        sep.pack(fill="x", pady=(0, 6))
+
+        self.overview_regime_label = tk.Label(
+            body, text="市場狀態 計算中...",
+            background=COLORS["bg2"], foreground=COLORS["fg"],
+            font=(self.UI_FONT, 13, "bold"),
+        )
+        self.overview_regime_label.pack(anchor="w", pady=(2, 2))
+
+        self.overview_hedge_label = tk.Label(
+            body, text="危險警示 —",
+            background=COLORS["bg2"], foreground=COLORS["fg_dim"],
+            font=(self.UI_FONT, 11),
+        )
+        self.overview_hedge_label.pack(anchor="w", pady=(0, 6))
+
+        # Top action one-liner
+        self.overview_action_label = tk.Label(
+            body, text="今日重點 —",
+            background=COLORS["bg2"], foreground=COLORS["accent"],
+            font=(self.UI_FONT, 12, "bold"),
+            wraplength=400, justify="left",
+        )
+        self.overview_action_label.pack(anchor="w", pady=(4, 0))
+
     def _build_hero_action(self, parent):
         """🎯 Hero Action Panel — 今日 Top 行動指令 (P0, prominent visual)"""
         # Outer frame with colored border for emphasis
@@ -702,7 +769,12 @@ class Dashboard(tk.Tk):
         self.barbell_actions_label.pack(anchor="w", pady=4)
 
     def _build_dca_timing(self, parent):
-        body = self._section(parent, "📅 今日 DCA Timing 評分（基於 9 年日曆 anomaly）", default_open=False)
+        body = self._section(
+            parent, "📅 今日 DCA Timing 評分",
+            default_open=False,
+            badge="9 年日曆 anomaly",
+            badge_color=COLORS["bg3"],
+        )
         self.dca_timing_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
                                            font=(self.UI_FONT, 16, "bold"))
         self.dca_timing_label.pack(anchor="w", pady=2)
@@ -711,7 +783,12 @@ class Dashboard(tk.Tk):
         self.dca_timing_detail.pack(anchor="w", pady=2)
 
     def _build_overnight(self, parent):
-        body = self._section(parent, "🌙 夜盤訊號 (預測明日開盤跳空，hit ~75%)", default_open=False)
+        body = self._section(
+            parent, "🌙 夜盤訊號 (預測明日開盤跳空)",
+            default_open=False,
+            badge="hit 75%",
+            badge_color=COLORS["bg3"],
+        )
         cols = ("symbol", "name", "close", "change", "implied")
         tv = ttk.Treeview(body, columns=cols, show="headings", height=5)
         for c, w, txt in [
@@ -776,7 +853,12 @@ class Dashboard(tk.Tk):
         self.orb_tv = tv
 
     def _build_institutional_signal(self, parent):
-        body = self._section(parent, "📡 法人訊號 (真 alpha 驗證後)", default_open=False)
+        body = self._section(
+            parent, "📡 法人訊號 (paper trade)",
+            default_open=False,
+            badge="paper",
+            badge_color=COLORS["blue"],
+        )
         cols = ("ticker", "name", "investor", "consec", "status", "alpha")
         tv = ttk.Treeview(body, columns=cols, show="headings", height=2)
         for c, w, txt in [
@@ -812,7 +894,12 @@ class Dashboard(tk.Tk):
         self.short_tv = tv
 
     def _build_dca(self, parent):
-        body = self._section(parent, "📈 DCA 進度", default_open=False)
+        body = self._section(
+            parent, "📈 DCA 進度",
+            default_open=False,
+            badge="active",
+            badge_color=COLORS["green"],
+        )
         self.dca_widgets = {}
         for i, (tk_, plan) in enumerate(DCA_PLAN.items()):
             row = ttk.Frame(body, style="Card.TFrame", padding=(0, 3))
@@ -1041,9 +1128,14 @@ class Dashboard(tk.Tk):
                 self._update_hero_action()
             except Exception as e:
                 self._log(f"hero action refresh: {e}")
+            # Right-side status overview (依賴 hero 同樣資料)
+            try:
+                self._update_status_overview()
+            except Exception as e:
+                self._log(f"status overview refresh: {e}")
 
             # Short watchlist
-            self._update_short_watchlist(now)
+            # self._update_short_watchlist(now)  # REMOVED 2026-05-05: 退勢空 dead-end
 
             # System signals (部署排程 + Alpha Decay)
             try:
@@ -1194,7 +1286,8 @@ class Dashboard(tk.Tk):
 
         # DCA — 追價 vs 守限價邏輯 + timing 調整
         for tk_, plan in DCA_PLAN.items():
-            if tk_ == "EWY":
+            # EWY 已從 DCA_PLAN 移除，此 check 留作 future-proofing
+            if tk_ in ("EWY",):
                 continue
             owned = ticker_shares.get(tk_, 0)
             if owned == 0:
@@ -1236,11 +1329,7 @@ class Dashboard(tk.Tk):
                 else:
                     actions.append(("suggest", f"買 {tk_} {shares} 股", price_label))
 
-        # EWY 5/5
-        today = now.date()
-        if today < date(2026, 5, 5):
-            d = (date(2026, 5, 5) - today).days
-            actions.append(("watch", f"5/5 EWY 第1批 2 股 ({d}天後)", "152-156 USD"))
+        # EWY removed (3-AI critique 2026-05-04: 禁買名單)
 
         # 2345 動態 trailing stop + 警報
         if ticker_shares.get("2345", 0) > 0:
@@ -1298,6 +1387,92 @@ class Dashboard(tk.Tk):
             self.actions_tv.insert("", "end",
                                     values=(prio_text[tag], action, limit),
                                     tags=(tag,))
+
+    def _update_status_overview(self):
+        """右側總覽：總資產 / 現金 / regime / 警示 / 今日重點 (60s tick)"""
+        try:
+            from src.report.regime_section import compute_current_regime
+            from src.report.hedge_signals import compute_hedge_reading
+            from src.report.barbell_allocation import (
+                ALLOCATION_TABLE, _apply_hedge_tilt, _load_holdings,
+            )
+            from src.report.action_advisor import generate_actions
+
+            regime_r = compute_current_regime()
+            hedge_r = compute_hedge_reading()
+            holdings = _load_holdings()
+
+            if holdings is None:
+                self.overview_value_label.config(text="總資產 (資料缺)")
+                return
+
+            # Asset value + cash
+            self.overview_value_label.config(
+                text=f"總資產 NT${holdings.total_value:,.0f}",
+                foreground=COLORS["accent"],
+            )
+            cash_total = holdings.cash_pct / 100 * holdings.total_value
+            self.overview_cash_label.config(
+                text=f"現金 NT${cash_total:,.0f}（佔 {holdings.cash_pct:.0f}%）",
+            )
+
+            if regime_r is None:
+                return
+
+            regime_chinese = {
+                "CRASH": "🚨 市場崩盤中",
+                "BEAR": "🟠 市場下跌中",
+                "SIDEWAYS": "🟡 市場盤整",
+                "BULL_TREND": "🟢 健康牛市",
+                "STRONG_BULL": "🔴 市場過熱",
+            }.get(regime_r.regime, regime_r.regime)
+            color = {
+                "CRASH": COLORS["red"],
+                "BEAR": COLORS["orange"],
+                "SIDEWAYS": COLORS["fg_dim"],
+                "BULL_TREND": COLORS["green"],
+                "STRONG_BULL": COLORS["red"],
+            }.get(regime_r.regime, COLORS["fg"])
+
+            self.overview_regime_label.config(
+                text=f"{regime_chinese}（離 200 日均線 {regime_r.dist_ma200:+.1f}%）",
+                foreground=color,
+            )
+
+            # Hedge mini
+            tilt = hedge_r.cash_tilt_pp if hedge_r else 0
+            if tilt >= 20:
+                hedge_text = f"🚨 多重危險警示 (+{tilt}% 該留現金)"
+                hedge_color = COLORS["red"]
+            elif tilt >= 10:
+                hedge_text = f"⚠️ 危險警戒 (+{tilt}% 該留現金)"
+                hedge_color = COLORS["yellow"]
+            elif tilt > 0:
+                hedge_text = f"ℹ️ 輕微警示 (+{tilt}%)"
+                hedge_color = COLORS["yellow"]
+            else:
+                hedge_text = "✅ 危險警示 全部正常"
+                hedge_color = COLORS["green"]
+            self.overview_hedge_label.config(
+                text=hedge_text, foreground=hedge_color,
+            )
+
+            # Top action 1-line
+            base_target = ALLOCATION_TABLE.get(regime_r.regime, {})
+            target, _, _ = _apply_hedge_tilt(base_target)
+            actions = generate_actions(
+                regime_r, hedge_r, target, holdings,
+                holdings.total_value, cash_total,
+            )
+            if actions:
+                top_action = actions[0]
+                self.overview_action_label.config(
+                    text=f"👉 今日重點：{top_action.icon} {top_action.label[:50]}",
+                )
+            else:
+                self.overview_action_label.config(text="👉 配置已達標")
+        except Exception as e:
+            self.overview_value_label.config(text=f"overview error: {e}")
 
     def _show_crash_modal(self, regime: str, hedge_tilt: int, hedge_notes: list):
         """CRASH 級別警報 Modal — 半透明覆蓋，user 必須 acknowledge"""
