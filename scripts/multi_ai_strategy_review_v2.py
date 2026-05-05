@@ -35,11 +35,15 @@ load_dotenv(ROOT / "config" / ".env", override=True)
 import requests
 
 
-PROMPT = """你是頂尖 macro 投資 reviewer。一個年輕醫學生 INVEST 系統正在做策略決策，
-我需要最 SKEPTICAL 反向意見找盲點。
+PROMPT = """你是頂尖 macro 投資 reviewer。一個 INVEST 量化系統正在做策略決策，
+我需要最 SKEPTICAL 反向意見找投資邏輯 / 統計方法 / 資料偏差盲點。
+
+⚠️ 重要規則:
+- 只批評投資 / 量化 / 系統 / 程式碼 / 資料層面
+- 不要給 career advice / 時間管理建議 / 「stay in lane」/ 「人力資本 vs portfolio」這類 life coaching
+- 用戶是成年人，自己決定時間分配。你只負責投資 critique
 
 ## 用戶背景
-- 醫學生（時間有限，08:30-09:00 看晨報）
 - NT$594K portfolio
 - 跨 8 個月跑了 60+ backtest，TW long-only stock-picking 全部輸 0050
 - 已驗證 alpha 來源 (post bias-fix):
