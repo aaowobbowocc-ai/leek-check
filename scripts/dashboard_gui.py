@@ -488,12 +488,43 @@ class Dashboard(tk.Tk):
             "Revenue YoY portfolio 經 L4 filter 後 alpha +25.7%/yr (vs 0050 +21.7%)。",
     }
 
-    def _section(self, parent, title: str) -> ttk.Frame:
+    def _section(self, parent, title: str, default_open: bool = True) -> ttk.Frame:
+        """Section with collapsible toggle (P1 progressive disclosure 2026-05-05).
+
+        Click title → expand/collapse body.
+        critical sections (regime/hedge/barbell/hero/holdings) 預設展開；
+        次要 (ORB/dca timing/overnight) 預設摺疊以減少 scroll。
+        """
         frame = ttk.Frame(parent, style="Card.TFrame", padding=(15, 10))
         frame.pack(fill="x", pady=(0, 8))
-        ttk.Label(frame, text=title, style="Section.TLabel").pack(anchor="w", pady=(0, 6))
+
+        # Header (clickable)
+        header = ttk.Frame(frame, style="Card.TFrame")
+        header.pack(fill="x")
+        arrow = "▼" if default_open else "▶"
+        title_label = ttk.Label(
+            header, text=f"{arrow} {title}",
+            style="Section.TLabel", cursor="hand2",
+        )
+        title_label.pack(side="left", anchor="w")
+
         body = ttk.Frame(frame, style="Card.TFrame")
-        body.pack(fill="x")
+        if default_open:
+            body.pack(fill="x", pady=(6, 0))
+
+        is_open = [default_open]
+
+        def toggle(event=None):
+            if is_open[0]:
+                body.pack_forget()
+                title_label.config(text=f"▶ {title}")
+                is_open[0] = False
+            else:
+                body.pack(fill="x", pady=(6, 0))
+                title_label.config(text=f"▼ {title}")
+                is_open[0] = True
+
+        title_label.bind("<Button-1>", toggle)
         return body
 
     def _build_summary(self, parent):
@@ -622,7 +653,7 @@ class Dashboard(tk.Tk):
         self.barbell_actions_label.pack(anchor="w", pady=4)
 
     def _build_dca_timing(self, parent):
-        body = self._section(parent, "📅 今日 DCA Timing 評分（基於 9 年日曆 anomaly）")
+        body = self._section(parent, "📅 今日 DCA Timing 評分（基於 9 年日曆 anomaly）", default_open=False)
         self.dca_timing_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
                                            font=(self.UI_FONT, 12, "bold"))
         self.dca_timing_label.pack(anchor="w", pady=2)
@@ -631,7 +662,7 @@ class Dashboard(tk.Tk):
         self.dca_timing_detail.pack(anchor="w", pady=2)
 
     def _build_overnight(self, parent):
-        body = self._section(parent, "🌙 夜盤訊號 (預測明日開盤跳空，hit ~75%)")
+        body = self._section(parent, "🌙 夜盤訊號 (預測明日開盤跳空，hit ~75%)", default_open=False)
         cols = ("symbol", "name", "close", "change", "implied")
         tv = ttk.Treeview(body, columns=cols, show="headings", height=5)
         for c, w, txt in [
@@ -672,7 +703,7 @@ class Dashboard(tk.Tk):
         self.holdings_tv = tv
 
     def _build_orb_signal(self, parent):
-        body = self._section(parent, "🎯 今日 ORB 訊號 (paper trade)")
+        body = self._section(parent, "🎯 今日 ORB 訊號 (paper trade)", default_open=False)
         cols = ("ticker", "name", "rule", "status", "detail")
         tv = ttk.Treeview(body, columns=cols, show="headings", height=2)
         for c, w, txt in [
@@ -691,7 +722,7 @@ class Dashboard(tk.Tk):
         self.orb_tv = tv
 
     def _build_institutional_signal(self, parent):
-        body = self._section(parent, "📡 法人訊號 (真 alpha 驗證後)")
+        body = self._section(parent, "📡 法人訊號 (真 alpha 驗證後)", default_open=False)
         cols = ("ticker", "name", "investor", "consec", "status", "alpha")
         tv = ttk.Treeview(body, columns=cols, show="headings", height=2)
         for c, w, txt in [
@@ -708,7 +739,7 @@ class Dashboard(tk.Tk):
         self.inst_signal_tv = tv
 
     def _build_short_watchlist(self, parent):
-        body = self._section(parent, "👁 退勢空 Watchlist (Tier B 觀察，不下單)")
+        body = self._section(parent, "👁 退勢空 Watchlist (Tier B 觀察，不下單)", default_open=False)
         cols = ("ticker", "name", "rule", "stats", "today")
         tv = ttk.Treeview(body, columns=cols, show="headings", height=5)
         for c, w, txt in [
@@ -727,7 +758,7 @@ class Dashboard(tk.Tk):
         self.short_tv = tv
 
     def _build_dca(self, parent):
-        body = self._section(parent, "📈 DCA 進度")
+        body = self._section(parent, "📈 DCA 進度", default_open=False)
         self.dca_widgets = {}
         for i, (tk_, plan) in enumerate(DCA_PLAN.items()):
             row = ttk.Frame(body, style="Card.TFrame", padding=(0, 3))
@@ -820,7 +851,7 @@ class Dashboard(tk.Tk):
         text.config(state="disabled")
 
     def _build_recent_trades(self, parent):
-        body = self._section(parent, "💹 最近交易")
+        body = self._section(parent, "💹 最近交易", default_open=False)
         cols = ("date", "action", "ticker", "name", "shares", "price", "pnl")
         tv = ttk.Treeview(body, columns=cols, show="headings", height=5)
         for c, w, txt in [
