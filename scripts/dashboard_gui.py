@@ -675,11 +675,11 @@ class Dashboard(tk.Tk):
         # Divider
         sep = tk.Frame(frame, background=COLORS["border"], height=1)
         sep.pack(fill="x", pady=(0, 8))
-        # Actions list (5 lines)
+        # Actions list (5 lines, no force wrap)
         self.hero_action_labels = []
         for _ in range(5):
             lbl = ttk.Label(frame, text="", style="Card.TLabel",
-                            wraplength=620, font=(self.UI_FONT, 14))
+                            font=(self.UI_FONT, 14))
             lbl.pack(anchor="w", pady=2)
             self.hero_action_labels.append(lbl)
         # Cash bar with subtle background highlight
@@ -772,7 +772,7 @@ class Dashboard(tk.Tk):
         body = self._section(
             parent, "📅 今日 DCA Timing 評分",
             default_open=False,
-            badge="9 年日曆 anomaly",
+            badge="日曆 anomaly",
             badge_color=COLORS["bg3"],
         )
         self.dca_timing_label = ttk.Label(body, text="計算中...", style="Card.TLabel",
@@ -784,9 +784,9 @@ class Dashboard(tk.Tk):
 
     def _build_overnight(self, parent):
         body = self._section(
-            parent, "🌙 夜盤訊號 (預測明日開盤跳空)",
+            parent, "🌙 夜盤訊號（預測明日開盤跳空）",
             default_open=False,
-            badge="hit 75%",
+            badge="參考",
             badge_color=COLORS["bg3"],
         )
         cols = ("symbol", "name", "close", "change", "implied")
@@ -896,8 +896,8 @@ class Dashboard(tk.Tk):
     def _build_dca(self, parent):
         body = self._section(
             parent, "📈 DCA 進度",
-            default_open=False,
-            badge="active",
+            default_open=True,
+            badge="進行中",
             badge_color=COLORS["green"],
         )
         self.dca_widgets = {}
@@ -1610,10 +1610,11 @@ class Dashboard(tk.Tk):
             )
 
             # Update action labels (top 5)
+            # 灰色字太不清楚 — tweak/info 改用 fg (亮白)
             priority_color = {
                 "critical": COLORS["red"], "warning": COLORS["yellow"],
-                "action": COLORS["fg"], "tweak": COLORS["fg_dim"],
-                "hold": COLORS["green"], "info": COLORS["fg_dim"],
+                "action": COLORS["fg"], "tweak": COLORS["fg"],
+                "hold": COLORS["green"], "info": COLORS["fg"],
             }
             priority_marker = {
                 "critical": "🚨", "warning": "⚠️", "action": "📌",
@@ -1623,13 +1624,19 @@ class Dashboard(tk.Tk):
                 if i < len(actions):
                     a = actions[i]
                     marker = priority_marker.get(a.priority, "•")
+                    # 不要顯示 reason 在 GUI hero（太擠），改在 tooltip
                     text = f"{i+1}. {marker} {a.icon} {a.label}"
-                    if a.reason:
-                        text += f"   _{a.reason[:60]}_"
                     self.hero_action_labels[i].config(
                         text=text,
                         foreground=priority_color.get(a.priority, COLORS["fg"]),
                     )
+                    # Add reason as tooltip (hover 看)
+                    if a.reason:
+                        try:
+                            self._add_tooltip(self.hero_action_labels[i],
+                                               f"原因: {a.reason}")
+                        except Exception:
+                            pass
                 else:
                     self.hero_action_labels[i].config(text="")
 

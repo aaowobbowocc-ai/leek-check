@@ -163,7 +163,7 @@ def generate_actions(
         # In STRONG_BULL, downgrade aggressive add actions
         if regime_reading.regime == "STRONG_BULL" and d > 0 and abs(d) >= 15:
             priority = "tweak"  # don't push aggressive buy in mean reversion zone
-            extra = "（市場過熱，慢慢分 8-12 週買，不要一次梭哈）"
+            extra = " (慢慢分批)"
         else:
             extra = ""
 
