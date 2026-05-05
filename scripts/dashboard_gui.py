@@ -394,7 +394,7 @@ class Dashboard(tk.Tk):
         self._build_v2_regime(left)            # V2 5-regime classifier (added 2026-05-05)
         self._build_hedge_signals(left)        # 5 hedge signals (added 2026-05-05)
         self._build_barbell_target(left)       # Barbell allocation (added 2026-05-05)
-        self._build_regime_status(left)        # Old strategy gate (keep)
+        # self._build_regime_status(left)      # REMOVED: old strategy gate (與 V2 重複)
         self._build_overnight(left)
         self._build_dca_timing(left)
         self._build_holdings(left)
@@ -827,9 +827,6 @@ class Dashboard(tk.Tk):
 
             # DCA timing
             self._update_dca_timing(now)
-
-            # Regime status (old strategy gate)
-            self._update_regime_status()
 
             # V2 regime + hedge + barbell (added 2026-05-05)
             try:

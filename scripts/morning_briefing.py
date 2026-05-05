@@ -65,6 +65,7 @@ from src.report.macro_dashboard import (
     render_macro_section,
     vix_status,
 )
+from src.notify.discord_client import DiscordNotifier
 from src.report.daily_report import render_morning_report, save_and_print
 from src.risk.concept_drift import ConceptDriftDetector
 from src.strategy.scoring_pipeline import (
@@ -291,20 +292,43 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
     try:
         regime = detect_regime(taiex) if not taiex.empty else None
 
-        # 個股追蹤：2345 智邦 OCO 停損停利
+        # 個股追蹤：自動讀 assets.json + 特定股票 OCO 設定
+        # 已知特殊規則（手動配 stop / target）：
+        SPECIAL_RULES = {
+            "2345": {"stop": 1925.0, "target": 2460.0},   # 智邦 OCO
+            # 6770 力積電：分批減碼策略（trim 2000 if cost recovered or 2 weeks）
+            #   stop = 50（嚴重虧損下停損），target = 65（部分減碼觀察點）
+            "6770": {"stop": 50.0, "target": 65.0},
+            # 00905 中信數據及電力：防禦型 ETF，不主動停損停利
+            #   設寬鬆 stop/target 只作為 P&L 監控
+            "00905": {"stop": 11.0, "target": 16.0},
+        }
+
+        # 從 src.strategy.volume_anomaly_scanner import lookup_ticker_name
+        from src.strategy.volume_anomaly_scanner import lookup_ticker_name as _lookup
+
         stock_trackers: list[StockTracker] = []
-        for tk, name, cost, stop, target in [
-            ("2345", "智邦", 2139.0, 1925.0, 2460.0),
-        ]:
+        if am is not None:
             try:
-                df = pd.read_parquet(ROOT / f"data/cache/yfinance/tw_ohlcv/{tk}.parquet")
-                cur = float(df.sort_values("date").iloc[-1]["close"])
-                stock_trackers.append(
-                    StockTracker(ticker=tk, name=name, cost=cost,
-                                  current=cur, stop_loss=stop, take_profit=target)
-                )
-            except Exception:
-                pass
+                snap = am.snapshot()
+                for pos in snap.long_term:
+                    tk = str(pos.ticker)
+                    cost = float(pos.cost)
+                    name = _lookup(tk)
+                    rule = SPECIAL_RULES.get(tk, {"stop": cost * 0.85, "target": cost * 1.15})
+                    try:
+                        df = pd.read_parquet(ROOT / f"data/cache/yfinance/tw_ohlcv/{tk}.parquet")
+                        cur = float(df.sort_values("date").iloc[-1]["close"])
+                    except Exception:
+                        cur = cost      # fallback: 用成本
+                    stock_trackers.append(
+                        StockTracker(
+                            ticker=tk, name=name, cost=cost, current=cur,
+                            stop_loss=rule["stop"], take_profit=rule["target"],
+                        )
+                    )
+            except Exception as e:
+                logger.warning("讀取持股失敗: %s", e)
 
         advisor_md = render_allocation_section(
             regime=regime,
@@ -321,15 +345,13 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
     # ── 全球宏觀儀表板（Phase 17c）──────────────────
     macro_md = ""
     try:
-        cache_yf = CACHE_DIR / "yfinance" / "tw_ohlcv"
-
-        # Correlation
+        # Correlation: 優先用快取，fallback 即時抓
         sp500 = pd.DataFrame()
+        cache_yf = CACHE_DIR / "yfinance" / "tw_ohlcv"
         sp500_path = cache_yf / "^GSPC.parquet"
         if sp500_path.exists():
             sp500 = pd.read_parquet(sp500_path)
         else:
-            # Fallback: 嘗試 yfinance 即時抓 ^GSPC（少量請求 OK）
             try:
                 import yfinance as yf
                 raw = yf.download("^GSPC", period="6mo", progress=False, auto_adjust=True)
@@ -343,29 +365,155 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
         corr = compute_taiex_sp500_correlation(taiex, sp500, window_days=60) if not taiex.empty else None
         vix = vix_status(float(overnight.get("vix", 15.0))) if isinstance(overnight, dict) else vix_status(overnight.vix)
 
-        # ETF 折溢價（用快取資料）
-        usd_twd_rate = 32.0   # 預設值，後續可改用即時匯率
-        etf_premiums = []
-        for tw_tk, info in ETF_PREMIUM_REFERENCES.items():
-            tw_path = cache_yf / f"{tw_tk}.parquet"
-            ref_path = cache_yf / f"{info['ref']}.parquet"
-            if not tw_path.exists() or not ref_path.exists():
-                continue
-            tw_df = pd.read_parquet(tw_path)
-            ref_df = pd.read_parquet(ref_path)
-            p = estimate_etf_premium(tw_tk, tw_df, ref_df, usd_twd_rate)
-            if p is not None:
-                etf_premiums.append(p)
+        # ETF 折溢價：用新的批量抓取函式（get_tw_ohlcv + yfinance）
+        from src.report.macro_dashboard import estimate_etf_premiums_batch
+        etf_premiums = estimate_etf_premiums_batch(
+            usd_twd_rate=32.0,
+            get_tw_ohlcv=lambda tk, s, e: get_tw_ohlcv_adjusted(tk, s, e, cache_dir=CACHE_DIR / "yfinance"),
+        )
 
-        macro_md = render_macro_section(corr, vix, etf_premiums)
+        # DXJ 加碼觸發（基於 16 年 backtest）
+        from src.report.macro_dashboard import compute_dxj_entry_trigger, fetch_etf_ohlcv_direct
+        dxj_trigger = None
+        try:
+            spy_df = fetch_etf_ohlcv_direct("SPY", days=120)
+            usdjpy_df = fetch_etf_ohlcv_direct("JPY=X", days=120)
+            if usdjpy_df is None or usdjpy_df.empty:
+                # fallback: yfinance JPY=X
+                import yfinance as yf
+                raw = yf.download("JPY=X", period="6mo", progress=False, auto_adjust=True)
+                if not raw.empty:
+                    if isinstance(raw.columns, pd.MultiIndex):
+                        raw.columns = raw.columns.get_level_values(0)
+                    usdjpy_df = raw.reset_index().rename(columns={"Date": "date", "Close": "close"})
+                    usdjpy_df["date"] = pd.to_datetime(usdjpy_df["date"]).dt.date
+            dxj_trigger = compute_dxj_entry_trigger(spy_df, usdjpy_df)
+        except Exception as e:
+            logger.warning("DXJ trigger 計算失敗: %s", e)
+
+        macro_md = render_macro_section(corr, vix, etf_premiums, dxj_trigger=dxj_trigger)
     except Exception as e:
         logger.warning("宏觀儀表板生成失敗: %s", e)
 
     if macro_md:
         report_md = report_md.rstrip() + "\n\n---\n\n" + macro_md
 
+    # ── Market Regime（5-regime classifier，2026-05-04 加入）──
+    regime_md = ""
+    try:
+        from src.report.regime_section import render_regime_section
+        regime_md = render_regime_section()
+    except Exception as e:
+        logger.warning("Regime section 失敗: %s", e)
+    if regime_md:
+        report_md = report_md.rstrip() + "\n\n---\n\n" + regime_md
+
+    # ── Hedge Signals（Foreign TX OI z + VIX，crash overlay）──
+    hedge_md = ""
+    try:
+        from src.report.hedge_signals import render_hedge_section
+        hedge_md = render_hedge_section()
+    except Exception as e:
+        logger.warning("Hedge signals 失敗: %s", e)
+    if hedge_md:
+        report_md = report_md.rstrip() + "\n\n---\n\n" + hedge_md
+
+    # ── Barbell Allocation Advisor（regime-aware 配置建議）──
+    barbell_md = ""
+    try:
+        from src.report.barbell_allocation import render_barbell_section
+        barbell_md = render_barbell_section()
+    except Exception as e:
+        logger.warning("Barbell section 失敗: %s", e)
+    if barbell_md:
+        report_md = report_md.rstrip() + "\n\n---\n\n" + barbell_md
+
+    # ── Volume Anomaly Scanner（Phase 18b）──────────────
+    anomaly_md = ""
+    try:
+        from src.strategy.volume_anomaly_scanner import run_anomaly_scan_for_briefing
+        # 只對 triggered 訊號補抓 Chip Concentration（節省 FinMind quota）
+        anomaly_md, _anomaly_signals = run_anomaly_scan_for_briefing(
+            as_of=as_of_date,
+            project_root=ROOT,
+            finmind_client=finmind if finmind_token else None,
+        )
+    except Exception as e:
+        logger.warning("Vol Anomaly 掃描失敗: %s", e)
+
+    if anomaly_md:
+        report_md = report_md.rstrip() + "\n\n---\n\n" + anomaly_md
+
+    # ── Strategy Allocator section 已撤除 (2026-05-05)
+    # 原因: 與 V2 Regime + Hedge + Barbell 重複 95%；唯一獨特的「啟用/暫停策略」
+    # 列表管理的策略多數已 dead-end (Early Hunter 月度, Vol Anomaly scanner only)。
+    # User feedback 要求簡化，避免兩個 Regime section 造成 confusion.
+
+    # ── 新策略 sections (ORB / 法人訊號 / DCA) ────────────
+    try:
+        from src.report.strategy_signals_section import render_strategy_section
+        strategy_md = render_strategy_section(ROOT)
+        if strategy_md:
+            report_md = report_md.rstrip() + "\n\n---\n\n" + strategy_md
+    except Exception as e:
+        logger.warning("策略 sections 失敗: %s", e)
+
+    # ── 集中度動態調整 + DCA Gate + Crash Hedge ──────────────
+    try:
+        from src.report.concentration_advisor import render_concentration_advisor_section
+        adv_md = render_concentration_advisor_section(ROOT)
+        if adv_md:
+            report_md = report_md.rstrip() + "\n\n---\n\n" + adv_md
+    except Exception as e:
+        logger.warning("集中度 advisor 失敗: %s", e)
+
+    # ── 持股法人即時 (TWSE T86 直抓，比 FinMind 早 12-14h) ──────
+    try:
+        from src.report.holdings_inst_realtime_section import render_holdings_inst_section
+        t86_md = render_holdings_inst_section(ROOT)
+        if t86_md:
+            report_md = report_md.rstrip() + "\n\n---\n\n" + t86_md
+    except Exception as e:
+        logger.warning("T86 即時 section 失敗: %s", e)
+
+    # ── Alpha Decay 監控 ──────────────────────────
+    try:
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from alpha_decay_monitor import render_briefing_section as render_decay_section
+        decay_md = render_decay_section()
+        if decay_md:
+            report_md = report_md.rstrip() + "\n\n---\n\n" + decay_md
+    except Exception as e:
+        logger.warning("Alpha Decay section 失敗: %s", e)
+
+    # ── 部署排程 + 集中度監控 ──────────────────────────
+    try:
+        from src.report.deployment_section import render_deployment_section
+        deploy_md = render_deployment_section(ROOT, today=as_of_date)
+        if deploy_md:
+            report_md = report_md.rstrip() + "\n\n---\n\n" + deploy_md
+    except Exception as e:
+        logger.warning("Deployment section 失敗: %s", e)
+
     save_and_print(report_md, as_of_date)
     logger.info("晨報完成 → logs/%s.md", as_of_date)
+
+    # ── Discord 推送（Phase 10 paper trading 上線需要）─────────
+    if not dry_run:
+        webhook_url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+        if webhook_url:
+            try:
+                notifier = DiscordNotifier(webhook_url)
+                report_path = ROOT / "logs" / f"{as_of_date}.md"
+                ok = notifier.send_briefing(str(as_of_date), report_path)
+                if ok:
+                    logger.info("Discord 推送成功 → 頻道")
+                else:
+                    logger.warning("Discord 推送失敗（webhook 未設或網路錯）")
+            except Exception as e:
+                logger.warning("Discord 推送例外: %s", e)
+        else:
+            logger.info("DISCORD_WEBHOOK_URL 未設，跳過 Discord 推送")
 
     # ── Paper Trading 快照（Phase 10）────────────
     # 防守模式下 pipe_out.recommendations 為空，仍寫空檔以保留「當日系統有在跑」的軌跡
@@ -378,6 +526,22 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
             "Paper trade 快照：%s 筆推薦 → %s",
             n, paper_path.relative_to(ROOT),
         )
+
+    # ── Unified Ledger（daily_state + 觸發訊號 + 到期平倉）──
+    if not dry_run:
+        try:
+            from scripts.unified_paper_ledger import (
+                append_daily_state, detect_triggers, evaluate_open_triggers
+            )
+            state = append_daily_state(as_of_date)
+            triggers = detect_triggers(as_of_date, state)
+            if triggers:
+                logger.info("新觸發訊號 %d 筆: %s",
+                            len(triggers),
+                            ", ".join(t["strategy"] for t in triggers))
+            evaluate_open_triggers(as_of_date)
+        except Exception as e:
+            logger.warning("Unified Ledger 更新失敗: %s", e)
 
 
 # ─────────────────────────────────────────
