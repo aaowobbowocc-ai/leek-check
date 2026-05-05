@@ -31,31 +31,60 @@ ROOT = Path(__file__).resolve().parents[2]
 ASSETS_JSON = ROOT / "data" / "assets.json"
 
 
-# Target allocation per regime (must sum to 100%)
+# Target allocation per regime — V2 (2026-05-05 align with deployment_schedule.yaml v4)
+# Each regime sums to 95%, 5% drift buffer
+# Buckets:
+#   core_tw     : 0050 + 00881 + 00947 (TW core ETF, deployment v4 33%)
+#   leverage    : 00631L (2x TW leverage, regime-conditional)
+#   us_00646    : S&P 500 TW listed (貨幣分散，3-AI 共識保留)
+#   gold        : IAU + 00635U (corr 0.21 真分散)
+#   japan_dxj   : DXJ (trigger-based)
+#   satellite   : Revenue YoY portfolio (only SIDEWAYS regime activates)
+#   cash        : 流動性 + opportunity buffer
+#   legacy      : 個股 2345 + 2408 + 009819 (set stop loss -15%)
 ALLOCATION_TABLE: dict[str, dict[str, int]] = {
-    "CRASH":       {"core_0050": 50, "leverage_00631L": 30, "satellite": 0,  "cash": 20},
-    "BEAR":        {"core_0050": 60, "leverage_00631L": 0,  "satellite": 0,  "cash": 40},
-    "SIDEWAYS":    {"core_0050": 55, "leverage_00631L": 0,  "satellite": 25, "cash": 20},
-    "BULL_TREND":  {"core_0050": 55, "leverage_00631L": 25, "satellite": 10, "cash": 10},
-    "STRONG_BULL": {"core_0050": 50, "leverage_00631L": 0,  "satellite": 0,  "cash": 50},
+    "CRASH":       {"core_tw": 33, "leverage": 15, "us_00646": 18, "gold": 10, "japan_dxj": 5, "satellite": 0,  "cash":  9, "legacy": 5},
+    "BEAR":        {"core_tw": 33, "leverage":  0, "us_00646": 18, "gold": 10, "japan_dxj": 5, "satellite": 0,  "cash": 24, "legacy": 5},
+    "SIDEWAYS":    {"core_tw": 30, "leverage":  0, "us_00646": 18, "gold": 10, "japan_dxj": 5, "satellite": 12, "cash": 15, "legacy": 5},
+    "BULL_TREND":  {"core_tw": 33, "leverage":  5, "us_00646": 18, "gold": 10, "japan_dxj": 5, "satellite": 0,  "cash": 19, "legacy": 5},
+    "STRONG_BULL": {"core_tw": 28, "leverage":  0, "us_00646": 15, "gold": 10, "japan_dxj": 5, "satellite": 0,  "cash": 32, "legacy": 5},
 }
 
 REGIME_NOTES = {
-    "CRASH":       "🚨 鑽石買點 — 加碼 00631L 30% (fwd 20d +22.71%, 100% win)；分批 5 個交易日進場",
-    "BEAR":        "🟠 防禦 — 不買 00631L（decay）；保留 40% 現金等 CRASH 訊號",
-    "SIDEWAYS":    "🟡 廣度因子適用 — 25% Revenue YoY 衛星（max=20 yoy_asc 預期 +17%/yr）",
-    "BULL_TREND":  "🟢 標準持有 — 25% 00631L 吃趨勢；10% satellite 補位",
-    "STRONG_BULL": "🔴 mean reversion 區 — 取消 DCA，取出 50% 現金等下次 CRASH（fwd 20d -0.62%）",
+    "CRASH":       "🚨 鑽石買點 — 加 leverage 00631L 15% (fwd 20d +22.71%, 100% win)；deploy 現金降至 9%；分批 5 日進場",
+    "BEAR":        "🟠 防禦 — 不買 leverage (decay)；現金 24% 維持等 CRASH",
+    "SIDEWAYS":    "🟡 廣度因子適用 — 加 12% Revenue YoY 衛星 (max=20 yoy_asc, L4 流動性, +25.7%/yr 預期)",
+    "BULL_TREND":  "🟢 標準持有 — 5% leverage 吃趨勢；現金 19% 流動性",
+    "STRONG_BULL": "🔴 mean reversion 區 — 取消 leverage; 現金升至 32% 等 CRASH; core 縮 5pp 取利",
+}
+
+TICKER_CATEGORY = {
+    # Core TW ETF (deployment v4: tw_core)
+    "0050": "core_tw", "00881": "core_tw", "00947": "core_tw",
+    # Leverage
+    "00631L": "leverage",
+    # US currency diversification
+    "00646": "us_00646",
+    # Gold
+    "IAU": "gold", "00635U": "gold", "GLD": "gold",
+    # Japan
+    "DXJ": "japan_dxj", "EWJ": "japan_dxj",
+    # Legacy individual stocks (set stop loss -15%)
+    "2345": "legacy", "2408": "legacy", "009819": "legacy",
 }
 
 
 @dataclass
 class CurrentHoldings:
-    """User 當前持倉摘要（基於 assets.json）。
+    """User 當前持倉摘要（基於 assets.json）— V2 8-bucket structure.
     金額已乘 USER_UUID 遮罩才印出。原值保留供計算 delta。"""
-    core_0050_pct: float
-    leverage_00631L_pct: float
-    satellite_pct: float
+    core_tw_pct: float          # 0050 + 00881 + 00947
+    leverage_pct: float         # 00631L
+    us_00646_pct: float         # S&P 500 TW listed
+    gold_pct: float             # IAU + 00635U + GLD
+    japan_dxj_pct: float        # DXJ
+    satellite_pct: float        # Revenue YoY signals (deployed)
+    legacy_pct: float           # 個股: 2345 + 2408 + 009819
     cash_pct: float
     total_value: float
 
@@ -74,16 +103,17 @@ def _latest_close(ticker: str) -> float:
 
 
 def _load_holdings() -> CurrentHoldings | None:
-    """從 assets.json 計算當前配置百分比。
+    """從 assets.json 計算當前配置百分比 (V2 — 8-bucket structure).
 
-    assets.json 結構: {cash, holdings: {long_term: [...], short_term: [...]}}
-    每筆持股 dict: {ticker, shares, cost, cost_incl_fee}
-
-    分類規則:
-      - "0050"        → core
-      - "00631L"      → leverage
-      - 其他 ticker   → satellite
-      - cash 欄位     → cash
+    分類規則 (TICKER_CATEGORY map):
+      0050/00881/00947 → core_tw
+      00631L → leverage
+      00646 → us_00646
+      IAU/00635U/GLD → gold
+      DXJ/EWJ → japan_dxj
+      2345/2408/009819 → legacy
+      其他未列 → satellite (Revenue YoY paper trade etc.)
+      cash 欄位 → cash
     """
     if not ASSETS_JSON.exists():
         return None
@@ -95,40 +125,65 @@ def _load_holdings() -> CurrentHoldings | None:
     cash = float(data.get("cash", 0) or 0)
     holdings_groups = data.get("holdings", {})
 
-    core = leverage = satellite = 0.0
+    buckets = {
+        "core_tw": 0.0, "leverage": 0.0, "us_00646": 0.0,
+        "gold": 0.0, "japan_dxj": 0.0, "satellite": 0.0, "legacy": 0.0,
+    }
+
     for _bucket, items in holdings_groups.items():
         if not isinstance(items, list):
             continue
         for h in items:
             ticker = str(h.get("ticker", "")).strip()
             shares = float(h.get("shares", 0) or 0)
-            # 用最新收盤價估算市值（cost basis 不準）
             price = _latest_close(ticker)
             if price <= 0:
-                # fallback to cost
                 price = float(h.get("cost_incl_fee", 0) or h.get("cost", 0) or 0)
             value = shares * price
-            if ticker == "0050":
-                core += value
-            elif ticker == "00631L":
-                leverage += value
-            else:
-                satellite += value
+            cat = TICKER_CATEGORY.get(ticker, "satellite")
+            buckets[cat] += value
 
-    total = core + leverage + satellite + cash
+    total = sum(buckets.values()) + cash
     if total <= 0:
         return None
     return CurrentHoldings(
-        core_0050_pct=core / total * 100,
-        leverage_00631L_pct=leverage / total * 100,
-        satellite_pct=satellite / total * 100,
+        core_tw_pct=buckets["core_tw"] / total * 100,
+        leverage_pct=buckets["leverage"] / total * 100,
+        us_00646_pct=buckets["us_00646"] / total * 100,
+        gold_pct=buckets["gold"] / total * 100,
+        japan_dxj_pct=buckets["japan_dxj"] / total * 100,
+        satellite_pct=buckets["satellite"] / total * 100,
+        legacy_pct=buckets["legacy"] / total * 100,
         cash_pct=cash / total * 100,
         total_value=total,
     )
 
 
+BUCKET_LABELS = [
+    ("core_tw", "核心 TW (0050+00881+00947)"),
+    ("us_00646", "美股 00646 (S&P 500)"),
+    ("gold", "黃金 (IAU+00635U)"),
+    ("japan_dxj", "日股 DXJ"),
+    ("leverage", "00631L 槓桿"),
+    ("satellite", "Revenue YoY 衛星"),
+    ("legacy", "個股 (2345/2408/009819)"),
+    ("cash", "現金"),
+]
+
+BUCKET_NOTES = {
+    "core_tw": "吃 TSMC AI 集中度",
+    "us_00646": "貨幣分散 (與 0050 corr 0.62 但非結構同步)",
+    "gold": "真分散 (corr 0.21 - 近 60d 0.09)",
+    "japan_dxj": "DXJ trigger-based: SPY -10%/90d 或 JPY +5%/30d",
+    "leverage": "2x TW leverage (regime-conditional)",
+    "satellite": "Revenue YoY portfolio (僅 SIDEWAYS regime 啟用)",
+    "legacy": "現有個股 + stop loss -15%",
+    "cash": "流動性 + CRASH 子彈",
+}
+
+
 def _apply_hedge_tilt(target: dict[str, int]) -> tuple[dict[str, int], int, list[str]]:
-    """Apply hedge cash tilt: shift cash_tilt_pp from leverage/satellite to cash."""
+    """Apply hedge cash tilt: shift cash_tilt_pp from leverage/satellite/japan first."""
     try:
         from .hedge_signals import compute_hedge_reading
     except Exception:
@@ -138,18 +193,15 @@ def _apply_hedge_tilt(target: dict[str, int]) -> tuple[dict[str, int], int, list
     if tilt == 0:
         return target, 0, h.notes
     adjusted = dict(target)
-    # Take from leverage first, then satellite
-    take_from_leverage = min(adjusted["leverage_00631L"], tilt)
-    adjusted["leverage_00631L"] -= take_from_leverage
-    remaining = tilt - take_from_leverage
-    take_from_satellite = min(adjusted["satellite"], remaining)
-    adjusted["satellite"] -= take_from_satellite
-    remaining -= take_from_satellite
-    # If still need to take, reduce core (last resort)
-    if remaining > 0:
-        adjusted["core_0050"] -= remaining
-    adjusted["cash"] = 100 - adjusted["core_0050"] - adjusted["leverage_00631L"] - adjusted["satellite"]
-    return adjusted, tilt, h.notes
+    # Priority: take from leverage → satellite → japan_dxj → us_00646
+    for src in ["leverage", "satellite", "japan_dxj", "us_00646"]:
+        if tilt <= 0:
+            break
+        take = min(adjusted.get(src, 0), tilt)
+        adjusted[src] = adjusted.get(src, 0) - take
+        tilt -= take
+    adjusted["cash"] = adjusted.get("cash", 0) + (h.cash_tilt_pp - tilt)
+    return adjusted, h.cash_tilt_pp, h.notes
 
 
 def render_barbell_section() -> str:
@@ -170,7 +222,7 @@ def render_barbell_section() -> str:
         "",
     ]
     if tilt > 0:
-        lines.append(f"⚠️ **Hedge overlay 啟動**：cash +{tilt}pp（leverage/satellite 減倉）")
+        lines.append(f"⚠️ **Hedge overlay 啟動**：cash +{tilt}pp")
         for note in hedge_notes:
             lines.append(f"  - {note}")
         lines.append("")
@@ -179,64 +231,50 @@ def render_barbell_section() -> str:
         "",
         "| 類別 | 目標 % | 說明 |",
         "|------|--------|------|",
-        f"| 核心 0050 | **{target['core_0050']}%** | 吃 TSMC AI 集中度 |",
-        f"| 00631L 槓桿 tilt | **{target['leverage_00631L']}%** | "
-        f"{'2x leverage（避 daily decay）' if target['leverage_00631L'] > 0 else '不持有（decay 風險）'}|",
-        f"| Revenue YoY 衛星 | **{target['satellite']}%** | "
-        f"{'max=20 yoy_asc 廣度策略' if target['satellite'] > 0 else '此 regime 不適用'} |",
-        f"| 現金 | **{target['cash']}%** | "
-        f"{'累積等 CRASH 訊號' if target['cash'] >= 30 else '日常流動性'} |",
-        "",
-        f"**規則重點**：{REGIME_NOTES.get(reading.regime, '')}",
-        "",
     ])
+    for key, label in BUCKET_LABELS:
+        pct = target.get(key, 0)
+        note = BUCKET_NOTES.get(key, "")
+        if pct == 0 and key not in ("leverage", "satellite", "japan_dxj"):
+            continue  # hide irrelevant zero rows; keep optional buckets visible
+        marker = "**" if pct >= 15 else ""
+        lines.append(f"| {label} | {marker}{pct}%{marker} | {note} |")
+    lines.append("")
+    lines.append(f"**規則重點**：{REGIME_NOTES.get(reading.regime, '')}")
+    lines.append("")
 
     # Compare with current holdings
     current = _load_holdings()
     if current is not None:
-        deltas = {
-            "core_0050": target["core_0050"] - current.core_0050_pct,
-            "leverage_00631L": target["leverage_00631L"] - current.leverage_00631L_pct,
-            "satellite": target["satellite"] - current.satellite_pct,
-            "cash": target["cash"] - current.cash_pct,
-        }
         lines.append("### 當前 vs 目標 deltas")
         lines.append("")
         lines.append("| 類別 | 當前 % | 目標 % | Delta |")
         lines.append("|------|--------|--------|-------|")
-        for k, label in [
-            ("core_0050", "核心 0050"),
-            ("leverage_00631L", "00631L"),
-            ("satellite", "衛星"),
-            ("cash", "現金"),
-        ]:
-            curr_pct = getattr(current, f"{k}_pct" if k != "core_0050" else "core_0050_pct")
-            tgt = target[k]
-            d = deltas[k]
-            arrow = "⬆️ 加碼" if d > 5 else ("⬇️ 減碼" if d < -5 else "✅ 已達標")
+
+        delta_records = []
+        for key, label in BUCKET_LABELS:
+            curr_pct = getattr(current, f"{key}_pct", 0)
+            tgt = target.get(key, 0)
+            d = tgt - curr_pct
+            delta_records.append((key, label, curr_pct, tgt, d))
+
+        for key, label, curr_pct, tgt, d in delta_records:
+            arrow = "⬆️ 加碼" if d > 5 else ("⬇️ 減碼" if d < -5 else "✅ 達標")
             lines.append(f"| {label} | {curr_pct:.0f}% | {tgt}% | {d:+.0f}pp {arrow} |")
         lines.append("")
 
-        # Concrete actions for biggest deltas
+        # Top 3 actions by abs delta
         big_deltas = sorted(
-            [(k, deltas[k]) for k in deltas],
-            key=lambda x: -abs(x[1]),
-        )
-        lines.append("### 建議動作（依 delta 排序）")
-        lines.append("")
-        for k, d in big_deltas[:3]:
-            if abs(d) < 5:
-                continue
-            label_map = {
-                "core_0050": "0050",
-                "leverage_00631L": "00631L",
-                "satellite": "Revenue YoY 衛星",
-                "cash": "現金",
-            }
-            action = "增加" if d > 0 else "減少"
-            lines.append(f"- **{action} {label_map[k]} {abs(d):.0f}pp**")
-        lines.append("")
-
-    lines.append("_配置基於 9 年 TAIEX 實證 (regime_strategy_mapping.csv)；非實時 quote，每週至少 review 一次_")
+            [r for r in delta_records if abs(r[4]) >= 5],
+            key=lambda r: -abs(r[4]),
+        )[:3]
+        if big_deltas:
+            lines.append("### 建議動作（依 delta 排序）")
+            lines.append("")
+            for key, label, curr_pct, tgt, d in big_deltas:
+                action = "增加" if d > 0 else "減少"
+                lines.append(f"- **{action} {label} {abs(d):.0f}pp** (current {curr_pct:.0f}% → target {tgt}%)")
+            lines.append("")
+    lines.append("_配置基於 9 年 TAIEX 實證 (regime_strategy_mapping.csv) + deployment v4 (2026-05-05 EWY 撤回後)；每週至少 review 一次_")
     lines.append("")
     return "\n".join(lines)
