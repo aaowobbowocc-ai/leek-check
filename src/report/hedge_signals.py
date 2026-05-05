@@ -1,7 +1,7 @@
 """
 Hedge Signals — Crash Hedge Layer (overlays barbell allocation)
 
-Two hedge signals from independent data sources:
+Three hedge signals from independent data sources:
 
 1. Foreign TX OI z-score (memory: project_foreign_tx_oi_alpha.md)
    - Source: futures_institutional (FinMind, TX 台指期)
@@ -13,7 +13,15 @@ Two hedge signals from independent data sources:
    - Trigger: VIX > 30
    - Use: market panic indicator
 
-Output: hedge_active flag + recommended cash tilt (+0% normal / +10-20% on hedge)
+3. VIX/VIX3M ratio (added 2026-05-04 post 3-AI critique)
+   - Source: ^VIX 與 ^VIX3M (yfinance)
+   - Trigger: ratio > 1.05 (term structure flattening = elevated risk)
+   - 重要: 3-AI 一致警告「moderate vs deep backwardation 是 hindsight bias」
+           因此 used as RISK INDICATOR (cash tilt), NOT as entry signal
+   - 實證: ratio > 1.05 是 panic 接近 / risk-off; >1.10 = 已在 crash 中
+   - Use: 增加 cash tilt 5-10pp，避免在 panic 中段加碼
+
+Output: hedge_active flag + recommended cash tilt (+0% normal / +5-25% on hedge)
 """
 from __future__ import annotations
 
@@ -25,7 +33,8 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
 TX_INST_PATH = ROOT / "data" / "cache" / "finmind" / "extras" / "futures_institutional.parquet"
-VIX_PATH = ROOT / "data" / "cache" / "yfinance" / "global" / "VIX.parquet"
+VIX_PATH = ROOT / "data" / "cache" / "yfinance" / "global" / "VIX_full.parquet"
+VIX3M_PATH = ROOT / "data" / "cache" / "yfinance" / "global" / "VIX3M.parquet"
 
 
 @dataclass
@@ -34,7 +43,9 @@ class HedgeReading:
     foreign_tx_signal: bool      # True if z < -2.0
     vix_current: float           # Latest VIX close
     vix_signal: bool             # True if VIX > 30
-    cash_tilt_pp: int            # Recommended cash tilt over baseline (+0 / +10 / +20)
+    vix_ratio: float             # VIX / VIX3M (term structure)
+    vix_ratio_signal: bool       # True if ratio > 1.05
+    cash_tilt_pp: int            # Recommended cash tilt over baseline (+0 / +5-25)
     notes: list[str]             # Human-readable explanations
 
 
@@ -73,11 +84,38 @@ def compute_foreign_tx_oi_z(window: int = 252) -> tuple[float, dict]:
 
 
 def get_current_vix() -> float:
-    if not VIX_PATH.exists():
+    # Try VIX_full first (added 2026-05-04), fallback to old VIX.parquet
+    candidates = [VIX_PATH, ROOT / "data" / "cache" / "yfinance" / "global" / "VIX.parquet"]
+    for path in candidates:
+        if path.exists():
+            try:
+                df = pd.read_parquet(path)
+                if "close" in df.columns and len(df) > 0:
+                    return float(df["close"].iloc[-1])
+            except Exception:
+                continue
+    return float("nan")
+
+
+def get_vix_ratio() -> float:
+    """Compute current VIX / VIX3M ratio (term structure proxy).
+
+    > 1.0 = backwardation (panic), > 1.05 = elevated risk (defensive)
+    < 1.0 = contango (calm)
+    """
+    if not (VIX_PATH.exists() and VIX3M_PATH.exists()):
         return float("nan")
     try:
-        df = pd.read_parquet(VIX_PATH)
-        return float(df["close"].iloc[-1])
+        v = pd.read_parquet(VIX_PATH)
+        v3 = pd.read_parquet(VIX3M_PATH)
+        # Match latest dates
+        v["date"] = pd.to_datetime(v["date"])
+        v3["date"] = pd.to_datetime(v3["date"])
+        merged = v[["date", "close"]].merge(v3[["date", "close"]], on="date", suffixes=("_vix", "_3m"))
+        if merged.empty:
+            return float("nan")
+        last = merged.sort_values("date").iloc[-1]
+        return float(last["close_vix"] / last["close_3m"])
     except Exception:
         return float("nan")
 
@@ -85,32 +123,52 @@ def get_current_vix() -> float:
 def compute_hedge_reading() -> HedgeReading:
     z, _ = compute_foreign_tx_oi_z()
     vix = get_current_vix()
+    vix_ratio = get_vix_ratio()
     notes = []
 
     foreign_signal = (not np.isnan(z)) and z < -2.0
     vix_signal = (not np.isnan(vix)) and vix > 30
+    # VIX/VIX3M ratio > 1.05 = term structure flattening = elevated risk
+    # 3-AI 共識 (2026-05-04): 用作 risk indicator (cash tilt)，不作 entry signal
+    vix_ratio_signal = (not np.isnan(vix_ratio)) and vix_ratio > 1.05
 
     cash_tilt = 0
-    if foreign_signal and vix_signal:
-        cash_tilt = 20
-        notes.append(f"🚨 雙重 hedge: Foreign TX OI z={z:.2f} AND VIX={vix:.1f} → +20pp 現金")
-    elif foreign_signal:
-        cash_tilt = 10
+    # Stack tilts (each signal adds independently)
+    if foreign_signal:
+        cash_tilt += 10
         notes.append(f"⚠️ Foreign TX OI z={z:.2f} < -2.0 (10d alpha +1.43%) → +10pp 現金")
-    elif vix_signal:
-        cash_tilt = 10
+    if vix_signal:
+        cash_tilt += 10
         notes.append(f"⚠️ VIX {vix:.1f} > 30（panic）→ +10pp 現金")
-    else:
+    if vix_ratio_signal:
+        # Tighter tilt for ratio bucket
+        if vix_ratio > 1.10:
+            cash_tilt += 10
+            notes.append(f"🚨 VIX/VIX3M = {vix_ratio:.3f} > 1.10 (deep backwardation, crash 中段) → +10pp 現金")
+        else:
+            cash_tilt += 5
+            notes.append(f"⚠️ VIX/VIX3M = {vix_ratio:.3f} > 1.05 (term structure 警戒) → +5pp 現金")
+
+    if cash_tilt == 0:
         if not np.isnan(z):
             notes.append(f"✅ Foreign TX OI z={z:+.2f}（正常區間）")
         if not np.isnan(vix):
             notes.append(f"✅ VIX {vix:.1f}（正常區間）")
+        if not np.isnan(vix_ratio):
+            notes.append(f"✅ VIX/VIX3M = {vix_ratio:.3f}（contango，正常）")
+    elif foreign_signal and vix_signal:
+        notes.insert(0, f"🚨 多重 hedge 觸發 (Foreign TX + VIX{'+ ratio' if vix_ratio_signal else ''}) → 總 cash tilt +{cash_tilt}pp")
+
+    # Cap at 25pp to avoid over-defensive
+    cash_tilt = min(cash_tilt, 25)
 
     return HedgeReading(
         foreign_tx_z=z if not np.isnan(z) else 0.0,
         foreign_tx_signal=foreign_signal,
         vix_current=vix if not np.isnan(vix) else 0.0,
         vix_signal=vix_signal,
+        vix_ratio=vix_ratio if not np.isnan(vix_ratio) else 0.0,
+        vix_ratio_signal=vix_ratio_signal,
         cash_tilt_pp=cash_tilt,
         notes=notes,
     )
@@ -127,6 +185,8 @@ def render_hedge_section() -> str:
         f"{'🚨 YES' if r.foreign_tx_signal else '✅ no'} |",
         f"| VIX | **{r.vix_current:.1f}** | > 30 | "
         f"{'🚨 YES' if r.vix_signal else '✅ no'} |",
+        f"| VIX/VIX3M ratio | **{r.vix_ratio:.3f}** | > 1.05 | "
+        f"{'🚨 YES' if r.vix_ratio_signal else '✅ no'} |",
         "",
         f"**Cash tilt 建議**: {'+' + str(r.cash_tilt_pp) if r.cash_tilt_pp > 0 else '0'}pp 超出 barbell baseline",
         "",
@@ -134,7 +194,7 @@ def render_hedge_section() -> str:
     for note in r.notes:
         lines.append(f"- {note}")
     lines.append("")
-    lines.append("_TX OI 訊號實證 (memory): 10d TAIEX alpha +1.43% (t=4.09, n=123, OOS 3/3)。"
-                 "VIX 為 panic 指標。兩訊號獨立驗證、可疊加。_")
+    lines.append("_TX OI 實證: 10d TAIEX alpha +1.43% (t=4.09, OOS 3/3)。VIX > 30 為 panic 指標。_")
+    lines.append("_VIX/VIX3M 為 risk indicator (3-AI 共識 2026-05-04 建議不作 entry signal — hindsight bias)。_")
     lines.append("")
     return "\n".join(lines)
