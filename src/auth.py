@@ -201,31 +201,37 @@ def _render_login_page():
         unsafe_allow_html=True,
     )
 
-    # ── Google 一鍵登入(優先位置)──
-    _render_google_button()
+    # ── 主要 CTA:Magic Link(secret email 登入,最穩 web 流程)──
+    with st.form("magic_form", clear_on_submit=False, border=True):
+        st.markdown("##### 📧 Email 一鍵登入 — 最快")
+        st.caption("填 email → 點寄發 → 信箱收連結點一下,免密碼,1 分鐘搞定")
+        magic_email = st.text_input("Email", key="magic_email",
+                                       placeholder="you@example.com",
+                                       label_visibility="collapsed")
+        if st.form_submit_button("📧 寄登入連結",
+                                   type="primary",
+                                   use_container_width=True):
+            if not magic_email:
+                st.error("⚠️ 請填 email")
+            else:
+                _do_magic_link(magic_email)
 
-    tab_login, tab_signup = st.tabs(["🔑 登入", "✨ 註冊"])
+    st.divider()
+    st.caption("👇 已有帳號 / 想用密碼登入")
+
+    tab_login, tab_signup = st.tabs(["🔑 密碼登入", "✨ 註冊"])
 
     with tab_login:
         with st.form("login_form", clear_on_submit=False, border=True):
             email = st.text_input("Email", key="login_email",
                                     placeholder="you@example.com")
             password = st.text_input("密碼", type="password", key="login_password")
-            cols = st.columns([1, 1])
-            login_btn = cols[0].form_submit_button("🔑 登入", type="primary",
-                                                       use_container_width=True)
-            magic_btn = cols[1].form_submit_button("📧 寄登入連結",
-                                                        use_container_width=True)
-            if login_btn:
+            if st.form_submit_button("🔑 登入", type="primary",
+                                       use_container_width=True):
                 if not email or not password:
                     st.error("⚠️ 請填 email 跟密碼")
                 else:
                     _do_login(email, password)
-            if magic_btn:
-                if not email:
-                    st.error("⚠️ 請填 email")
-                else:
-                    _do_magic_link(email)
 
     with tab_signup:
         with st.form("signup_form", clear_on_submit=False, border=True):
@@ -254,8 +260,9 @@ def _render_login_page():
 
 
 def _render_google_button():
-    """Google 一鍵登入按鈕 — 直接組 Supabase OAuth authorize URL,
-    比走 client.auth.sign_in_with_oauth() 穩(SDK server-side 行為不確定)。"""
+    """⚠️ Streamlit web 跑不通(URL fragment 限制 + static .html 被擋)。
+    保留實作,等 Capacitor 包成 App 時改用 native Google Sign-In plugin 取代。
+    現在不 call 這個函式。"""
     if not db.SUPABASE_URL:
         return
     from urllib.parse import urlencode
