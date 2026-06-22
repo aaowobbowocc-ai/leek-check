@@ -5477,92 +5477,6 @@ def page_tw_stock_center():
 
                     _render_alert_manager()
 
-            # 持股數量提示(總覽搬到 💰 記帳 tab,這裡只顯計數)
-            _n_holdings = sum(1 for _it in wl_items if compute_holding_pnl(_it))
-            _n_watch_only = len(wl_items) - _n_holdings
-            st.caption(
-                f"🎴 {len(wl_items)} 張卡 · "
-                f"持股 {_n_holdings} 檔(看總覽到 💰 記帳 tab) · "
-                f"觀察 {_n_watch_only} 檔"
-            )
-
-            # ── 卡片 + 緊貼下方小箭頭按鈕(可點到觸發詳細) ──
-            from streamlit_extras.stylable_container import stylable_container
-
-            def _reorder_watchlist(from_idx: int, to_idx: int):
-                """搬移觀察清單第 from_idx 個到 to_idx 位置。"""
-                if not (0 <= from_idx < len(wl_items)) or not (0 <= to_idx < len(wl_items)):
-                    return
-                item = wl_items.pop(from_idx)
-                wl_items.insert(to_idx, item)
-                # 寫回 watchlist.json(保留非 TW 類型在前)
-                watchlist["tickers"] = [t for t in watchlist.get("tickers", [])
-                                          if t.get("type") not in TW_TYPES] + wl_items
-                save_json("watchlist", watchlist)
-
-            for idx, item in enumerate(wl_items):
-                tk = item["ticker"]
-                if tk not in ticker_map:
-                    st.warning(f"⚠️ {tk} 不在資料庫")
-                    continue
-                info_w = ticker_map[tk]
-
-                # 卡片
-                st.markdown(build_stock_card_html(tk, info_w),
-                              unsafe_allow_html=True)
-                if item.get("note"):
-                    st.caption(f"📝 {item['note']}")
-
-                # 持股 P&L 顯示(若已填股數+成本)
-                _hp = compute_holding_pnl(item)
-                if _hp:
-                    _pnl_color = "#ef4444" if _hp["pnl"] > 0 else ("#10b981" if _hp["pnl"] < 0 else "#94a3b8")
-                    _pnl_arrow = "▲" if _hp["pnl"] > 0 else ("▼" if _hp["pnl"] < 0 else "—")
-                    st.markdown(
-                        f"<div style='background:linear-gradient(135deg, #1e293b 0%, #1a1f27 100%);"
-                        f"padding:8px 12px; border-radius:8px; margin-top:-4px; margin-bottom:6px;"
-                        f"border-left:3px solid {_pnl_color};"
-                        f"display:grid; grid-template-columns:repeat(4,1fr); gap:8px; font-size:0.75rem'>"
-                        f"<div><span style='color:#94a3b8'>股數</span> "
-                        f"<b style='color:#fff'>{int(_hp['shares']):,}</b></div>"
-                        f"<div><span style='color:#94a3b8'>成本</span> "
-                        f"<b style='color:#fff'>{_hp['cost_per_share']:.2f}</b></div>"
-                        f"<div><span style='color:#94a3b8'>市值</span> "
-                        f"<b style='color:#fff'>NT$ {_hp['mv']:,.0f}</b></div>"
-                        f"<div><span style='color:#94a3b8'>損益</span> "
-                        f"<b style='color:{_pnl_color}'>{_pnl_arrow} {_hp['pnl']:+,.0f} "
-                        f"({_hp['pct']:+.2f}%)</b></div>"
-                        f"</div>",
-                        unsafe_allow_html=True,
-                    )
-
-                # 緊貼卡片下方的小型可見按鈕(取代之前漏 CSS 的透明覆蓋)
-                with stylable_container(
-                    key=f"wl_btn_{idx}_{tk}",
-                    css_styles="""
-                        button {
-                            margin-top: -8px !important;
-                            background: rgba(20,184,166,0.08) !important;
-                            color: #5eead4 !important;
-                            border: 1px solid rgba(20,184,166,0.3) !important;
-                            border-top: none !important;
-                            border-radius: 0 0 12px 12px !important;
-                            padding: 4px 0 !important;
-                            font-size: 0.78rem !important;
-                            min-height: 28px !important;
-                            margin-bottom: 4px !important;
-                        }
-                        button:hover {
-                            background: rgba(20,184,166,0.18) !important;
-                            color: #fff !important;
-                        }
-                    """,
-                ):
-                    if st.button("🔍 翻開健檢", key=f"wl_card_click_{idx}_{tk}",
-                                   use_container_width=True):
-                        st.session_state["_inline_view_ticker"] = tk
-                        st.rerun()
-
             # ── 隱藏的編輯/移除/排序管理區 ──
             with st.expander("⚙️ 編輯持股 / 筆記 / 排序 / 移除", expanded=False):
                 st.caption("💡 填入股數 + 成本 = 升級為記帳模式,卡片會自動顯示損益。空白 = 純觀察清單。")
@@ -5658,6 +5572,85 @@ def page_tw_stock_center():
                             ]
                             save_json("watchlist", watchlist)
                             st.toast(f"已移除 {tk}", icon="🗑️"); st.rerun()
+
+
+            # ── 卡片 + 緊貼下方小箭頭按鈕(可點到觸發詳細) ──
+            from streamlit_extras.stylable_container import stylable_container
+
+            def _reorder_watchlist(from_idx: int, to_idx: int):
+                """搬移觀察清單第 from_idx 個到 to_idx 位置。"""
+                if not (0 <= from_idx < len(wl_items)) or not (0 <= to_idx < len(wl_items)):
+                    return
+                item = wl_items.pop(from_idx)
+                wl_items.insert(to_idx, item)
+                # 寫回 watchlist.json(保留非 TW 類型在前)
+                watchlist["tickers"] = [t for t in watchlist.get("tickers", [])
+                                          if t.get("type") not in TW_TYPES] + wl_items
+                save_json("watchlist", watchlist)
+
+            for idx, item in enumerate(wl_items):
+                tk = item["ticker"]
+                if tk not in ticker_map:
+                    st.warning(f"⚠️ {tk} 不在資料庫")
+                    continue
+                info_w = ticker_map[tk]
+
+                # 卡片
+                st.markdown(build_stock_card_html(tk, info_w),
+                              unsafe_allow_html=True)
+                if item.get("note"):
+                    st.caption(f"📝 {item['note']}")
+
+                # 持股 P&L 顯示(若已填股數+成本)
+                _hp = compute_holding_pnl(item)
+                if _hp:
+                    _pnl_color = "#ef4444" if _hp["pnl"] > 0 else ("#10b981" if _hp["pnl"] < 0 else "#94a3b8")
+                    _pnl_arrow = "▲" if _hp["pnl"] > 0 else ("▼" if _hp["pnl"] < 0 else "—")
+                    st.markdown(
+                        f"<div style='background:linear-gradient(135deg, #1e293b 0%, #1a1f27 100%);"
+                        f"padding:8px 12px; border-radius:8px; margin-top:-4px; margin-bottom:6px;"
+                        f"border-left:3px solid {_pnl_color};"
+                        f"display:grid; grid-template-columns:repeat(4,1fr); gap:8px; font-size:0.75rem'>"
+                        f"<div><span style='color:#94a3b8'>股數</span> "
+                        f"<b style='color:#fff'>{int(_hp['shares']):,}</b></div>"
+                        f"<div><span style='color:#94a3b8'>成本</span> "
+                        f"<b style='color:#fff'>{_hp['cost_per_share']:.2f}</b></div>"
+                        f"<div><span style='color:#94a3b8'>市值</span> "
+                        f"<b style='color:#fff'>NT$ {_hp['mv']:,.0f}</b></div>"
+                        f"<div><span style='color:#94a3b8'>損益</span> "
+                        f"<b style='color:{_pnl_color}'>{_pnl_arrow} {_hp['pnl']:+,.0f} "
+                        f"({_hp['pct']:+.2f}%)</b></div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                # 緊貼卡片下方的小型可見按鈕(取代之前漏 CSS 的透明覆蓋)
+                with stylable_container(
+                    key=f"wl_btn_{idx}_{tk}",
+                    css_styles="""
+                        button {
+                            margin-top: -8px !important;
+                            background: rgba(20,184,166,0.08) !important;
+                            color: #5eead4 !important;
+                            border: 1px solid rgba(20,184,166,0.3) !important;
+                            border-top: none !important;
+                            border-radius: 0 0 12px 12px !important;
+                            padding: 4px 0 !important;
+                            font-size: 0.78rem !important;
+                            min-height: 28px !important;
+                            margin-bottom: 4px !important;
+                        }
+                        button:hover {
+                            background: rgba(20,184,166,0.18) !important;
+                            color: #fff !important;
+                        }
+                    """,
+                ):
+                    if st.button("🔍 翻開健檢", key=f"wl_card_click_{idx}_{tk}",
+                                   use_container_width=True):
+                        st.session_state["_inline_view_ticker"] = tk
+                        st.rerun()
+
 
         # 跳轉提示已廢棄(個股詳情 tab 移除,inline view 取代)
 
