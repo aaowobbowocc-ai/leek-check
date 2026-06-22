@@ -311,8 +311,6 @@ def _do_login(email: str, password: str):
         msg = str(e)
         if "Invalid login credentials" in msg:
             st.error("⚠️ Email 或密碼錯誤")
-        elif "not confirmed" in msg.lower():
-            st.error("⚠️ Email 尚未驗證,請去信箱點確認連結")
         else:
             st.error(f"⚠️ 登入失敗:{msg}")
 
@@ -325,30 +323,40 @@ def _do_signup(email: str, password: str):
     try:
         res = client.auth.sign_up({"email": email, "password": password})
         if res.user:
-            if res.session:
-                # 自動登入(若 Supabase 設定不需 email 驗證)
+            session = res.session
+            # 沒拿到 session(Supabase 預設可能還是要 email confirm)→ 立刻用同組密碼登入
+            if not session:
+                try:
+                    login_res = client.auth.sign_in_with_password(
+                        {"email": email, "password": password}
+                    )
+                    if login_res and login_res.session:
+                        session = login_res.session
+                        res = login_res
+                except Exception:
+                    pass
+            if session and res.user:
                 st.session_state["user_id"] = res.user.id
                 st.session_state["user_email"] = res.user.email
-                st.session_state["access_token"] = res.session.access_token
-                st.session_state["refresh_token"] = res.session.refresh_token
-                # 寫 cookie 保持登入
+                st.session_state["access_token"] = session.access_token
+                st.session_state["refresh_token"] = session.refresh_token
                 cookies = _get_cookies()
                 if cookies:
                     try:
-                        cookies.set(COOKIE_NAME, res.session.refresh_token,
+                        cookies.set(COOKIE_NAME, session.refresh_token,
                                       max_age=COOKIE_MAX_AGE)
                     except Exception:
                         pass
                 st.success("🎉 註冊成功,已自動登入!")
                 st.rerun()
             else:
-                st.success(f"🎉 註冊成功!請去 {email} 收信點確認連結。")
+                st.success("✅ 註冊成功!請到「🔑 登入」tab 用同一組 email + 密碼登入。")
         else:
             st.error("⚠️ 註冊失敗,可能 email 已被使用")
     except Exception as e:
         msg = str(e)
         if "already registered" in msg.lower() or "exists" in msg.lower():
-            st.error("⚠️ 這個 email 已註冊過,請去登入")
+            st.error("⚠️ 這個 email 已註冊過,請去「🔑 登入」tab")
         else:
             st.error(f"⚠️ 註冊失敗:{msg}")
 
