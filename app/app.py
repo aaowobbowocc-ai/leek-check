@@ -7224,7 +7224,17 @@ def page_tw_stock_center():
                     with st.spinner(f"掃描..."):
                         s_hits = strat["scan_fn"]()
                     if not s_hits:
-                        st.info("⚪ 今日無觸發此策略")
+                        # 雲端沒 cache 時 7 個 scanner 永遠回 0,給 user 明確訊息
+                        if not TW_OHLCV_CACHE.exists() or not list(TW_OHLCV_CACHE.glob("*.parquet")):
+                            st.warning(
+                                "📡 **雲端版策略掃描需要完整本機 OHLCV cache**(1.1GB)。\n\n"
+                                "目前雲端 fallback 還沒做。短期內可用替代:\n"
+                                "- 觀察清單健康巡禮(晨報 tab)\n"
+                                "- 健檢分數排行(排行榜 tab)\n"
+                                "- 個股健檢(觀察清單點任一卡片)"
+                            )
+                        else:
+                            st.info("⚪ 今日無觸發此策略")
                     else:
                         st.caption(f"✅ 今日觸發 {len(s_hits)} 檔")
                         for i_h, h in enumerate(s_hits):
