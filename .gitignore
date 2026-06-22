@@ -7,6 +7,24 @@ venv/
 config/.env
 data/assets.json
 data/cache/
+# 例外:ticker 對照表(部署必備,~83KB)
+!data/cache/
+!data/cache/finmind/
+!data/cache/finmind/extras/
+!data/cache/finmind/extras/stock_info.parquet
+!data/cache/finmind/ipo/
+!data/cache/finmind/ipo/ipo_list.parquet
+# 其他 cache 子目錄全部排除
+data/cache/finmind/finmind/
+data/cache/finmind/institutional/
+data/cache/finmind/holding/
+data/cache/finmind/revenue/
+data/cache/finmind/financial/
+data/cache/finmind/dividend/
+data/cache/finmind/margin/
+data/cache/finmind/minute/
+data/cache/finmind/tick/
+data/cache/yfinance/
 data/history/
 data/paper_trades/
 data/backtest/
@@ -17,6 +35,10 @@ logs/
 *.parquet
 *.png
 !app/static/*.png
+
+# 例外:ticker 對照表 + IPO list(小檔,部署必備)
+!data/cache/finmind/extras/stock_info.parquet
+!data/cache/finmind/ipo/ipo_list.parquet
 .claude/
 
 # Streamlit secrets(API keys / Supabase URL+anon key)
