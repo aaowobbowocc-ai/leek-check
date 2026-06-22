@@ -1787,6 +1787,57 @@ def fetch_yfinance_quote(ticker: str):
     return _fetch_yfinance_quote_bucketed(ticker, _time_bucket())
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def _ranking_batch_fetch(tickers: tuple, bucket: str) -> list[dict]:
+    """一次 yfinance.download() N 檔(parallel)做排行榜用 — 比一檔一檔快 10 倍。
+    回傳:[{代號, 收盤, 漲跌%, 成交量}, ...](產業/名稱由 caller 後補)"""
+    try:
+        import yfinance as yf
+        # 同時加 .TW 跟 .TWO 後綴一起抓,免得錯過上櫃
+        symbol_map = {}  # yf_sym → 原 ticker
+        yf_symbols = []
+        for tk in tickers:
+            for suf in [".TW", ".TWO"]:
+                yf_symbols.append(f"{tk}{suf}")
+                symbol_map[f"{tk}{suf}"] = tk
+        # batch download 5 日,避免單 ticker 的 noise
+        df = yf.download(" ".join(yf_symbols), period="5d",
+                          group_by="ticker", auto_adjust=False,
+                          progress=False, threads=True)
+        if df.empty:
+            return []
+        results = []
+        seen = set()
+        for yf_sym in yf_symbols:
+            tk = symbol_map[yf_sym]
+            if tk in seen:
+                continue
+            try:
+                sub = df[yf_sym].dropna()
+                if len(sub) < 2:
+                    continue
+                last = sub.iloc[-1]
+                prev = sub.iloc[-2]
+                price = float(last["Close"])
+                prev_close = float(prev["Close"])
+                if price <= 0 or prev_close <= 0:
+                    continue
+                chg_pct = (price / prev_close - 1) * 100
+                results.append({
+                    "代號": tk,
+                    "收盤": price,
+                    "漲跌%": chg_pct,
+                    "成交量": int(last.get("Volume", 0)) if not pd.isna(last.get("Volume", 0)) else 0,
+                })
+                seen.add(tk)
+            except Exception:
+                continue
+        return results
+    except Exception as e:
+        print(f"[ranking batch] {e}")
+        return []
+
+
 @st.cache_data(ttl=86400, show_spinner=False)  # bucket 變就會 miss,ttl 只是上限
 def _fetch_yfinance_quote_bucketed(ticker: str, bucket: str):
     """Return latest close + 5d series from yfinance."""
@@ -6925,30 +6976,15 @@ def page_tw_stock_center():
             "4915", "4961", "5269", "6669", "6770", "6781", "7402", "8069",
         ]
         if not cache_files:
-            st.caption("📡 即時模式(雲端版):取 80 檔熱門權值/ETF + 你的觀察清單,~15 秒")
-            results = []
+            st.caption("📡 即時模式(雲端):batch 抓 ~80 檔熱門權值/ETF + 你的觀察清單,~5 秒")
             wl_book = load_json("watchlist", {"tickers": []})
             wl_tickers = [t["ticker"] for t in wl_book.get("tickers", []) if t.get("type") in TW_TYPES]
             universe = list(dict.fromkeys(wl_tickers + TICKER_UNIVERSE_FALLBACK))
-            progress = st.progress(0.0, text="抓取中...")
-            for i_u, tk in enumerate(universe):
-                progress.progress((i_u + 1) / len(universe),
-                                    text=f"抓 {tk}({i_u+1}/{len(universe)})")
-                if tk not in ticker_map:
-                    continue
-                q = fetch_yfinance_quote(tk)
-                if not q or not q.get("prev_close"):
-                    continue
-                chg_pct = (q["price"] / q["prev_close"] - 1) * 100 if q["prev_close"] > 0 else 0
-                results.append({
-                    "代號": tk,
-                    "名稱": ticker_map[tk]["name"],
-                    "收盤": q["price"],
-                    "漲跌%": chg_pct,
-                    "成交量": int(q.get("volume", 0)),
-                    "產業": ticker_map[tk].get("industry", "—"),
-                })
-            progress.empty()
+            results = _ranking_batch_fetch(tuple(universe), _time_bucket())
+            # 補產業欄(從 ticker_map 後補,batch fetch 不帶這個)
+            for r in results:
+                r["產業"] = ticker_map.get(r["代號"], {}).get("industry", "—")
+                r["名稱"] = ticker_map.get(r["代號"], {}).get("name", r["代號"])
         else:
             st.caption(f"📁 本機 cache 模式 · {len(cache_files)} 檔")
             # 計算當日漲跌(限定到 500 檔以免太慢)
