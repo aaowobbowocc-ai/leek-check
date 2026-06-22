@@ -3876,9 +3876,11 @@ def page_tw_stock_center():
                       unsafe_allow_html=True)
         wl_data = load_json("watchlist", {"tickers": []})
         wl_briefing = [t for t in wl_data.get("tickers", []) if t.get("type") in TW_TYPES]
-        # 讀晨報精選設定
-        _b_settings = load_json("settings", {})
-        _featured_tks = _b_settings.get("briefing_featured", []) or []
+        # 讀晨報精選設定(優先 session_state,fallback file)
+        _featured_tks = st.session_state.get("briefing_featured")
+        if _featured_tks is None:
+            _b_settings = load_json("settings", {}) or {}
+            _featured_tks = _b_settings.get("briefing_featured", []) or []
         _valid_featured_tks = [tk for tk in _featured_tks
                                   if tk in {t["ticker"] for t in wl_briefing}]
         if not pro_gate("觀察清單健康巡禮 (一鍵掃描所有持股)"):
@@ -5365,9 +5367,11 @@ def page_tw_stock_center():
             st.info("還沒加入任何個股,用上方表單加入")
         else:
             # ── 🌅 晨報精選(最多 5 檔詳細卡)──
-            _settings_now = load_json("settings", {})
-            _current_featured = _settings_now.get("briefing_featured", []) or []
-            # 過濾掉已不在 watchlist 的 ticker(避免殘留 stale)
+            # session_state 當主來源(DB 沒 column 也 OK),file 當 backup
+            if "briefing_featured" not in st.session_state:
+                _init_settings = load_json("settings", {}) or {}
+                st.session_state["briefing_featured"] = _init_settings.get("briefing_featured", []) or []
+            _current_featured = st.session_state["briefing_featured"]
             _valid_featured = [t for t in _current_featured
                                 if t in {it["ticker"] for it in wl_items}]
             _opt_labels = {
@@ -5389,8 +5393,13 @@ def page_tw_stock_center():
                     label_visibility="collapsed",
                 )
                 if set(_picked) != set(_valid_featured):
-                    _settings_now["briefing_featured"] = _picked
-                    save_json("settings", _settings_now)
+                    st.session_state["briefing_featured"] = _picked
+                    _bk = load_json("settings", {}) or {}
+                    _bk["briefing_featured"] = _picked
+                    try:
+                        save_json("settings", _bk)
+                    except Exception:
+                        pass
                     st.toast(f"✅ 晨報精選已更新({len(_picked)}/5)", icon="🌅")
                     st.rerun()
 
