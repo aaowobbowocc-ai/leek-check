@@ -3441,51 +3441,50 @@ def page_tw_stock_center():
         st.error("⚠️ ticker 對照表沒抓到。請去 settings 確認 IPO 資料")
         return
 
-    # ── CSS:tab 列「sticky」+ 防 render 閃 + 橫滑可看完 10 tabs ──
+    # ── CSS:tab 列釘頂 + 防 render 閃 + 橫滑 ──
     st.markdown("""
     <style>
-      /* 整個 tab 容器 sticky */
-      div[data-testid="stTabs"] {
+      /* 只把 tab-list 釘頂(不是整個 stTabs,避免內容也黏住)*/
+      .stTabs > div:first-child {
         position: sticky !important;
         top: 0 !important;
         z-index: 9999 !important;
         background: #16181d !important;
-        margin-top: -8px !important;
-        padding-top: 8px !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-      }
-      /* Tab 列本體 */
-      .stTabs [data-baseweb="tab-list"] {
-        background: #16181d !important;
-        padding: 6px 0 4px !important;
+        padding: 8px 0 4px !important;
+        margin: -8px 0 0 0 !important;
         border-bottom: 1px solid #2f343d !important;
         box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+      }
+      .stTabs [data-baseweb="tab-list"] {
+        background: transparent !important;
         gap: 4px !important;
         overflow-x: auto !important;
         overflow-y: hidden !important;
         white-space: nowrap !important;
         flex-wrap: nowrap !important;
-        min-height: 50px !important;
-        visibility: visible !important;
+        min-height: 44px !important;
+        scrollbar-width: none !important;
+      }
+      .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+        height: 0 !important;
+        display: none !important;
       }
       .stTabs [data-baseweb="tab"] {
         flex-shrink: 0 !important;
         white-space: nowrap !important;
-        visibility: visible !important;
       }
-      /* 隱藏 scroll bar 但保留滑動 */
-      .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
-        height: 0 !important;
-        width: 0 !important;
-        display: none !important;
-      }
-      .stTabs [data-baseweb="tab-list"] {
-        scrollbar-width: none !important;  /* Firefox */
-      }
-      /* 確保 tab content 不蓋到 tab 列 */
+      /* 內容 panel 不要繼承 sticky */
       .stTabs [data-baseweb="tab-panel"] {
         padding-top: 8px !important;
+        position: static !important;
+      }
+      /* 上方 app header 的留白拉小,讓 tab 真的能黏到最頂 */
+      header[data-testid="stHeader"] {
+        background: transparent !important;
+        height: 0 !important;
+      }
+      div[data-testid="stMainBlockContainer"] {
+        padding-top: 1rem !important;
       }
     </style>
     """, unsafe_allow_html=True)
@@ -6893,16 +6892,51 @@ def page_tw_stock_center():
     # ────── Tab 4: 排行榜 ──────
     with tab_rank:
         st.subheader("🏆 個股排行榜")
-        st.caption("從本機 OHLCV cache 算當日表現")
 
         # 抓所有 cache 的 ticker
         cache_files = list(TW_OHLCV_CACHE.glob("*.parquet"))
-        st.caption(f"資料來源: {len(cache_files)} 檔本機快取")
-
+        # ── 雲端 fallback: 沒 cache 時取 「觀察清單 + 熱門 200 大型權值/ETF」live yfinance ──
+        TICKER_UNIVERSE_FALLBACK = [
+            "0050", "0056", "00631L", "00878", "00919", "00929", "00939", "00940",
+            "00713", "00892", "00881", "00891", "006208", "00646", "00692", "00701",
+            "2330", "2317", "2454", "2412", "2308", "2382", "2891", "2882", "2881",
+            "2884", "2885", "2886", "2887", "2890", "2892", "5871", "5876", "5880",
+            "2002", "1301", "1303", "1326", "1101", "1102", "2207", "2105", "2603",
+            "2609", "2615", "2618", "3008", "3017", "3034", "3037", "3045", "3231",
+            "3661", "3702", "4904", "4938", "5483", "6271", "6285", "6415", "6505",
+            "6669", "6770", "9904", "9910", "9921", "9933", "9945", "9939",
+            "1815", "2356", "2376", "2379", "2383", "2385", "2408", "2474", "2603",
+            "2880", "2883", "2888", "2889", "2912", "3380", "3443", "3653", "3711",
+            "4915", "4961", "5269", "6669", "6770", "6781", "7402", "8069",
+        ]
         if not cache_files:
-            st.info("沒有快取的個股 OHLCV 資料")
+            st.caption("📡 即時模式(雲端版):取 80 檔熱門權值/ETF + 你的觀察清單,~15 秒")
+            results = []
+            wl_book = load_json("watchlist", {"tickers": []})
+            wl_tickers = [t["ticker"] for t in wl_book.get("tickers", []) if t.get("type") in TW_TYPES]
+            universe = list(dict.fromkeys(wl_tickers + TICKER_UNIVERSE_FALLBACK))
+            progress = st.progress(0.0, text="抓取中...")
+            for i_u, tk in enumerate(universe):
+                progress.progress((i_u + 1) / len(universe),
+                                    text=f"抓 {tk}({i_u+1}/{len(universe)})")
+                if tk not in ticker_map:
+                    continue
+                q = fetch_yfinance_quote(tk)
+                if not q or not q.get("prev_close"):
+                    continue
+                chg_pct = (q["price"] / q["prev_close"] - 1) * 100 if q["prev_close"] > 0 else 0
+                results.append({
+                    "代號": tk,
+                    "名稱": ticker_map[tk]["name"],
+                    "收盤": q["price"],
+                    "漲跌%": chg_pct,
+                    "成交量": int(q.get("volume", 0)),
+                    "產業": ticker_map[tk].get("industry", "—"),
+                })
+            progress.empty()
         else:
-            # 計算當日漲跌(限定到 200 檔以免太慢)
+            st.caption(f"📁 本機 cache 模式 · {len(cache_files)} 檔")
+            # 計算當日漲跌(限定到 500 檔以免太慢)
             with st.spinner("計算中..."):
                 results = []
                 for f in cache_files[:500]:
