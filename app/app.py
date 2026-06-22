@@ -38,6 +38,29 @@ st.set_page_config(
 )
 TW = timezone(timedelta(hours=8))
 
+
+def _time_bucket() -> str:
+    """根據台股交易時段動態 bucket key,讓 cache_data 自動失效:
+       - 週六日 / 國定假日:整天共用 key
+       - 00:00 - 08:00:沿用前一日 eod(夜間休眠)
+       - 08:00 - 09:00:盤前 30 min refresh
+       - 09:00 - 13:30:盤中 15 min refresh
+       - 13:30 - 17:00:盤後 30 min refresh(等法人公告)
+       - 17:00 之後:eod 整夜 cache"""
+    now = datetime.now(TW)
+    if now.weekday() >= 5:
+        return f"weekend_{now.strftime('%Y%m%d')}"
+    h, m = now.hour, now.minute
+    if h < 8:
+        return f"eod_{(now - timedelta(days=1)).strftime('%Y%m%d')}"
+    if h == 8:
+        return f"pre_{now.strftime('%Y%m%d')}_{m // 30}"
+    if 9 <= h < 13 or (h == 13 and m < 30):
+        return f"intra_{now.strftime('%Y%m%d_%H')}_{m // 15}"
+    if (h == 13 and m >= 30) or (14 <= h < 17):
+        return f"close_{now.strftime('%Y%m%d_%H')}_{m // 30}"
+    return f"eod_{now.strftime('%Y%m%d')}"
+
 # ── 多 user 模式:接 Supabase auth(本機沒設 env → 自動 local-user 單機 mode)──
 import sys as _sys
 _sys.path.insert(0, str(ROOT.parent))
@@ -1759,8 +1782,13 @@ def fetch_taiex_state():
         return None
 
 
-@st.cache_data(ttl=14400)  # 4h — 盤後不變,盤中 ~15min 延遲也可接受
 def fetch_yfinance_quote(ticker: str):
+    """前端 wrapper:把 time bucket 拼進 cache key,讓盤前/盤中/盤後自動失效。"""
+    return _fetch_yfinance_quote_bucketed(ticker, _time_bucket())
+
+
+@st.cache_data(ttl=86400, show_spinner=False)  # bucket 變就會 miss,ttl 只是上限
+def _fetch_yfinance_quote_bucketed(ticker: str, bucket: str):
     """Return latest close + 5d series from yfinance."""
     try:
         import yfinance as yf
@@ -1798,8 +1826,12 @@ def load_local_ohlcv(ticker: str, days: int = 250):
     return _yf_ohlcv_fallback(ticker, days)
 
 
-@st.cache_data(ttl=14400, show_spinner=False)  # 4h
 def _yf_ohlcv_fallback(ticker: str, days: int = 250):
+    return _yf_ohlcv_fallback_bucketed(ticker, days, _time_bucket())
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _yf_ohlcv_fallback_bucketed(ticker: str, days: int, bucket: str):
     """yfinance live OHLCV → 統一回傳跟本地 parquet 同 shape。
     用於部署環境沒 cache parquet 時。15 分鐘 cache。"""
     try:
@@ -2175,8 +2207,12 @@ def render_ai_section(prompt_base: str, cache_key: str, ss_prefix: str,
 # ──────────────────────────────────────────────
 # 真 alpha 訊號偵測器(based on memory 驗證過的策略)
 # ──────────────────────────────────────────────
-@st.cache_data(ttl=14400, show_spinner=False)  # 4h — 多市場 daily 看就夠
 def fetch_multi_market_data():
+    return _fetch_multi_market_data_bucketed(_time_bucket())
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def _fetch_multi_market_data_bucketed(bucket: str):
     """抓多市場資料(yfinance,4 小時 cache)。"""
     import yfinance as yf
     GROUPS = {
