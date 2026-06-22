@@ -42,30 +42,8 @@ TW = timezone(timedelta(hours=8))
 import sys as _sys
 _sys.path.insert(0, str(ROOT.parent))
 
-# ── OAuth bridge:把 #access_token 抓進 cookie 再 reload(Streamlit 看不到 fragment 的 workaround)──
-import streamlit.components.v1 as _components
-_components.html("""
-<script>
-(function() {
-    try {
-        var p = window.parent;
-        if (p && p.location && p.location.hash && p.location.hash.indexOf('access_token') !== -1) {
-            var hash = p.location.hash.substring(1);
-            var params = new URLSearchParams(hash);
-            var at = params.get('access_token');
-            var rt = params.get('refresh_token');
-            if (at && rt) {
-                // 寫短效 cookie 把 token 交給 Python(2 分鐘有效,夠 reload 一次)
-                p.document.cookie = 'leek_oauth_at=' + encodeURIComponent(at) + '; path=/; max-age=120; SameSite=Lax';
-                p.document.cookie = 'leek_oauth_rt=' + encodeURIComponent(rt) + '; path=/; max-age=120; SameSite=Lax';
-                // 拿掉 hash + reload
-                p.location.replace(p.location.pathname + p.location.search);
-            }
-        }
-    } catch(e) { /* CORS 或其他錯誤 → 忽略 */ }
-})();
-</script>
-""", height=0)
+# OAuth callback 已改成靜態頁面 /app/static/oauth_callback.html(避開 Streamlit iframe sandbox)
+# 那頁 JS 抓 #access_token 寫 cookie 再 redirect 回 /,本檔不再注入 bridge JS。
 
 try:
     from src import db as _db, auth as _auth

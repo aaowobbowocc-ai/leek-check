@@ -20,6 +20,8 @@ COOKIE_MAX_AGE = 30 * 86400  # 30 天
 
 # Streamlit Cloud 公開 URL,Google OAuth 完成後 redirect 回這裡
 APP_URL = "https://leek-check.streamlit.app"
+# Google OAuth callback 落在這個靜態頁(JS 抓 #fragment 寫 cookie 再回主畫面)
+OAUTH_CALLBACK_URL = f"{APP_URL}/app/static/oauth_callback.html"
 
 
 def _get_cookies():
@@ -261,7 +263,7 @@ def _render_google_button():
         f"{db.SUPABASE_URL.rstrip('/')}/auth/v1/authorize?"
         + urlencode({
             "provider": "google",
-            "redirect_to": APP_URL,
+            "redirect_to": OAUTH_CALLBACK_URL,
         })
     )
     try:
