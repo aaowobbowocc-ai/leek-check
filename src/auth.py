@@ -65,7 +65,51 @@ def _try_restore_from_cookie() -> bool:
 
 
 def _try_handle_oauth_callback() -> bool:
-    """檢查 URL 是否帶 OAuth callback code(Google 回流)"""
+    """檢查 OAuth callback 的兩種 channel:
+       1. cookie(leek_oauth_at + leek_oauth_rt) — implicit flow JS bridge 寫進來的
+       2. URL query param ?code= — PKCE flow"""
+    cookies = _get_cookies()
+
+    # Channel 1: JS bridge 寫進來的 access_token + refresh_token
+    if cookies:
+        try:
+            at_raw = cookies.get("leek_oauth_at")
+            rt_raw = cookies.get("leek_oauth_rt")
+        except Exception:
+            at_raw = rt_raw = None
+        if at_raw and rt_raw:
+            from urllib.parse import unquote
+            at = unquote(at_raw)
+            rt = unquote(rt_raw)
+            client = db.get_client()
+            if client:
+                try:
+                    res = client.auth.set_session(at, rt)
+                    # 拿 user
+                    user_res = client.auth.get_user(at)
+                    user = getattr(user_res, "user", None) or user_res
+                    if user and getattr(user, "id", None):
+                        st.session_state["user_id"] = user.id
+                        st.session_state["user_email"] = getattr(user, "email", "")
+                        st.session_state["access_token"] = at
+                        st.session_state["refresh_token"] = rt
+                        # 寫長效 cookie 保持登入 30 天
+                        try:
+                            cookies.set(COOKIE_NAME, rt, max_age=COOKIE_MAX_AGE)
+                        except Exception:
+                            pass
+                        # 清掉 oauth handoff cookies(一次性使用)
+                        try:
+                            cookies.remove("leek_oauth_at")
+                            cookies.remove("leek_oauth_rt")
+                        except Exception:
+                            pass
+                        db.set_session_token(at, rt)
+                        return True
+                except Exception as e:
+                    print(f"[auth] cookie OAuth handoff failed: {e}")
+
+    # Channel 2: PKCE ?code=
     try:
         params = st.query_params
         code = params.get("code")
@@ -83,7 +127,6 @@ def _try_handle_oauth_callback() -> bool:
             st.session_state["user_email"] = res.user.email
             st.session_state["access_token"] = res.session.access_token
             st.session_state["refresh_token"] = res.session.refresh_token
-            cookies = _get_cookies()
             if cookies:
                 try:
                     cookies.set(COOKIE_NAME, res.session.refresh_token,
@@ -91,14 +134,13 @@ def _try_handle_oauth_callback() -> bool:
                 except Exception:
                     pass
             db.set_session_token(res.session.access_token, res.session.refresh_token)
-            # 清掉 URL params(讓網址乾淨)
             try:
                 st.query_params.clear()
             except Exception:
                 pass
             return True
     except Exception as e:
-        print(f"[auth] OAuth callback failed: {e}")
+        print(f"[auth] OAuth code exchange failed: {e}")
     return False
 
 

@@ -41,6 +41,32 @@ TW = timezone(timedelta(hours=8))
 # ── 多 user 模式:接 Supabase auth(本機沒設 env → 自動 local-user 單機 mode)──
 import sys as _sys
 _sys.path.insert(0, str(ROOT.parent))
+
+# ── OAuth bridge:把 #access_token 抓進 cookie 再 reload(Streamlit 看不到 fragment 的 workaround)──
+import streamlit.components.v1 as _components
+_components.html("""
+<script>
+(function() {
+    try {
+        var p = window.parent;
+        if (p && p.location && p.location.hash && p.location.hash.indexOf('access_token') !== -1) {
+            var hash = p.location.hash.substring(1);
+            var params = new URLSearchParams(hash);
+            var at = params.get('access_token');
+            var rt = params.get('refresh_token');
+            if (at && rt) {
+                // 寫短效 cookie 把 token 交給 Python(2 分鐘有效,夠 reload 一次)
+                p.document.cookie = 'leek_oauth_at=' + encodeURIComponent(at) + '; path=/; max-age=120; SameSite=Lax';
+                p.document.cookie = 'leek_oauth_rt=' + encodeURIComponent(rt) + '; path=/; max-age=120; SameSite=Lax';
+                // 拿掉 hash + reload
+                p.location.replace(p.location.pathname + p.location.search);
+            }
+        }
+    } catch(e) { /* CORS 或其他錯誤 → 忽略 */ }
+})();
+</script>
+""", height=0)
+
 try:
     from src import db as _db, auth as _auth
     USER_ID = _auth.get_current_user_id()  # 雲端模式未登入會 st.stop()
