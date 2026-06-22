@@ -1,0 +1,18 @@
+# 韭菜健檢 Streamlit 設定
+[server]
+# 開啟靜態檔案服務(PWA manifest/icon/sw.js 用)
+enableStaticServing = true
+# 上傳檔案大小限制
+maxUploadSize = 50
+
+[theme]
+# 對應 hero gradient 主色(也會反映在瀏覽器分頁顏色)
+primaryColor = "#14b8a6"
+backgroundColor = "#16181d"
+secondaryBackgroundColor = "#1e2128"
+textColor = "#e4e6eb"
+font = "sans serif"
+
+[browser]
+# 不收集統計
+gatherUsageStats = false

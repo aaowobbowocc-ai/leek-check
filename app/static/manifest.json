@@ -1,0 +1,27 @@
+{
+  "name": "韭菜健檢 — Leek Check",
+  "short_name": "韭菜健檢",
+  "description": "買進前先做一次韭菜健檢。4 面分析 + AI 解讀,純客觀數據,不報明牌。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#16181d",
+  "theme_color": "#0f766e",
+  "categories": ["finance", "productivity"],
+  "lang": "zh-TW",
+  "icons": [
+    {
+      "src": "/app/static/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/app/static/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

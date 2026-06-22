@@ -9,10 +9,26 @@ data/assets.json
 data/cache/
 data/history/
 data/paper_trades/
+data/backtest/
 logs/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 *.parquet
 *.png
+!app/static/*.png
 .claude/
+
+# Streamlit secrets(API keys / Supabase URL+anon key)
+.streamlit/secrets.toml
+
+# 本機 user data(部署後 Supabase 接管)
+app/user_data/*.json
+
+# AI cache(每用戶獨立)
+app/data/ai_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
