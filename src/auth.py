@@ -210,21 +210,22 @@ def _render_login_page():
 
 
 def _render_google_button():
-    """Google 一鍵登入按鈕(透過 Supabase Google provider)。"""
-    client = db.get_client()
-    if not client:
+    """Google 一鍵登入按鈕 — 直接組 Supabase OAuth authorize URL,
+    比走 client.auth.sign_in_with_oauth() 穩(SDK server-side 行為不確定)。"""
+    if not db.SUPABASE_URL:
         return
-    try:
-        oauth = client.auth.sign_in_with_oauth({
+    from urllib.parse import urlencode
+    oauth_url = (
+        f"{db.SUPABASE_URL.rstrip('/')}/auth/v1/authorize?"
+        + urlencode({
             "provider": "google",
-            "options": {"redirect_to": APP_URL},
+            "redirect_to": APP_URL,
         })
-        url = getattr(oauth, "url", None) or oauth.get("url")
-        if not url:
-            return
+    )
+    try:
         st.markdown(
             f"""
-            <a href='{url}' style='text-decoration:none; display:block; margin-bottom:14px'>
+            <a href='{oauth_url}' style='text-decoration:none; display:block; margin-bottom:14px'>
               <div style='background:linear-gradient(135deg, #fff 0%, #f1f5f9 100%);
                           color:#1f2937; padding:12px 18px; border-radius:10px;
                           font-weight:600; text-align:center; font-size:0.95rem;
