@@ -1875,6 +1875,53 @@ def _finmind_live_fetch(data_type: str, ticker: str):
         return None
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_inst_total_live(days: int = 30) -> pd.DataFrame | None:
+    """FinMind v4:全市場三大法人總計(per day)。
+    回傳 DataFrame with columns: date / 外資 / 投信 / 自營(單位 = 張)"""
+    try:
+        import requests as _rq
+        from datetime import date as _dt_f, timedelta as _td
+        token = os.environ.get("FINMIND_TOKEN", "").strip()
+        try:
+            if not token:
+                token = (st.secrets.get("FINMIND_TOKEN", "") or "").strip()
+        except Exception:
+            pass
+        start_date = (_dt_f.today() - _td(days=days)).isoformat()
+        params = {
+            "dataset": "TaiwanStockTotalInstitutionalInvestors",
+            "start_date": start_date,
+        }
+        if token:
+            params["token"] = token
+        r = _rq.get("https://api.finmindtrade.com/api/v4/data",
+                     params=params, timeout=15)
+        if r.status_code != 200:
+            return None
+        j = r.json()
+        if j.get("status") != 200 or not j.get("data"):
+            return None
+        df = pd.DataFrame(j["data"])
+        if df.empty or "date" not in df.columns or "name" not in df.columns:
+            return None
+        df["net"] = (df.get("buy", 0).astype(float) - df.get("sell", 0).astype(float)) / 1000  # 股→張
+        pivot = (df.pivot_table(index="date", columns="name", values="net",
+                                  aggfunc="sum", fill_value=0)
+                    .reset_index())
+        pivot.columns.name = None
+        out = pd.DataFrame({
+            "date": pd.to_datetime(pivot["date"]),
+            "外資": pivot.get("Foreign_Investor", 0).astype(int),
+            "投信": pivot.get("Investment_Trust", 0).astype(int),
+            "自營": (pivot.get("Dealer_self", 0) + pivot.get("Dealer_Hedging", 0)).astype(int),
+        })
+        return out.sort_values("date").tail(20).reset_index(drop=True)
+    except Exception as e:
+        print(f"[_fetch_inst_total_live] {e}")
+        return None
+
+
 @st.cache_data(ttl=86400)
 def fetch_balance_sheet(ticker: str):
     """Live fetch FinMind BalanceSheet — 24h cache.免 token,免費."""
@@ -6414,6 +6461,7 @@ def page_tw_stock_center():
             files = [f for f in all_files
                       if f.stem.split("_")[-1].isdigit()
                       and len(f.stem.split("_")[-1]) == 8][-20:]
+            df_inst = None
             if files:
                 rows = []
                 for f in files:
@@ -6433,6 +6481,10 @@ def page_tw_stock_center():
                     df_inst = pd.DataFrame(rows)
                     df_inst["date"] = pd.to_datetime(df_inst["date"], format="%Y%m%d")
                     df_inst = df_inst.sort_values("date")
+            # Fallback: FinMind live(無 cache 環境用)
+            if df_inst is None or df_inst.empty:
+                df_inst = _fetch_inst_total_live(days=30)
+            if df_inst is not None and not df_inst.empty:
 
                     fsum = int(df_inst["外資"].sum())
                     isum = int(df_inst["投信"].sum())
