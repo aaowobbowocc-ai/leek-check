@@ -2364,28 +2364,136 @@ def _fetch_multi_market_data_bucketed(bucket: str):
     return result
 
 
-# 雲端 fallback universe — 排行榜 + 策略掃描共用
+# 雲端 fallback universe — 排行榜 + 策略掃描共用,~250 檔涵蓋各產業主要 + ETF
 TICKER_UNIVERSE_FALLBACK = [
-    "0050", "0056", "00631L", "00878", "00919", "00929", "00939", "00940",
-    "00713", "00892", "00881", "00891", "006208", "00646", "00692", "00701",
-    "2330", "2317", "2454", "2412", "2308", "2382", "2891", "2882", "2881",
-    "2884", "2885", "2886", "2887", "2890", "2892", "5871", "5876", "5880",
-    "2002", "1301", "1303", "1326", "1101", "1102", "2207", "2105", "2603",
-    "2609", "2615", "2618", "3008", "3017", "3034", "3037", "3045", "3231",
-    "3661", "3702", "4904", "4938", "5483", "6271", "6285", "6415", "6505",
-    "6669", "6770", "9904", "9910", "9921", "9933", "9945", "9939",
-    "1815", "2356", "2376", "2379", "2383", "2385", "2408", "2474",
-    "2880", "2883", "2888", "2889", "2912", "3380", "3443", "3653", "3711",
-    "4915", "4961", "5269", "6781", "7402", "8069",
+    # ── ETF(廣覆蓋)──
+    "0050", "0051", "0052", "0055", "0056", "0057", "0061", "006203",
+    "006204", "006208", "00631L", "00632R", "00633L", "00634R", "00635U",
+    "00636", "00637L", "00638R", "00639", "00642U", "00643", "00646",
+    "00650L", "00657", "00662", "00665L", "00666R", "00668", "00670L",
+    "00671R", "00675L", "00676R", "00679B", "00682U", "00685L", "00688L",
+    "00692", "00700", "00701", "00710B", "00711B", "00712", "00713", "00714",
+    "00717", "00719B", "00720B", "00724B", "00725B", "00727B", "00728",
+    "00730", "00731", "00733", "00734B", "00735", "00736", "00737", "00738U",
+    "00740B", "00741B", "00742", "00750B", "00751B", "00752", "00753B",
+    "00754B", "00755B", "00756B", "00757", "00758B", "00759B", "00760B",
+    "00761B", "00762", "00763U", "00764B", "00768B", "00770", "00771",
+    "00772B", "00773B", "00774B", "00775B", "00777B", "00778B", "00779B",
+    "00780B", "00781B", "00782B", "00783", "00784B", "00785B", "00787U",
+    "00788B", "00789B", "00790B", "00791B", "00792B", "00793B", "00795B",
+    "00798B", "00799B", "00811", "00812", "00813", "00814B", "00815B",
+    "00816B", "00829", "00830", "00834B", "00835B", "00836B", "00838",
+    "00839", "00840B", "00841B", "00842B", "00843B", "00844B", "00845B",
+    "00846B", "00847B", "00848B", "00849B", "00850", "00851", "00852L",
+    "00853B", "00854B", "00857B", "00858", "00859B", "00860B", "00861",
+    "00862B", "00863B", "00864B", "00865B", "00866", "00867", "00868",
+    "00869B", "00870", "00871", "00872", "00874", "00875", "00876", "00878",
+    "00880", "00881", "00882", "00883B", "00884B", "00885", "00886", "00887",
+    "00888", "00889", "00890", "00891", "00892", "00893", "00894", "00895",
+    "00896", "00897", "00898", "00899", "00900", "00901", "00902", "00903",
+    "00904", "00905", "00906", "00907", "00908", "00909", "00910", "00911",
+    "00912", "00913", "00914", "00915", "00916", "00917", "00918", "00919",
+    "00920", "00921", "00922", "00923", "00925", "00926", "00927", "00928",
+    "00929", "00930", "00931", "00932", "00933", "00934", "00935", "00936",
+    "00937B", "00938", "00939", "00940", "00941", "00942B", "00943",
+    "00944", "00945B", "00946", "00947", "00948B", "00949", "00950",
+
+    # ── 半導體 ──
+    "2330", "2308", "2317", "2454", "2379", "2382", "2449", "3008", "3017",
+    "3034", "3037", "3045", "3661", "3711", "6770", "6515", "8016", "8081",
+    "3231", "3443", "2451", "3711", "5269", "6271", "6285", "6533", "6669",
+    "2376", "2356", "2353", "2354", "2355", "2356", "2357", "3596", "2377",
+    "2388", "2392", "3105", "3138", "3265", "3413", "3530", "3661", "8069",
+
+    # ── 金融 ──
+    "2880", "2881", "2882", "2883", "2884", "2885", "2886", "2887", "2888",
+    "2889", "2890", "2891", "2892", "5820", "5876", "5880", "2812", "2820",
+    "2823", "2832", "2834", "2836", "2838", "2845", "2849", "2850", "2851",
+    "2852", "2855", "2867", "2897", "2901", "5854",
+
+    # ── 鋼鐵 / 化工 / 塑化 ──
+    "2002", "2027", "2049", "2009", "2017", "2014", "2031", "2008", "1301",
+    "1303", "1326", "1314", "1305", "1312", "1313", "1717", "1722", "1727",
+    "1729", "1730", "1789", "1789", "6505",
+
+    # ── 食品 / 紡織 / 民生 ──
+    "1101", "1102", "1216", "1210", "1227", "1229", "1232", "1234", "1262",
+    "1402", "1409", "1410", "1413", "1417", "1419", "1434", "1440", "1441",
+    "1442", "9904", "9910", "9914", "9917", "9921", "9933", "9939", "9945",
+    "8101",
+
+    # ── 航運 / 觀光 / 航空 ──
+    "2603", "2609", "2615", "2618", "5601", "2617", "2606", "5608", "2105",
+    "2207", "2204", "1773", "2722", "2727", "2731", "1259", "2705",
+
+    # ── 重電 / 機械 / 工程 ──
+    "1503", "1504", "1513", "1514", "1515", "1521", "1522", "1535", "1536",
+    "1537", "1539", "1583", "1584", "1597", "9914", "9933",
+
+    # ── 通訊 / 雲端 / AI ──
+    "2412", "4904", "4906", "4910", "4915", "4938", "4960", "4961", "4977",
+    "6235", "6243", "6271", "6277", "6285", "6411", "6414", "6415", "6443",
+    "6446", "6452", "6488", "6505", "8086", "8112",
+
+    # ── 生技 / 醫療 ──
+    "1707", "1736", "1789", "4123", "4126", "4128", "4129", "4137", "4140",
+    "4146", "4147", "4163", "4166", "4173", "4183", "4188", "4192", "4194",
+    "4720", "6452", "6446",
+
+    # ── 中小型妖股(memory 重點)──
+    "1815", "2356", "2374", "2377", "2383", "2385", "2387", "2392", "2393",
+    "2395", "2408", "2417", "2474", "2477", "2479", "2480", "2488", "2492",
+    "2495", "2498", "3014", "3019", "3036", "3038", "3043", "3044", "3045",
+    "3048", "3050", "3057", "3060", "3081", "3088", "3105", "3138", "3149",
+    "3151", "3163", "3189", "3209", "3211", "3224", "3257", "3260", "3266",
+    "3272", "3293", "3296", "3306", "3308", "3324", "3338", "3373", "3380",
+    "3402", "3406", "3416", "3438", "3443", "3450", "3489", "3492", "3494",
+    "3508", "3528", "3530", "3532", "3535", "3552", "3580", "3583", "3588",
+    "3593", "3596", "3611", "3617", "3625", "3653", "3661", "3679", "3702",
+    "3704", "3712", "3736", "3801", "3812", "3850", "4711", "5009", "5371",
+
+    # ── 補充常用個股 ──
+    "7402", "8069", "6781", "5483", "5388",
 ]
 
 
 def _cloud_strategy_universe() -> list[str]:
-    """雲端策略掃描 universe = 觀察清單 + ~80 檔熱門權值/ETF。"""
+    """雲端策略掃描 universe = 觀察清單 + ~250 檔熱門權值/ETF。"""
     _TW_TYPES = ("tw", "twse", "tpex", "emerging")
     wl_book = load_json("watchlist", {"tickers": []})
     wl_tickers = [t["ticker"] for t in wl_book.get("tickers", []) if t.get("type") in _TW_TYPES]
     return list(dict.fromkeys(wl_tickers + TICKER_UNIVERSE_FALLBACK))
+
+
+# Precompute JSON 路徑 — 在 dev 機跑 scripts/precompute_strategy_results.py 產生
+# Path: repo_root/data/strategy_results.json(ROOT=app/, parent=repo root)
+PRECOMP_PATH = ROOT.parent / "data" / "strategy_results.json"
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _load_precomputed_signals(strategy_key: str) -> list[dict] | None:
+    """讀 dev 機 pre-compute 的策略結果。
+    fresh 條件:檔案存在 + 7 天內(否則回 None,後續走 cache / cloud universe)。"""
+    if not PRECOMP_PATH.exists():
+        return None
+    try:
+        import json as _j
+        from datetime import datetime as _dt, timedelta as _td
+        data = _j.loads(PRECOMP_PATH.read_text(encoding="utf-8"))
+        updated = data.get("updated_at", "")
+        # 7 天 freshness check
+        try:
+            dt = _dt.fromisoformat(updated.replace("Z", "+00:00"))
+            if (_dt.now(dt.tzinfo) - dt) > _td(days=7):
+                return None
+        except Exception:
+            return None
+        hits = data.get("results", {}).get(strategy_key)
+        if not isinstance(hits, list):
+            return None
+        return hits
+    except Exception:
+        return None
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -2395,11 +2503,13 @@ def scan_revenue_yoy_signals(min_yoy: float = 30.0, max_yoy: float = 300.0,
                                top_n: int = 12):
     """掃描符合「月營收 YoY + 流動性」條件的個股。
 
-    依據:memory 「Revenue YoY 60d alpha +3.95% (t=24.19, n=24K)」
-
-    本機 cache → 掃全市場 ~2000 檔
-    雲端 → 掃 watchlist + ~80 熱門 universe(live API)
+    優先序:precomputed JSON → 本機 cache → 雲端 universe
     """
+    # 1. dev 機 pre-compute JSON(全市場結果)
+    _pre = _load_precomputed_signals("rev_yoy")
+    if _pre is not None:
+        return _pre[:top_n]
+
     import numpy as np
     finmind_dir = FINMIND_CACHE
     rev_files = list(finmind_dir.glob("TaiwanStockMonthRevenue_*.parquet"))
@@ -2541,12 +2651,18 @@ def _scan_retail_pct(top_n: int, min_pct: float, max_pct: float,
 @st.cache_data(ttl=3600, show_spinner=False)
 def scan_low_retail_concentration(top_n: int = 12):
     """散戶比例反向 — 散戶最少 = 法人主導(memory 真 alpha)。"""
+    _pre = _load_precomputed_signals("low_retail")
+    if _pre is not None:
+        return _pre[:top_n]
     return _scan_retail_pct(top_n, 0.01, 100, reverse_sort=False, min_value_yi=1.0)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def scan_high_retail_warning(top_n: int = 12):
     """散戶比例極高警示 — 韭菜聚集警示(反向訊號)。"""
+    _pre = _load_precomputed_signals("high_retail")
+    if _pre is not None:
+        return _pre[:top_n]
     return _scan_retail_pct(top_n, 60, 100, reverse_sort=True, min_value_yi=0.5)
 
 
@@ -2608,6 +2724,9 @@ def _scan_ohlcv_pattern(top_n: int, chg_filter, vr_max: float = 0.8) -> list[dic
 def scan_quiet_limitdown_bounce(top_n: int = 12):
     """量縮跌停反彈訊號(memory 真 alpha:20d alpha +7.99%, OOS 2020-25 robust)。
     條件:跌幅 ≤ -9.5% + VR < 0.8(量縮)"""
+    _pre = _load_precomputed_signals("limitdown_bounce")
+    if _pre is not None:
+        return _pre[:top_n]
     return _scan_ohlcv_pattern(top_n, lambda chg: chg <= -9.5)
 
 
@@ -2615,6 +2734,9 @@ def scan_quiet_limitdown_bounce(top_n: int = 12):
 def scan_ab_consensus(top_n: int = 12):
     """外資+投信雙重共識買進(memory: AB consensus n=126 alpha +8.78%)。
     條件:外資 20d > +5000 張 AND 投信 20d > +500 張"""
+    _pre = _load_precomputed_signals("ab_consensus")
+    if _pre is not None:
+        return _pre[:top_n]
     inst_dir = FINMIND_CACHE
     cache_files = list(inst_dir.glob("TaiwanStockInstitutionalInvestorsBuySell_*.parquet"))
     hits = []
@@ -2673,6 +2795,9 @@ def scan_ab_consensus(top_n: int = 12):
 def scan_govbank_reverse(top_n: int = 12):
     """行庫共識度反向(memory: 5+ 行庫同買後 60d alpha -1.62% t=-28.46 反向真 alpha)。
     這個是 ANTI-signal,顯示 = 警示「政府護盤股後續弱勢」"""
+    _pre = _load_precomputed_signals("govbank_reverse")
+    if _pre is not None:
+        return _pre[:top_n]
     bank_dir = FINMIND_CACHE.parent.parent / "extras"
     bank_file = bank_dir / "government_bank_buysell.parquet"
     # 雲端 fallback:直接打 FinMind v4 拿最近 30 日全市場八大行庫
@@ -2717,6 +2842,9 @@ def scan_govbank_reverse(top_n: int = 12):
 def scan_quiet_limitup(top_n: int = 12):
     """量縮漲停 (vr<0.8 + 漲幅 ≥ 9%) 最近 3 日訊號。
     memory: 「量縮漲停 20d alpha +4.83% post-2020 robust」"""
+    _pre = _load_precomputed_signals("limitup_quiet")
+    if _pre is not None:
+        return _pre[:top_n]
     return _scan_ohlcv_pattern(top_n, lambda chg: chg >= 9.5)
 
 

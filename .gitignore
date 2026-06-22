@@ -28,6 +28,9 @@ data/cache/yfinance/
 data/history/
 data/paper_trades/
 data/backtest/
+# 策略 pre-compute 結果(本機跑 scripts/precompute_strategy_results.py 產出,
+# 雲端讀此 JSON 秒出全市場結果)
+!data/strategy_results.json
 logs/
 .pytest_cache/
 .mypy_cache/
