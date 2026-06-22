@@ -201,20 +201,45 @@ def _render_login_page():
         unsafe_allow_html=True,
     )
 
-    # ── 主要 CTA:Magic Link(secret email 登入,最穩 web 流程)──
-    with st.form("magic_form", clear_on_submit=False, border=True):
-        st.markdown("##### 📧 Email 一鍵登入 — 最快")
-        st.caption("填 email → 點寄發 → 信箱收連結點一下,免密碼,1 分鐘搞定")
-        magic_email = st.text_input("Email", key="magic_email",
-                                       placeholder="you@example.com",
-                                       label_visibility="collapsed")
-        if st.form_submit_button("📧 寄登入連結",
-                                   type="primary",
-                                   use_container_width=True):
-            if not magic_email:
-                st.error("⚠️ 請填 email")
-            else:
-                _do_magic_link(magic_email)
+    # ── 主要 CTA:Email OTP 6 位數驗證碼(無 redirect,Streamlit web 真的能用)──
+    otp_email_pending = st.session_state.get("otp_email_pending", "")
+
+    if not otp_email_pending:
+        # Step 1:輸入 email 寄驗證碼
+        with st.form("otp_send_form", clear_on_submit=False, border=True):
+            st.markdown("##### 📧 Email 一鍵登入 — 最快")
+            st.caption("填 email → 收 6 位數驗證碼 → 貼回來登入。免密碼,1 分鐘搞定。")
+            otp_email = st.text_input("Email", key="otp_email_in",
+                                          placeholder="you@example.com",
+                                          label_visibility="collapsed")
+            if st.form_submit_button("📧 寄驗證碼", type="primary",
+                                       use_container_width=True):
+                if not otp_email:
+                    st.error("⚠️ 請填 email")
+                else:
+                    _do_send_otp(otp_email)
+    else:
+        # Step 2:輸入收到的 6 位數驗證碼
+        with st.form("otp_verify_form", clear_on_submit=False, border=True):
+            st.markdown("##### 📧 輸入收到的驗證碼")
+            st.caption(f"驗證碼已寄到 **{otp_email_pending}** · 信箱收件匣 / 垃圾郵件夾找一下")
+            otp_code = st.text_input("6 位數驗證碼", key="otp_code_in",
+                                         placeholder="123456",
+                                         max_chars=6)
+            cols = st.columns([2, 1])
+            if cols[0].form_submit_button("🔑 確認登入", type="primary",
+                                              use_container_width=True):
+                if not otp_code or len(otp_code) != 6:
+                    st.error("⚠️ 請填 6 位數驗證碼")
+                else:
+                    _do_verify_otp(otp_email_pending, otp_code)
+            if cols[1].form_submit_button("↺ 重寄",
+                                              use_container_width=True):
+                _do_send_otp(otp_email_pending)
+        st.caption("換 email?")
+        if st.button("← 改填別的 email", use_container_width=False):
+            st.session_state.pop("otp_email_pending", None)
+            st.rerun()
 
     st.divider()
     st.caption("👇 已有帳號 / 想用密碼登入")
@@ -371,17 +396,63 @@ def _do_signup(email: str, password: str):
             st.error(f"⚠️ 註冊失敗:{msg}")
 
 
-def _do_magic_link(email: str):
-    """Email magic link(不用密碼)"""
+def _do_send_otp(email: str):
+    """寄 Email OTP 6 位數驗證碼 — 沒 redirect,Streamlit web 真的能用。"""
     client = db.get_client()
     if not client:
         st.error("⚠️ 資料庫連線失敗")
         return
     try:
-        client.auth.sign_in_with_otp({"email": email})
-        st.success(f"📧 已寄登入連結到 {email},去收信點連結即可登入")
+        client.auth.sign_in_with_otp({
+            "email": email,
+            "options": {
+                "should_create_user": True,  # 沒帳號自動建一個
+            },
+        })
+        st.session_state["otp_email_pending"] = email
+        st.success(f"✅ 驗證碼已寄到 {email}")
+        st.rerun()
     except Exception as e:
         st.error(f"⚠️ 寄送失敗:{e}")
+
+
+def _do_verify_otp(email: str, code: str):
+    """驗證 OTP 碼,建 session,直接登入 — 無 redirect。"""
+    client = db.get_client()
+    if not client:
+        st.error("⚠️ 資料庫連線失敗")
+        return
+    try:
+        res = client.auth.verify_otp({
+            "email": email,
+            "token": code,
+            "type": "email",
+        })
+        if res and res.user and res.session:
+            st.session_state["user_id"] = res.user.id
+            st.session_state["user_email"] = res.user.email
+            st.session_state["access_token"] = res.session.access_token
+            st.session_state["refresh_token"] = res.session.refresh_token
+            cookies = _get_cookies()
+            if cookies:
+                try:
+                    cookies.set(COOKIE_NAME, res.session.refresh_token,
+                                  max_age=COOKIE_MAX_AGE)
+                except Exception:
+                    pass
+            db.set_session_token(res.session.access_token, res.session.refresh_token)
+            # 清掉 pending 狀態
+            st.session_state.pop("otp_email_pending", None)
+            st.success("✅ 登入成功!")
+            st.rerun()
+        else:
+            st.error("⚠️ 驗證失敗,請重試")
+    except Exception as e:
+        msg = str(e)
+        if "expired" in msg.lower() or "invalid" in msg.lower():
+            st.error("⚠️ 驗證碼錯誤或已過期,請按「↺ 重寄」拿新的")
+        else:
+            st.error(f"⚠️ 驗證失敗:{msg}")
 
 
 def logout():
