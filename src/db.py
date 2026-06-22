@@ -167,6 +167,8 @@ DEFAULT_SETTINGS = {
     "default_frame": "mid",
     "default_tone": "casual",
     "hide_amounts": False,
+    # 晨報精選的 ticker list(最多 5 檔,空 list = 自動 fallback 用觀察清單前 5)
+    "briefing_featured": [],
 }
 
 
@@ -180,6 +182,13 @@ def load_settings(user_id: str | None = None) -> dict:
                        .execute()).data or []
             if rows:
                 r = rows[0]
+                # briefing_featured 存成 text/JSONB,解 list
+                bf = r.get("briefing_featured", [])
+                if isinstance(bf, str):
+                    try:
+                        bf = json.loads(bf)
+                    except Exception:
+                        bf = []
                 return {
                     "buy_fee_pct": float(r.get("buy_fee_pct", 0.1425)),
                     "sell_fee_pct": float(r.get("sell_fee_pct", 0.1425)),
@@ -188,6 +197,7 @@ def load_settings(user_id: str | None = None) -> dict:
                     "default_frame": r.get("default_frame", "mid"),
                     "default_tone": r.get("default_tone", "casual"),
                     "hide_amounts": bool(r.get("hide_amounts", False)),
+                    "briefing_featured": bf if isinstance(bf, list) else [],
                 }
             return dict(DEFAULT_SETTINGS)
         except Exception as e:

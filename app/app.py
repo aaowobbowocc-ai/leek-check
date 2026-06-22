@@ -3876,12 +3876,21 @@ def page_tw_stock_center():
                       unsafe_allow_html=True)
         wl_data = load_json("watchlist", {"tickers": []})
         wl_briefing = [t for t in wl_data.get("tickers", []) if t.get("type") in TW_TYPES]
+        # 讀晨報精選設定
+        _b_settings = load_json("settings", {})
+        _featured_tks = _b_settings.get("briefing_featured", []) or []
+        _valid_featured_tks = [tk for tk in _featured_tks
+                                  if tk in {t["ticker"] for t in wl_briefing}]
         if not pro_gate("觀察清單健康巡禮 (一鍵掃描所有持股)"):
             pass  # 非 PRO 顯示 paywall,跳過下方掃描
         elif not wl_briefing:
             st.info("還沒加觀察清單,去 ⭐ tab 加幾檔追蹤")
         else:
-            st.caption(f"📋 共 {len(wl_briefing)} 檔(同步自觀察清單)")
+            # 顯示提示:有沒有精選
+            if _valid_featured_tks:
+                st.caption(f"📋 共 {len(wl_briefing)} 檔 · 🌅 精選 {len(_valid_featured_tks)} 檔(詳細卡顯示)")
+            else:
+                st.caption(f"📋 共 {len(wl_briefing)} 檔 · 💡 去 ⭐ 觀察清單選晨報精選最多 5 檔,可看更詳細指標")
             # session_state 快取:同 session 內算一次就不重算(避免 re-render 卡 / 閃)
             import hashlib as _hl_w
             from datetime import date as _dt_w
@@ -3934,7 +3943,11 @@ def page_tw_stock_center():
                     # 排序:警示優先(priority 小的在前)
                     all_rows.sort(key=lambda x: x["priority"])
                     st.session_state[wl_cache_key] = all_rows
-            for a in all_rows:
+            # 分組:精選(詳細卡) vs 其餘(精簡 + 收進 expander)
+            _featured_rows = [a for a in all_rows if a["tk"] in _valid_featured_tks]
+            _other_rows = [a for a in all_rows if a["tk"] not in _valid_featured_tks]
+
+            def _render_compact(a):
                 price_str = f"{a['price']:.2f}" if a['price'] else "—"
                 stats_str = (f"今 {a['d1']:+.1f}% · 5d {a['d5']:+.1f}%"
                               if a['price'] else "—")
@@ -3950,6 +3963,118 @@ def page_tw_stock_center():
                     f"<div style='font-size:0.75rem'>{stats_str}</div></div></div>",
                     unsafe_allow_html=True,
                 )
+
+            def _render_detailed(a):
+                tk_d = a["tk"]
+                info_d = ticker_map.get(tk_d, {})
+                ind_d = info_d.get("industry", "—")
+                price_str = f"{a['price']:.2f}" if a['price'] else "—"
+                # 額外抓 7 個面向(都有 cache)
+                fi_20d = it_20d = de_20d = 0
+                yoy = None
+                health = None
+                try:
+                    inst_df = load_finmind_for_ticker(tk_d, "TaiwanStockInstitutionalInvestorsBuySell")
+                    if inst_df is not None and not inst_df.empty:
+                        i2 = inst_df.copy()
+                        i2["date"] = pd.to_datetime(i2["date"])
+                        i2 = i2.sort_values("date").tail(40)
+                        last20d = i2["date"].unique()[-20:]
+                        i2["net"] = i2["buy"] - i2["sell"]
+                        sub20 = i2[i2["date"].isin(last20d)]
+                        agg = sub20.groupby("name")["net"].sum() / 1000
+                        fi_20d = int(agg.get("Foreign_Investor", 0))
+                        it_20d = int(agg.get("Investment_Trust", 0))
+                        de_20d = int(agg.get("Dealer_self", 0))
+                except Exception:
+                    pass
+                try:
+                    rev = load_finmind_for_ticker(tk_d, "TaiwanStockMonthRevenue")
+                    if rev is not None and not rev.empty:
+                        r2 = rev.copy()
+                        r2["date"] = pd.to_datetime(r2["date"])
+                        r2 = r2.sort_values("date")
+                        if len(r2) >= 13:
+                            cur = float(r2["revenue"].iloc[-1])
+                            prev = float(r2["revenue"].iloc[-13])
+                            if prev > 0:
+                                yoy = (cur / prev - 1) * 100
+                except Exception:
+                    pass
+                # 健檢分數(粗略,跟個股健檢頁同邏輯但簡化)
+                try:
+                    df_h = load_local_ohlcv(tk_d, 250)
+                    if df_h is not None and len(df_h) >= 60:
+                        ind_h = calc_technical_indicators(df_h)
+                        lt = ind_h.iloc[-1]
+                        tech_h = {
+                            "price": float(lt["close"]),
+                            "ma5": float(lt["ma5"] or 0),
+                            "ma20": float(lt["ma20"] or 0),
+                            "ma60": float(lt["ma60"] or 0),
+                            "rsi": float(lt["rsi"] or 50),
+                            "k": float(lt["k"] or 50),
+                            "d": float(lt["d"] or 50),
+                        }
+                        chip_h = {"foreign_20d": fi_20d, "invtrust_20d": it_20d, "dealer_20d": de_20d}
+                        funda_h = {"rev_yoy": yoy or 0}
+                        comp, _ = calc_composite_score(tech_h, chip_h, funda_h)
+                        health = int(comp)
+                except Exception:
+                    pass
+
+                fi_s = f"外資 {fi_20d:+,}"
+                it_s = f"投信 {it_20d:+,}"
+                de_s = f"自營 {de_20d:+,}"
+                yoy_s = f"{yoy:+.1f}%" if yoy is not None else "—"
+                health_s = f"{health}/100" if health is not None else "—"
+
+                st.markdown(
+                    f"<div style='background:linear-gradient(135deg, #1e293b 0%, #1a1f27 100%); padding:14px 16px;"
+                    f"border-radius:12px; border-left:4px solid {a['color']};"
+                    f"margin-bottom:10px; box-shadow: 0 2px 8px rgba(0,0,0,0.3)'>"
+                    # 標題列
+                    f"<div style='display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px'>"
+                    f"<div><div style='color:{a['color']}; font-size:0.78rem; font-weight:700; margin-bottom:2px'>"
+                    f"🌅 {a['tag']}</div>"
+                    f"<div style='color:#fff; font-size:1.05rem; font-weight:700'>{tk_d} "
+                    f"<span style='color:#cbd5e1; font-weight:500; font-size:0.85rem'>{a['name']}</span></div>"
+                    f"<div style='color:#94a3b8; font-size:0.7rem'>{ind_d}</div>"
+                    f"</div>"
+                    f"<div style='text-align:right'>"
+                    f"<div style='color:#fff; font-size:1.2rem; font-weight:700'>{price_str}</div>"
+                    f"<div style='color:#94a3b8; font-size:0.75rem'>今 {a['d1']:+.1f}% · 5d {a['d5']:+.1f}%</div>"
+                    f"</div>"
+                    f"</div>"
+                    # 7 面向細項
+                    f"<div style='display:grid; grid-template-columns:repeat(2,1fr); gap:6px 14px;"
+                    f"font-size:0.78rem; color:#cbd5e1; padding-top:8px; border-top:1px solid #2f343d'>"
+                    f"<div>🏛️ 法人 20d:<br><span style='color:#fff'>{fi_s} / {it_s} / {de_s}</span></div>"
+                    f"<div>📈 月營收 YoY:<br><span style='color:#fff'>{yoy_s}</span></div>"
+                    f"<div>🩺 健檢分:<br><span style='color:#fff; font-weight:700'>{health_s}</span></div>"
+                    f"</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+            # 精選 → 詳細卡
+            if _featured_rows:
+                st.markdown("#### 🌅 精選詳細卡")
+                for a in _featured_rows:
+                    _render_detailed(a)
+            else:
+                # 沒選精選 → 顯示警示優先的 top 3 詳細
+                _top3 = [a for a in all_rows if a["priority"] < 50][:3]
+                if _top3:
+                    st.markdown("#### 🚨 自動精選(警示優先 Top 3)")
+                    for a in _top3:
+                        _render_detailed(a)
+                    _other_rows = [a for a in all_rows if a not in _top3]
+            # 其餘 → 收進 expander
+            if _other_rows:
+                with st.expander(f"📋 其餘觀察 {len(_other_rows)} 檔(精簡)", expanded=False):
+                    for a in _other_rows:
+                        _render_compact(a)
             alerts = [a for a in all_rows if a["priority"] < 50]  # for prompt use
 
         # ── 📡 真 alpha 訊號偵測(PRO,memory 驗證過策略) ──
@@ -5239,6 +5364,36 @@ def page_tw_stock_center():
         if not wl_items:
             st.info("還沒加入任何個股,用上方表單加入")
         else:
+            # ── 🌅 晨報精選(最多 5 檔詳細卡)──
+            _settings_now = load_json("settings", {})
+            _current_featured = _settings_now.get("briefing_featured", []) or []
+            # 過濾掉已不在 watchlist 的 ticker(避免殘留 stale)
+            _valid_featured = [t for t in _current_featured
+                                if t in {it["ticker"] for it in wl_items}]
+            _opt_labels = {
+                it["ticker"]: f"{it['ticker']} {ticker_map.get(it['ticker'], {}).get('name', '')}"
+                for it in wl_items
+            }
+            _all_opts = list(_opt_labels.keys())
+            with st.expander(
+                f"🌅 晨報精選(最多 5 檔 · 已選 {len(_valid_featured)}/5)",
+                expanded=False,
+            ):
+                st.caption("選 5 檔加入晨報詳細卡 — 看法人 / 月營收 / 健檢分 / 警示。其餘檔還會出現在「📋 其餘觀察」expander 內。")
+                _picked = st.multiselect(
+                    "晨報精選 ticker",
+                    options=_all_opts,
+                    default=_valid_featured,
+                    format_func=lambda tk: _opt_labels.get(tk, tk),
+                    max_selections=5,
+                    label_visibility="collapsed",
+                )
+                if set(_picked) != set(_valid_featured):
+                    _settings_now["briefing_featured"] = _picked
+                    save_json("settings", _settings_now)
+                    st.toast(f"✅ 晨報精選已更新({len(_picked)}/5)", icon="🌅")
+                    st.rerun()
+
             # ── 🔔 訊息中心(觸發中的價格警示)──
             _triggered_alerts = check_triggered_alerts()
             if _triggered_alerts:
