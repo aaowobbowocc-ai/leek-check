@@ -4,28 +4,130 @@
 <meta charset="utf-8">
 <title>韭菜健檢</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
 <style>
-body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans TC",sans-serif;
-background:linear-gradient(135deg,#0f766e 0%,#0a1a1f 35%,#16181d 100%);color:#fff;
-min-height:100vh;display:flex;align-items:center;justify-content:center;flex-direction:column;padding:24px}
-.ring{width:48px;height:48px;border:4px solid rgba(94,234,212,.2);border-top-color:#5eead4;
-border-radius:50%;animation:spin .8s linear infinite;margin-bottom:24px}
-@keyframes spin{to{transform:rotate(360deg)}}
-h1{font-size:1.6rem;margin:0 0 8px;font-weight:800}
-.sub{color:#5eead4;font-size:.95rem}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+  background: linear-gradient(135deg, #0f766e 0%, #0a1a1f 35%, #16181d 100%);
+  color: #fff;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  padding: 24px;
+  overflow: hidden;
+}
+.ring {
+  width: 56px;
+  height: 56px;
+  border: 4px solid rgba(94, 234, 212, .2);
+  border-top-color: #5eead4;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 24px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+h1 { font-size: 2rem; margin: 0 0 6px; font-weight: 800; letter-spacing: 0.04em; }
+.sub { color: #5eead4; font-size: 1rem; margin-bottom: 10px; }
+.hint { color: #94a3b8; font-size: 0.85rem; max-width: 320px; text-align: center; line-height: 1.5; }
+.err {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  margin-top: 16px;
+  text-align: center;
+  max-width: 320px;
+}
+.retry {
+  margin-top: 20px;
+  background: #14b8a6;
+  color: #0a1a1f;
+  border: none;
+  padding: 12px 28px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+}
+.retry:active { background: #5eead4; transform: scale(0.97); }
 </style>
 </head>
 <body>
 <div class="ring"></div>
 <h1>🩺 韭菜健檢</h1>
 <div class="sub">啟動中…</div>
-<script>
-// Fallback if server.url doesn't redirect — manually navigate
-setTimeout(() => {
-  if (window.location.href.includes("file://") || window.location.href.includes("localhost")) {
-    window.location.replace("https://leek-check.streamlit.app");
+<div class="hint" id="status">檢查網路 + 載入主畫面</div>
+<div id="error-box" style="display:none"></div>
+
+<script type="module">
+const STREAMLIT_URL = "https://leek-check.streamlit.app";
+const statusEl = document.getElementById("status");
+const errBox = document.getElementById("error-box");
+
+async function init() {
+  try {
+    // 1. 檢查網路(Capacitor Network)
+    if (window.Capacitor?.Plugins?.Network) {
+      const { Network } = window.Capacitor.Plugins;
+      const status = await Network.getStatus();
+      if (!status.connected) {
+        showOffline();
+        return;
+      }
+    }
+
+    statusEl.textContent = "連線正常,載入韭菜健檢 ...";
+
+    // 2. Status bar(Capacitor StatusBar)
+    if (window.Capacitor?.Plugins?.StatusBar) {
+      const { StatusBar, Style } = window.Capacitor.Plugins;
+      await StatusBar.setStyle({ style: "DARK" });
+      await StatusBar.setBackgroundColor({ color: "#0f766e" });
+    }
+
+    // 3. 隱藏 Splash(Capacitor SplashScreen)
+    if (window.Capacitor?.Plugins?.SplashScreen) {
+      setTimeout(() => {
+        window.Capacitor.Plugins.SplashScreen.hide();
+      }, 500);
+    }
+
+    // 4. 進主畫面
+    setTimeout(() => {
+      window.location.replace(STREAMLIT_URL);
+    }, 800);
+
+  } catch (e) {
+    console.error("Native init failed:", e);
+    // Native 模組壞了也要進主畫面
+    window.location.replace(STREAMLIT_URL);
   }
-}, 1000);
+}
+
+function showOffline() {
+  document.querySelector(".ring").style.display = "none";
+  statusEl.textContent = "請先連上網路";
+  errBox.style.display = "block";
+  errBox.innerHTML = '<div class="err">📡 韭菜健檢需要連線才能抓即時股價跟分析資料</div>' +
+    '<button class="retry" onclick="location.reload()">↺ 重試</button>';
+}
+
+// Capacitor ready or fallback 1s
+if (window.Capacitor?.isNativePlatform) {
+  document.addEventListener("deviceready", init, false);
+  // Fallback if deviceready never fires
+  setTimeout(() => { if (statusEl.textContent === "檢查網路 + 載入主畫面") init(); }, 2000);
+} else {
+  // Web (dev) — just redirect
+  setTimeout(() => window.location.replace(STREAMLIT_URL), 500);
+}
 </script>
 </body>
 </html>

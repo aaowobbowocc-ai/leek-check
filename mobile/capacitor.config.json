@@ -3,10 +3,16 @@
   "appName": "韭菜健檢",
   "webDir": "www",
   "server": {
-    "url": "https://leek-check.streamlit.app",
     "cleartext": false,
     "androidScheme": "https",
-    "iosScheme": "leekcheck"
+    "iosScheme": "leekcheck",
+    "allowNavigation": [
+      "leek-check.streamlit.app",
+      "*.streamlit.app",
+      "*.supabase.co",
+      "accounts.google.com",
+      "*.googleapis.com"
+    ]
   },
   "android": {
     "allowMixedContent": false,
