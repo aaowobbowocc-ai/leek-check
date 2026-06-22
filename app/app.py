@@ -3851,9 +3851,7 @@ def page_tw_stock_center():
         elif hour < 18: greeting = "☀️ 午安"
         else: greeting = "🌙 晚安"
 
-        # ⭐ PRO 智能助理 placeholder 放最頂
-        _brief_ai_slot = st.empty()
-
+        # 📅 日期 + 問候(放最頂,固定不 flicker)
         st.markdown(f"""
         <div style='background:linear-gradient(135deg, #0f766e 0%, #0a1a1f 50%, #16181d 100%);
                     padding:20px 24px; border-radius:14px; margin-bottom:14px;
@@ -3869,6 +3867,9 @@ def page_tw_stock_center():
           </div>
         </div>
         """, unsafe_allow_html=True)
+
+        # ⭐ PRO 智能助理 placeholder(放問候下面,不再閃)
+        _brief_ai_slot = st.empty()
 
         # ── 2. 觀察清單健康巡禮(PRO,顯示全部,排序:有警示優先) ──
         st.divider()
