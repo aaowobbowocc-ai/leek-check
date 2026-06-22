@@ -1663,7 +1663,7 @@ TW_OHLCV_CACHE = INVEST_ROOT / "data" / "cache" / "yfinance" / "tw_ohlcv"
 FINMIND_CACHE = INVEST_ROOT / "data" / "cache" / "finmind" / "finmind"
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)  # 1 天 — ticker 對照本來就 daily 級
 def load_ticker_map():
     """完整 ticker → name 對照(~4000 檔)。優先用 stock_info,fallback IPO list。
     同 ticker 多筆時優先序: twse > tpex > emerging
@@ -1759,7 +1759,7 @@ def fetch_taiex_state():
         return None
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=14400)  # 4h — 盤後不變,盤中 ~15min 延遲也可接受
 def fetch_yfinance_quote(ticker: str):
     """Return latest close + 5d series from yfinance."""
     try:
@@ -1783,7 +1783,7 @@ def fetch_yfinance_quote(ticker: str):
     return None
 
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=14400)  # 4h — OHLCV daily 級
 def load_local_ohlcv(ticker: str, days: int = 250):
     """Load OHLCV from local cache,fallback yfinance live(部署環境用)."""
     p = TW_OHLCV_CACHE / f"{ticker}.parquet"
@@ -1798,7 +1798,7 @@ def load_local_ohlcv(ticker: str, days: int = 250):
     return _yf_ohlcv_fallback(ticker, days)
 
 
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=14400, show_spinner=False)  # 4h
 def _yf_ohlcv_fallback(ticker: str, days: int = 250):
     """yfinance live OHLCV → 統一回傳跟本地 parquet 同 shape。
     用於部署環境沒 cache parquet 時。15 分鐘 cache。"""
@@ -1825,7 +1825,7 @@ def _yf_ohlcv_fallback(ticker: str, days: int = 250):
     return None
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)  # 1 天 — FinMind 月營收/法人/PER 都是 daily 級
 def load_finmind_for_ticker(ticker: str, data_type: str):
     """Try local parquet cache,fallback FinMind live API(部署環境用)."""
     p = FINMIND_CACHE / f"{data_type}_{ticker}.parquet"
@@ -1838,7 +1838,7 @@ def load_finmind_for_ticker(ticker: str, data_type: str):
     return _finmind_live_fetch(data_type, ticker)
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)  # 1 天
 def _finmind_live_fetch(data_type: str, ticker: str):
     """FinMind v4 API live fetch — 用使用者的 token。1h cache。
     支援:MonthRevenue / InstitutionalInvestorsBuySell / PER /
@@ -1879,7 +1879,7 @@ def _finmind_live_fetch(data_type: str, ticker: str):
         return None
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)  # 1 天
 def _fetch_inst_total_live(days: int = 30) -> pd.DataFrame | None:
     """FinMind v4:全市場三大法人總計(per day)。
     回傳 DataFrame with columns: date / 外資 / 投信 / 自營(單位 = 張)"""
@@ -2175,9 +2175,9 @@ def render_ai_section(prompt_base: str, cache_key: str, ss_prefix: str,
 # ──────────────────────────────────────────────
 # 真 alpha 訊號偵測器(based on memory 驗證過的策略)
 # ──────────────────────────────────────────────
-@st.cache_data(ttl=900, show_spinner=False)
+@st.cache_data(ttl=14400, show_spinner=False)  # 4h — 多市場 daily 看就夠
 def fetch_multi_market_data():
-    """抓多市場資料(yfinance,15 分鐘 cache)。"""
+    """抓多市場資料(yfinance,4 小時 cache)。"""
     import yfinance as yf
     GROUPS = {
         "🇺🇸 美股 ETF": [
@@ -2528,7 +2528,7 @@ def fetch_dividend_calendar(ticker: str):
     return None
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400)  # 1 天
 def load_dividend_for_ticker(ticker: str):
     """歷年除權息 from FinMind dividend cache."""
     div_dir = INVEST_ROOT / "data" / "cache" / "finmind" / "dividend"
@@ -3823,49 +3823,58 @@ def page_tw_stock_center():
             st.info("還沒加觀察清單,去 ⭐ tab 加幾檔追蹤")
         else:
             st.caption(f"📋 共 {len(wl_briefing)} 檔(同步自觀察清單)")
-            all_rows = []
-            for item in wl_briefing:
-                tk_b = item["ticker"]
-                if tk_b not in ticker_map:
-                    all_rows.append({"tk": tk_b, "name": "(資料庫無此檔)",
-                                       "tag": "⚠️ 查不到", "color": "#94a3b8",
-                                       "d1": 0, "d5": 0, "price": 0, "priority": 99})
-                    continue
-                df_b = load_local_ohlcv(tk_b, 30)
-                name_b = ticker_map[tk_b]["name"]
-                if df_b is None or len(df_b) < 6:
-                    all_rows.append({"tk": tk_b, "name": name_b,
-                                       "tag": "⚪ 無本機資料", "color": "#94a3b8",
-                                       "d1": 0, "d5": 0, "price": 0, "priority": 98})
-                    continue
-                last_c = float(df_b["close"].iloc[-1])
-                prev_c = float(df_b["close"].iloc[-2])
-                d1_pct = (last_c/prev_c - 1) * 100
-                d5_pct = (last_c/float(df_b["close"].iloc[-6]) - 1) * 100
+            # session_state 快取:同 session 內算一次就不重算(避免 re-render 卡 / 閃)
+            import hashlib as _hl_w
+            from datetime import date as _dt_w
+            wl_sig = ",".join(t["ticker"] for t in wl_briefing)
+            wl_cache_key = f"wl_briefing_rows_{_dt_w.today().isoformat()}_{_hl_w.md5(wl_sig.encode()).hexdigest()[:8]}"
+            if wl_cache_key in st.session_state:
+                all_rows = st.session_state[wl_cache_key]
+            else:
+                with st.spinner(f"巡禮 {len(wl_briefing)} 檔..."):
+                    all_rows = []
+                    for item in wl_briefing:
+                        tk_b = item["ticker"]
+                        if tk_b not in ticker_map:
+                            all_rows.append({"tk": tk_b, "name": "(資料庫無此檔)",
+                                               "tag": "⚠️ 查不到", "color": "#94a3b8",
+                                               "d1": 0, "d5": 0, "price": 0, "priority": 99})
+                            continue
+                        df_b = load_local_ohlcv(tk_b, 30)
+                        name_b = ticker_map[tk_b]["name"]
+                        if df_b is None or len(df_b) < 6:
+                            all_rows.append({"tk": tk_b, "name": name_b,
+                                               "tag": "⚪ 無本機資料", "color": "#94a3b8",
+                                               "d1": 0, "d5": 0, "price": 0, "priority": 98})
+                            continue
+                        last_c = float(df_b["close"].iloc[-1])
+                        prev_c = float(df_b["close"].iloc[-2])
+                        d1_pct = (last_c/prev_c - 1) * 100
+                        d5_pct = (last_c/float(df_b["close"].iloc[-6]) - 1) * 100
 
-                tag, color, priority = "✅ 正常", "#5eead4", 50
-                if abs(d1_pct) >= 5:
-                    if d1_pct < 0:
-                        tag, color, priority = "🚨 單日急殺", "#dc2626", 1
-                    else:
-                        tag, color, priority = "🚀 單日大漲", "#ef4444", 2
-                elif d5_pct <= -10:
-                    tag, color, priority = "📉 5 日跌深", "#10b981", 4
-                elif d5_pct >= 10:
-                    tag, color, priority = "🔥 5 日強勢", "#ef4444", 5
-                vol_last = float(df_b["volume"].iloc[-1])
-                vol_avg = float(df_b["volume"].tail(20).mean()) if len(df_b) >= 20 else vol_last
-                if vol_avg > 0 and vol_last / vol_avg >= 2.5:
-                    tag, color, priority = "📊 量爆(>20日均 2.5x)", "#fbbf24", 3
+                        tag, color, priority = "✅ 正常", "#5eead4", 50
+                        if abs(d1_pct) >= 5:
+                            if d1_pct < 0:
+                                tag, color, priority = "🚨 單日急殺", "#dc2626", 1
+                            else:
+                                tag, color, priority = "🚀 單日大漲", "#ef4444", 2
+                        elif d5_pct <= -10:
+                            tag, color, priority = "📉 5 日跌深", "#10b981", 4
+                        elif d5_pct >= 10:
+                            tag, color, priority = "🔥 5 日強勢", "#ef4444", 5
+                        vol_last = float(df_b["volume"].iloc[-1])
+                        vol_avg = float(df_b["volume"].tail(20).mean()) if len(df_b) >= 20 else vol_last
+                        if vol_avg > 0 and vol_last / vol_avg >= 2.5:
+                            tag, color, priority = "📊 量爆(>20日均 2.5x)", "#fbbf24", 3
 
-                all_rows.append({
-                    "tk": tk_b, "name": name_b, "tag": tag, "color": color,
-                    "d1": d1_pct, "d5": d5_pct, "price": last_c,
-                    "priority": priority,
-                })
-
-            # 排序:警示優先(priority 小的在前)
-            all_rows.sort(key=lambda x: x["priority"])
+                        all_rows.append({
+                            "tk": tk_b, "name": name_b, "tag": tag, "color": color,
+                            "d1": d1_pct, "d5": d5_pct, "price": last_c,
+                            "priority": priority,
+                        })
+                    # 排序:警示優先(priority 小的在前)
+                    all_rows.sort(key=lambda x: x["priority"])
+                    st.session_state[wl_cache_key] = all_rows
             for a in all_rows:
                 price_str = f"{a['price']:.2f}" if a['price'] else "—"
                 stats_str = (f"今 {a['d1']:+.1f}% · 5d {a['d5']:+.1f}%"
