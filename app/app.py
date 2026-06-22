@@ -1962,6 +1962,41 @@ def _finmind_live_fetch(data_type: str, ticker: str):
         return None
 
 
+@st.cache_data(ttl=86400, show_spinner=False)
+def _fetch_govbank_live(days: int = 30) -> pd.DataFrame | None:
+    """FinMind v4:八大行庫買賣超(全市場 / per-day)。"""
+    try:
+        import requests as _rq
+        from datetime import date as _dt_g, timedelta as _td
+        token = os.environ.get("FINMIND_TOKEN", "").strip()
+        try:
+            if not token:
+                token = (st.secrets.get("FINMIND_TOKEN", "") or "").strip()
+        except Exception:
+            pass
+        start_date = (_dt_g.today() - _td(days=days)).isoformat()
+        params = {
+            "dataset": "TaiwanStockGovernmentBankBuySell",
+            "start_date": start_date,
+        }
+        if token:
+            params["token"] = token
+        r = _rq.get("https://api.finmindtrade.com/api/v4/data",
+                     params=params, timeout=15)
+        if r.status_code != 200:
+            return None
+        j = r.json()
+        if j.get("status") != 200 or not j.get("data"):
+            return None
+        df = pd.DataFrame(j["data"])
+        if df.empty:
+            return None
+        return df
+    except Exception as e:
+        print(f"[_fetch_govbank_live] {e}")
+        return None
+
+
 @st.cache_data(ttl=86400, show_spinner=False)  # 1 天
 def _fetch_inst_total_live(days: int = 30) -> pd.DataFrame | None:
     """FinMind v4:全市場三大法人總計(per day)。
@@ -2347,8 +2382,9 @@ TICKER_UNIVERSE_FALLBACK = [
 
 def _cloud_strategy_universe() -> list[str]:
     """雲端策略掃描 universe = 觀察清單 + ~80 檔熱門權值/ETF。"""
+    _TW_TYPES = ("tw", "twse", "tpex", "emerging")
     wl_book = load_json("watchlist", {"tickers": []})
-    wl_tickers = [t["ticker"] for t in wl_book.get("tickers", []) if t.get("type") in TW_TYPES]
+    wl_tickers = [t["ticker"] for t in wl_book.get("tickers", []) if t.get("type") in _TW_TYPES]
     return list(dict.fromkeys(wl_tickers + TICKER_UNIVERSE_FALLBACK))
 
 
@@ -2441,76 +2477,130 @@ def scan_revenue_yoy_signals(min_yoy: float = 30.0, max_yoy: float = 300.0,
     return hits[:top_n]
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def scan_low_retail_concentration(top_n: int = 12):
-    """散戶比例反向 — 散戶最少 = 法人主導(memory 真 alpha)。
-    依據:散戶比例 vs final return p<0.001、極端區 lift +11.3pp (weekly n=9991)"""
-    RETAIL_LEVELS = [
-        "1-999", "1,000-5,000", "5,001-10,000",
-        "10,001-15,000", "15,001-20,000",
-        "20,001-30,000", "30,001-40,000", "40,001-50,000",
-    ]
-    files = list(FINMIND_CACHE.glob("TaiwanStockHoldingSharesPer_*.parquet"))
+_RETAIL_LEVELS = (
+    "1-999", "1,000-5,000", "5,001-10,000",
+    "10,001-15,000", "15,001-20,000",
+    "20,001-30,000", "30,001-40,000", "40,001-50,000",
+)
+
+
+def _scan_retail_pct(top_n: int, min_pct: float, max_pct: float,
+                       reverse_sort: bool, min_value_yi: float) -> list[dict]:
+    """散戶比例掃描共用 — 本機 cache + 雲端 universe live FinMind。"""
+    cache_files = list(FINMIND_CACHE.glob("TaiwanStockHoldingSharesPer_*.parquet"))
     hits = []
-    for f in files:
-        tk = f.stem.replace("TaiwanStockHoldingSharesPer_", "")
-        try:
-            df = pd.read_parquet(f)
-            if df.empty: continue
-            df["date"] = pd.to_datetime(df["date"])
-            latest_d = df["date"].max()
-            sub = df[df["date"] == latest_d]
-            retail_pct = float(
-                sub[sub["HoldingSharesLevel"].isin(RETAIL_LEVELS)]["percent"].sum()
-            )
-            if retail_pct <= 0 or retail_pct > 100: continue
-            # L4 流動性
-            ohlcv_p = TW_OHLCV_CACHE / f"{tk}.parquet"
-            if not ohlcv_p.exists(): continue
-            oh = pd.read_parquet(ohlcv_p).tail(20)
-            avg_value_yi = float((oh["close"] * oh["volume"]).mean() / 1e8)
-            if avg_value_yi < 1: continue
-            hits.append({"tk": tk, "retail_pct": retail_pct,
-                          "avg_value_yi": avg_value_yi})
-        except Exception: continue
-    # 散戶比例最低 (法人/大戶主導 — smart money)
-    hits.sort(key=lambda x: x["retail_pct"])
+
+    def _eval(tk: str, df_h, df_ohlcv) -> dict | None:
+        if df_h is None or df_h.empty:
+            return None
+        h2 = df_h.copy()
+        h2["date"] = pd.to_datetime(h2["date"])
+        latest_d = h2["date"].max()
+        sub = h2[h2["date"] == latest_d]
+        retail_pct = float(
+            sub[sub["HoldingSharesLevel"].isin(list(_RETAIL_LEVELS))]["percent"].sum()
+        )
+        if retail_pct < min_pct or retail_pct > max_pct:
+            return None
+        if df_ohlcv is None or len(df_ohlcv) < 20:
+            return None
+        oh = df_ohlcv.tail(20)
+        avg_value_yi = float((oh["close"] * oh["volume"]).mean() / 1e8)
+        if avg_value_yi < min_value_yi:
+            return None
+        return {"tk": tk, "retail_pct": retail_pct, "avg_value_yi": avg_value_yi}
+
+    if cache_files:
+        for f in cache_files:
+            tk = f.stem.replace("TaiwanStockHoldingSharesPer_", "")
+            try:
+                df_h = pd.read_parquet(f)
+                ohlcv_p = TW_OHLCV_CACHE / f"{tk}.parquet"
+                df_oh = pd.read_parquet(ohlcv_p) if ohlcv_p.exists() else None
+                hit = _eval(tk, df_h, df_oh)
+                if hit:
+                    hits.append(hit)
+            except Exception:
+                continue
+    else:
+        # 雲端 — universe + live FinMind
+        for tk in _cloud_strategy_universe():
+            try:
+                df_h = load_finmind_for_ticker(tk, "TaiwanStockHoldingSharesPer")
+                df_oh = load_local_ohlcv(tk, 25)
+                hit = _eval(tk, df_h, df_oh)
+                if hit:
+                    hits.append(hit)
+            except Exception:
+                continue
+
+    hits.sort(key=lambda x: x["retail_pct"], reverse=reverse_sort)
     return hits[:top_n]
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
+def scan_low_retail_concentration(top_n: int = 12):
+    """散戶比例反向 — 散戶最少 = 法人主導(memory 真 alpha)。"""
+    return _scan_retail_pct(top_n, 0.01, 100, reverse_sort=False, min_value_yi=1.0)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def scan_high_retail_warning(top_n: int = 12):
-    """散戶比例極高警示 — 韭菜聚集警示(反向訊號)。
-    依據 memory:散戶比例極端區 lift +11.3pp(雙向)"""
-    RETAIL_LEVELS = [
-        "1-999", "1,000-5,000", "5,001-10,000",
-        "10,001-15,000", "15,001-20,000",
-        "20,001-30,000", "30,001-40,000", "40,001-50,000",
-    ]
-    files = list(FINMIND_CACHE.glob("TaiwanStockHoldingSharesPer_*.parquet"))
+    """散戶比例極高警示 — 韭菜聚集警示(反向訊號)。"""
+    return _scan_retail_pct(top_n, 60, 100, reverse_sort=True, min_value_yi=0.5)
+
+
+def _scan_ohlcv_pattern(top_n: int, chg_filter, vr_max: float = 0.8) -> list[dict]:
+    """OHLCV 共用掃描:近 3 日符合 chg_filter(chg %) + VR < vr_max(量縮)。
+    本機 cache 模式 → 掃 ~2000 檔
+    雲端 → 掃 ~80 檔 universe (live yfinance OHLCV)"""
+    cache_files = list(TW_OHLCV_CACHE.glob("*.parquet"))
     hits = []
-    for f in files:
-        tk = f.stem.replace("TaiwanStockHoldingSharesPer_", "")
-        try:
-            df = pd.read_parquet(f)
-            if df.empty: continue
-            df["date"] = pd.to_datetime(df["date"])
-            latest_d = df["date"].max()
-            sub = df[df["date"] == latest_d]
-            retail_pct = float(
-                sub[sub["HoldingSharesLevel"].isin(RETAIL_LEVELS)]["percent"].sum()
-            )
-            if retail_pct < 60 or retail_pct > 100: continue  # 散戶比例 60% 以上才算極高
-            # L4 流動性
-            ohlcv_p = TW_OHLCV_CACHE / f"{tk}.parquet"
-            if not ohlcv_p.exists(): continue
-            oh = pd.read_parquet(ohlcv_p).tail(20)
-            avg_value_yi = float((oh["close"] * oh["volume"]).mean() / 1e8)
-            if avg_value_yi < 0.5: continue
-            hits.append({"tk": tk, "retail_pct": retail_pct,
-                          "avg_value_yi": avg_value_yi})
-        except Exception: continue
-    hits.sort(key=lambda x: x["retail_pct"], reverse=True)
+
+    def _scan_df(tk: str, df):
+        if df is None or len(df) < 25:
+            return None
+        last3 = df.tail(3)
+        for _, row in last3.iterrows():
+            if row["close"] <= 0 or row["open"] <= 0:
+                continue
+            chg = (row["close"] / row["open"] - 1) * 100
+            if not chg_filter(chg):
+                continue
+            idx_pos = df.index[df["date"] == row["date"]][0]
+            if idx_pos < 20:
+                continue
+            avg_vol_20 = df.iloc[idx_pos-20:idx_pos]["volume"].mean()
+            if avg_vol_20 <= 0:
+                continue
+            vr = row["volume"] / avg_vol_20
+            if vr >= vr_max:
+                continue
+            return {"tk": tk, "date": str(row["date"])[:10],
+                    "chg": chg, "vr": vr, "close": row["close"]}
+        return None
+
+    if cache_files:
+        for f in cache_files:
+            try:
+                df = pd.read_parquet(f)
+                hit = _scan_df(f.stem, df)
+                if hit:
+                    hits.append(hit)
+            except Exception:
+                continue
+    else:
+        # 雲端 — universe + live OHLCV
+        for tk in _cloud_strategy_universe():
+            try:
+                df = load_local_ohlcv(tk, 60)
+                hit = _scan_df(tk, df)
+                if hit:
+                    hits.append(hit)
+            except Exception:
+                continue
+
+    hits.sort(key=lambda x: x["date"], reverse=True)
     return hits[:top_n]
 
 
@@ -2518,62 +2608,63 @@ def scan_high_retail_warning(top_n: int = 12):
 def scan_quiet_limitdown_bounce(top_n: int = 12):
     """量縮跌停反彈訊號(memory 真 alpha:20d alpha +7.99%, OOS 2020-25 robust)。
     條件:跌幅 ≤ -9.5% + VR < 0.8(量縮)"""
-    files = list(TW_OHLCV_CACHE.glob("*.parquet"))
-    hits = []
-    for f in files:
-        tk = f.stem
-        try:
-            df = pd.read_parquet(f)
-            if len(df) < 25: continue
-            last3 = df.tail(3)
-            for _, row in last3.iterrows():
-                if row["close"] <= 0 or row["open"] <= 0: continue
-                chg = (row["close"] / row["open"] - 1) * 100
-                if chg > -9.5: continue
-                idx_pos = df.index[df["date"] == row["date"]][0]
-                if idx_pos < 20: continue
-                avg_vol_20 = df.iloc[idx_pos-20:idx_pos]["volume"].mean()
-                if avg_vol_20 <= 0: continue
-                vr = row["volume"] / avg_vol_20
-                if vr >= 0.8: continue
-                hits.append({"tk": tk, "date": str(row["date"])[:10],
-                              "chg": chg, "vr": vr, "close": row["close"]})
-                break
-        except Exception: continue
-    hits.sort(key=lambda x: x["date"], reverse=True)
-    return hits[:top_n]
+    return _scan_ohlcv_pattern(top_n, lambda chg: chg <= -9.5)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def scan_ab_consensus(top_n: int = 12):
-    """外資+投信雙重共識買進(memory: AB consensus n=126 alpha +8.78% t+3.83 OOS PASS)。
+    """外資+投信雙重共識買進(memory: AB consensus n=126 alpha +8.78%)。
     條件:外資 20d > +5000 張 AND 投信 20d > +500 張"""
     inst_dir = FINMIND_CACHE
-    files = list(inst_dir.glob("TaiwanStockInstitutionalInvestorsBuySell_*.parquet"))
+    cache_files = list(inst_dir.glob("TaiwanStockInstitutionalInvestorsBuySell_*.parquet"))
     hits = []
-    for f in files:
-        tk = f.stem.replace("TaiwanStockInstitutionalInvestorsBuySell_", "")
-        try:
-            df = pd.read_parquet(f)
-            if df.empty: continue
-            df["date"] = pd.to_datetime(df["date"])
-            df = df.sort_values("date")
-            last20 = df["date"].unique()[-20:]
-            sub = df[df["date"].isin(last20)].copy()
-            sub["net"] = sub["buy"] - sub["sell"]
-            agg = sub.groupby("name")["net"].sum() / 1000  # 張
-            f20 = int(agg.get("Foreign_Investor", 0))
-            it20 = int(agg.get("Investment_Trust", 0))
-            if f20 < 5000 or it20 < 500: continue
-            # L4 流動性
-            ohlcv_p = TW_OHLCV_CACHE / f"{tk}.parquet"
-            if not ohlcv_p.exists(): continue
-            oh = pd.read_parquet(ohlcv_p).tail(20)
-            avg_value_yi = float((oh["close"] * oh["volume"]).mean() / 1e8)
-            if avg_value_yi < 1: continue
-            hits.append({"tk": tk, "f20": f20, "it20": it20,
-                          "avg_value_yi": avg_value_yi})
-        except Exception: continue
+
+    def _eval(tk: str, df_inst, df_oh) -> dict | None:
+        if df_inst is None or df_inst.empty:
+            return None
+        d = df_inst.copy()
+        d["date"] = pd.to_datetime(d["date"])
+        d = d.sort_values("date")
+        last20 = d["date"].unique()[-20:]
+        sub = d[d["date"].isin(last20)].copy()
+        sub["net"] = sub["buy"] - sub["sell"]
+        agg = sub.groupby("name")["net"].sum() / 1000
+        f20 = int(agg.get("Foreign_Investor", 0))
+        it20 = int(agg.get("Investment_Trust", 0))
+        if f20 < 5000 or it20 < 500:
+            return None
+        if df_oh is None or len(df_oh) < 20:
+            return None
+        oh = df_oh.tail(20)
+        avg_value_yi = float((oh["close"] * oh["volume"]).mean() / 1e8)
+        if avg_value_yi < 1:
+            return None
+        return {"tk": tk, "f20": f20, "it20": it20, "avg_value_yi": avg_value_yi}
+
+    if cache_files:
+        for f in cache_files:
+            tk = f.stem.replace("TaiwanStockInstitutionalInvestorsBuySell_", "")
+            try:
+                df_inst = pd.read_parquet(f)
+                ohlcv_p = TW_OHLCV_CACHE / f"{tk}.parquet"
+                df_oh = pd.read_parquet(ohlcv_p) if ohlcv_p.exists() else None
+                hit = _eval(tk, df_inst, df_oh)
+                if hit:
+                    hits.append(hit)
+            except Exception:
+                continue
+    else:
+        # 雲端 — universe + live FinMind
+        for tk in _cloud_strategy_universe():
+            try:
+                df_inst = load_finmind_for_ticker(tk, "TaiwanStockInstitutionalInvestorsBuySell")
+                df_oh = load_local_ohlcv(tk, 25)
+                hit = _eval(tk, df_inst, df_oh)
+                if hit:
+                    hits.append(hit)
+            except Exception:
+                continue
+
     hits.sort(key=lambda x: x["f20"] + x["it20"], reverse=True)
     return hits[:top_n]
 
@@ -2584,15 +2675,23 @@ def scan_govbank_reverse(top_n: int = 12):
     這個是 ANTI-signal,顯示 = 警示「政府護盤股後續弱勢」"""
     bank_dir = FINMIND_CACHE.parent.parent / "extras"
     bank_file = bank_dir / "government_bank_buysell.parquet"
-    if not bank_file.exists(): return []
-    try:
+    # 雲端 fallback:直接打 FinMind v4 拿最近 30 日全市場八大行庫
+    if not bank_file.exists():
+        df = _fetch_govbank_live(days=30)
+        if df is None or df.empty:
+            return []
+    else:
         df = pd.read_parquet(bank_file)
         df["date"] = pd.to_datetime(df["date"])
         # 最近 20 日 5+ 行庫同買的個股
         recent = df[df["date"] >= df["date"].max() - pd.Timedelta(days=30)]
         if recent.empty: return []
-        # 計算每檔有幾家銀行買超
-        bank_buy = recent.copy()
+        df = recent
+    try:
+        # 計算每檔有幾家銀行買超(本機 cache 跟 live 共用)
+        bank_buy = df.copy()
+        if "date" in bank_buy.columns:
+            bank_buy["date"] = pd.to_datetime(bank_buy["date"])
         bank_buy["net"] = bank_buy["buy"] - bank_buy["sell"]
         # 每天 + 每檔 → 多少家銀行買超
         daily_bank_count = (bank_buy[bank_buy["net"] > 0]
@@ -2616,36 +2715,9 @@ def scan_govbank_reverse(top_n: int = 12):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def scan_quiet_limitup(top_n: int = 12):
-    """掃描「量縮漲停 (vr<0.8 + 漲幅 ≥ 9%)」最近 3 日訊號。
-    依據 memory 「量縮漲停 20d alpha +4.83% post-2020 robust」。"""
-    files = list(TW_OHLCV_CACHE.glob("*.parquet"))
-    hits = []
-    for f in files:
-        tk = f.stem
-        try:
-            df = pd.read_parquet(f)
-            if len(df) < 25: continue
-            last3 = df.tail(3)
-            for _, row in last3.iterrows():
-                if row["close"] <= 0 or row["open"] <= 0: continue
-                chg = (row["close"] / row["open"] - 1) * 100
-                if chg < 9.5: continue
-                # 量縮 vr<0.8
-                idx_pos = df.index[df["date"] == row["date"]][0]
-                if idx_pos < 20: continue
-                avg_vol_20 = df.iloc[idx_pos-20:idx_pos]["volume"].mean()
-                if avg_vol_20 <= 0: continue
-                vr = row["volume"] / avg_vol_20
-                if vr >= 0.8: continue
-                hits.append({
-                    "tk": tk, "date": str(row["date"])[:10],
-                    "chg": chg, "vr": vr, "close": row["close"],
-                })
-                break
-        except Exception:
-            continue
-    hits.sort(key=lambda x: x["date"], reverse=True)
-    return hits[:top_n]
+    """量縮漲停 (vr<0.8 + 漲幅 ≥ 9%) 最近 3 日訊號。
+    memory: 「量縮漲停 20d alpha +4.83% post-2020 robust」"""
+    return _scan_ohlcv_pattern(top_n, lambda chg: chg >= 9.5)
 
 
 @st.cache_data(ttl=86400)
@@ -7499,14 +7571,11 @@ def page_tw_stock_center():
                     with st.spinner(f"掃描..."):
                         s_hits = strat["scan_fn"]()
                     if not s_hits:
-                        # 雲端沒 cache 時 7 個 scanner 永遠回 0,給 user 明確訊息
+                        # 7 個 scanner 都已加雲端 fallback,真的回 0 = 今日無觸發
                         if not TW_OHLCV_CACHE.exists() or not list(TW_OHLCV_CACHE.glob("*.parquet")):
-                            st.warning(
-                                "📡 **雲端版策略掃描需要完整本機 OHLCV cache**(1.1GB)。\n\n"
-                                "目前雲端 fallback 還沒做。短期內可用替代:\n"
-                                "- 觀察清單健康巡禮(晨報 tab)\n"
-                                "- 健檢分數排行(排行榜 tab)\n"
-                                "- 個股健檢(觀察清單點任一卡片)"
+                            st.info(
+                                "⚪ 今日 universe(觀察清單 + ~80 熱門)無觸發此策略。\n"
+                                "本機版掃全市場 ~2000 檔,命中率較高。"
                             )
                         else:
                             st.info("⚪ 今日無觸發此策略")
