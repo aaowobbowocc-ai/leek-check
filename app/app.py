@@ -1823,12 +1823,53 @@ def _yf_ohlcv_fallback(ticker: str, days: int = 250):
 
 @st.cache_data(ttl=3600)
 def load_finmind_for_ticker(ticker: str, data_type: str):
-    """Try load common FinMind datasets for a ticker."""
+    """Try local parquet cache,fallback FinMind live API(部署環境用)."""
     p = FINMIND_CACHE / f"{data_type}_{ticker}.parquet"
-    if not p.exists():
-        return None
+    if p.exists():
+        try:
+            return pd.read_parquet(p)
+        except Exception:
+            pass
+    # ── Fallback: FinMind live API(無 cache,例如 Streamlit Cloud)──
+    return _finmind_live_fetch(data_type, ticker)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _finmind_live_fetch(data_type: str, ticker: str):
+    """FinMind v4 API live fetch — 用使用者的 token。1h cache。
+    支援:MonthRevenue / InstitutionalInvestorsBuySell / PER /
+          HoldingSharesPer / FinancialStatements / MarginPurchaseShortSale 等"""
     try:
-        df = pd.read_parquet(p)
+        import requests as _rq
+        token = os.environ.get("FINMIND_TOKEN", "").strip()
+        try:
+            if not token:
+                token = (st.secrets.get("FINMIND_TOKEN", "") or "").strip()
+        except Exception:
+            pass
+        # 推估 date range — 月營收 / 財報抓 24 個月,日資料抓 90 天
+        from datetime import date as _dt_f, timedelta as _td
+        if "Month" in data_type or "Financial" in data_type or "PER" in data_type:
+            start_date = (_dt_f.today() - _td(days=730)).isoformat()
+        else:
+            start_date = (_dt_f.today() - _td(days=90)).isoformat()
+        params = {
+            "dataset": data_type,
+            "data_id": ticker,
+            "start_date": start_date,
+        }
+        if token:
+            params["token"] = token
+        r = _rq.get("https://api.finmindtrade.com/api/v4/data",
+                     params=params, timeout=15)
+        if r.status_code != 200:
+            return None
+        j = r.json()
+        if j.get("status") != 200 or not j.get("data"):
+            return None
+        df = pd.DataFrame(j["data"])
+        if df.empty:
+            return None
         return df
     except Exception:
         return None
