@@ -8036,6 +8036,30 @@ def page_tw_stock_center():
 
 ---
 
+### 📱 加到主畫面(像 App 一樣用)
+
+韭菜健檢 是 PWA(漸進式網頁應用),**不用上 App Store 就能裝到手機**,圖示開 = 跟原生 App 一樣。
+
+#### 📲 iPhone(Safari)
+1. 用 **Safari** 開 leek-check.streamlit.app(其他瀏覽器不支援)
+2. 點下方分享按鈕(中間方塊 + ↑)
+3. 滑下找「**加入主畫面**」(Add to Home Screen)
+4. 改名(可選)→ 加入
+
+完成!桌面會有 🩺 圖示,點開全螢幕沒 URL bar。
+
+#### 🤖 Android(Chrome)
+1. Chrome 開 leek-check.streamlit.app
+2. 右上 ⋮ 三點選單 → 「**安裝應用程式**」(Install app)
+3. 安裝 → 進去就是全螢幕
+
+#### 💻 Mac / Windows(Chrome / Edge)
+1. 網址列右側會看到「⊕」安裝圖示
+2. 點 → 安裝
+3. Mac Dock / Windows 開始選單會出現
+
+---
+
 ### 🎴 稀有度怎麼決定?
 
 用 **20 日平均成交額**(完全客觀,跟健檢分數獨立):
@@ -8190,7 +8214,10 @@ st.components.v1.html(
       addTag("meta", {name: "apple-mobile-web-app-capable", content: "yes"});
       addTag("meta", {name: "apple-mobile-web-app-status-bar-style", content: "black-translucent"});
       addTag("meta", {name: "apple-mobile-web-app-title", content: "韭菜健檢"});
+      addTag("meta", {name: "mobile-web-app-capable", content: "yes"});
+      addTag("meta", {name: "viewport", content: "width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no"});
       addTag("link", {rel: "apple-touch-icon", href: "/app/static/icon-192.png"});
+      addTag("link", {rel: "apple-touch-icon", sizes: "180x180", href: "/app/static/icon-192.png"});
       addTag("link", {rel: "icon", type: "image/png", sizes: "192x192", href: "/app/static/icon-192.png"});
       addTag("link", {rel: "icon", type: "image/png", sizes: "512x512", href: "/app/static/icon-512.png"});
       if ("serviceWorker" in window.parent.navigator) {
@@ -8198,6 +8225,17 @@ st.components.v1.html(
           .register("/app/static/sw.js", {scope: "/"})
           .catch((e) => console.warn("SW register failed:", e));
       }
+      // PWA mode 偵測 — 安裝模式時加 class 讓 CSS 可調整
+      const isPWA = window.parent.matchMedia("(display-mode: standalone)").matches ||
+                     window.parent.navigator.standalone === true;
+      if (isPWA) {
+        window.parent.document.documentElement.classList.add("pwa-mode");
+      }
+      // beforeinstallprompt(Chrome/Edge)— 抓住事件供之後彈窗用
+      window.parent.addEventListener("beforeinstallprompt", (e) => {
+        e.preventDefault();
+        window.parent._installPromptEvent = e;
+      });
     })();
     </script>
     """,
