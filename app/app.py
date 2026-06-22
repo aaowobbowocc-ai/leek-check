@@ -6976,15 +6976,39 @@ def page_tw_stock_center():
             "4915", "4961", "5269", "6669", "6770", "6781", "7402", "8069",
         ]
         if not cache_files:
-            st.caption("📡 即時模式(雲端):batch 抓 ~80 檔熱門權值/ETF + 你的觀察清單,~5 秒")
+            st.caption("📡 即時模式(雲端):取 ~80 檔熱門權值/ETF + 你的觀察清單")
             wl_book = load_json("watchlist", {"tickers": []})
             wl_tickers = [t["ticker"] for t in wl_book.get("tickers", []) if t.get("type") in TW_TYPES]
             universe = list(dict.fromkeys(wl_tickers + TICKER_UNIVERSE_FALLBACK))
-            results = _ranking_batch_fetch(tuple(universe), _time_bucket())
-            # 補產業欄(從 ticker_map 後補,batch fetch 不帶這個)
+            with st.spinner(f"batch 抓 {len(universe)} 檔..."):
+                results = _ranking_batch_fetch(tuple(universe), _time_bucket())
+            # batch 失敗或太少 → per-ticker fallback
+            if len(results) < 5:
+                st.warning(f"batch 只拿到 {len(results)} 檔,改用單筆 fetch(慢但穩,~30 秒)")
+                results = []
+                progress = st.progress(0.0, text="抓取中...")
+                for i_u, tk in enumerate(universe):
+                    progress.progress((i_u + 1) / len(universe),
+                                        text=f"抓 {tk} ({i_u+1}/{len(universe)})")
+                    if tk not in ticker_map:
+                        continue
+                    q = fetch_yfinance_quote(tk)
+                    if not q or not q.get("prev_close"):
+                        continue
+                    chg_pct = (q["price"] / q["prev_close"] - 1) * 100 if q["prev_close"] > 0 else 0
+                    results.append({
+                        "代號": tk,
+                        "收盤": q["price"],
+                        "漲跌%": chg_pct,
+                        "成交量": int(q.get("volume", 0)),
+                    })
+                progress.empty()
+            # 補產業欄 + 名稱
             for r in results:
                 r["產業"] = ticker_map.get(r["代號"], {}).get("industry", "—")
                 r["名稱"] = ticker_map.get(r["代號"], {}).get("name", r["代號"])
+            if results:
+                st.caption(f"✅ 拿到 {len(results)} 檔資料")
         else:
             st.caption(f"📁 本機 cache 模式 · {len(cache_files)} 檔")
             # 計算當日漲跌(限定到 500 檔以免太慢)
