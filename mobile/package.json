@@ -1,0 +1,25 @@
+{
+  "name": "leek-check-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Capacitor wrap of leek-check.streamlit.app for App Store / Play Store",
+  "scripts": {
+    "init": "npx cap init 韭菜健檢 tw.leekcheck.app --web-dir=www",
+    "add:android": "npx cap add android",
+    "add:ios": "npx cap add ios",
+    "sync": "npx cap sync",
+    "open:android": "npx cap open android",
+    "open:ios": "npx cap open ios",
+    "run:android": "npx cap run android",
+    "run:ios": "npx cap run ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^6.2.1",
+    "@capacitor/ios": "^6.2.1",
+    "@capacitor/splash-screen": "^6.0.4",
+    "@capacitor/status-bar": "^6.0.3"
+  }
+}
