@@ -7035,158 +7035,158 @@ def page_tw_stock_center():
                         "產業": ticker_map[tk]["industry"],
                     })
 
-            if results:
-                rdf = pd.DataFrame(results)
+        if results:
+            rdf = pd.DataFrame(results)
 
-                def render_rank_cards(df_rank, prefix):
-                    """直排卡牌風排行榜 — 1 行 1 張卡 + 概述,純數字排名."""
-                    rows_list = list(df_rank.iterrows())
-                    for idx, (_, row) in enumerate(rows_list):
-                        tk_r = row["代號"]
-                        if tk_r not in ticker_map:
+            def render_rank_cards(df_rank, prefix):
+                """直排卡牌風排行榜 — 1 行 1 張卡 + 概述,純數字排名."""
+                rows_list = list(df_rank.iterrows())
+                for idx, (_, row) in enumerate(rows_list):
+                    tk_r = row["代號"]
+                    if tk_r not in ticker_map:
+                        continue
+                    info_r = ticker_map[tk_r]
+                    rank_num = idx + 1
+                    medal = str(rank_num)  # 純數字 1, 2, 3, 4, ...
+
+                    clicked = render_stock_row(tk_r, info_r, f"rk_{prefix}",
+                                                 idx, rank_medal=medal,
+                                                 button_label="⭐ 加入觀察清單")
+                    if clicked:
+                        wl = load_json("watchlist", {"tickers": []})
+                        existing = {t["ticker"] for t in wl.get("tickers", [])}
+                        if tk_r in existing:
+                            st.toast(f"{tk_r} 已在觀察清單", icon="⚠️")
+                        else:
+                            wl.setdefault("tickers", []).append({
+                                "ticker": tk_r, "type": info_r["type"], "note": "",
+                            })
+                            save_json("watchlist", wl)
+                            st.toast(f"已加入觀察清單: {tk_r}", icon="⭐")
+                    st.divider()
+
+            tab_up, tab_down, tab_vol, tab_health = st.tabs([
+                "🔴 漲幅前 10", "🟢 跌幅前 10", "📊 成交量前 10",
+                "🩺 健檢分數前 10"
+            ])
+            with tab_health:
+                st.markdown("##### 🩺 健檢分數排行 <span style='font-size:0.65rem; background:#f59e0b; color:#16181d; padding:2px 8px; border-radius:6px; letter-spacing:1px; vertical-align:middle; font-weight:700; margin-left:8px'>PRO</span>",
+                              unsafe_allow_html=True)
+                if pro_gate("健檢分數排行 (Top 10 體質最佳)"):
+                 top_liquid = rdf[~rdf["代號"].str.startswith("00")].sort_values("成交量", ascending=False).head(100)
+                 st.caption("⚠️ ETF 不適用本健檢模型(無 PER / 月營收),已排除")
+                 with st.spinner("計算健檢分數中(僅算成交量前 100 檔,~10 秒)..."):
+                    health_rows = []
+                    for _, row in top_liquid.iterrows():
+                        tk_h = row["代號"]
+                        try:
+                            ohlcv_h = load_local_ohlcv(tk_h, 250)
+                            if ohlcv_h is None or len(ohlcv_h) < 20:
+                                continue
+                            indi = calc_technical_indicators(ohlcv_h)
+                            lt = indi.iloc[-1]
+                            tech_d = {
+                                "price": float(lt["close"]),
+                                "ma5": float(lt["ma5"]) if not pd.isna(lt["ma5"]) else 0,
+                                "ma20": float(lt["ma20"]) if not pd.isna(lt["ma20"]) else 0,
+                                "ma60": float(lt["ma60"]) if not pd.isna(lt["ma60"]) else 0,
+                                "ma200": float(lt["ma200"]) if not pd.isna(lt["ma200"]) else 0,
+                                "rsi": float(lt["rsi"]) if not pd.isna(lt["rsi"]) else 50,
+                                "k": float(lt["k"]) if not pd.isna(lt["k"]) else 50,
+                                "d": float(lt["d"]) if not pd.isna(lt["d"]) else 50,
+                            }
+                            chip_d = None
+                            inst_h = load_finmind_for_ticker(tk_h, "TaiwanStockInstitutionalInvestorsBuySell")
+                            if inst_h is not None and not inst_h.empty:
+                                i2 = inst_h.copy()
+                                i2["date"] = pd.to_datetime(i2["date"])
+                                i2 = i2.sort_values("date").tail(40)
+                                last20d = i2["date"].unique()[-20:]
+                                i2["net"] = i2["buy"] - i2["sell"]
+                                sub20 = i2[i2["date"].isin(last20d)]
+                                agg = sub20.groupby("name")["net"].sum() / 1000
+                                chip_d = {
+                                    "foreign_20d": int(agg.get("Foreign_Investor", 0)),
+                                    "invtrust_20d": int(agg.get("Investment_Trust", 0)),
+                                    "dealer_20d": int(agg.get("Dealer_self", 0)),
+                                }
+                            funda_d = {}
+                            per_dh = load_finmind_for_ticker(tk_h, "TaiwanStockPER")
+                            if per_dh is not None and not per_dh.empty:
+                                per_dh["date"] = pd.to_datetime(per_dh["date"])
+                                lph = per_dh.sort_values("date").iloc[-1]
+                                funda_d["per"] = float(lph.get("PER", 0))
+                                funda_d["pbr"] = float(lph.get("PBR", 0))
+                                funda_d["yield"] = float(lph.get("dividend_yield", 0))
+                            rev_dh = load_finmind_for_ticker(tk_h, "TaiwanStockMonthRevenue")
+                            if rev_dh is not None and not rev_dh.empty:
+                                rev_dh["date"] = pd.to_datetime(rev_dh["date"])
+                                rev_dh = rev_dh.sort_values("date")
+                                yoy_v = (rev_dh["revenue"].pct_change(12) * 100).iloc[-1]
+                                if not pd.isna(yoy_v):
+                                    funda_d["rev_yoy"] = float(yoy_v)
+                            comp, _sub = calc_composite_score(tech_d, chip_d, funda_d)
+                            health_rows.append({
+                                "代號": tk_h, "名稱": row["名稱"],
+                                "產業": row["產業"], "收盤": row["收盤"],
+                                "漲跌%": row["漲跌%"], "成交量": row["成交量"],
+                                "健檢分數": comp,
+                            })
+                        except Exception:
                             continue
-                        info_r = ticker_map[tk_r]
-                        rank_num = idx + 1
-                        medal = str(rank_num)  # 純數字 1, 2, 3, 4, ...
-
-                        clicked = render_stock_row(tk_r, info_r, f"rk_{prefix}",
+                if health_rows:
+                    df_all = pd.DataFrame(health_rows).sort_values("健檢分數", ascending=False)
+                    df_h = df_all[df_all["健檢分數"] >= 70].head(10)
+                    n_high = len(df_h)
+                    st.markdown(
+                        f"<div style='background:linear-gradient(135deg, #0f766e 0%, #1a1f27 100%);"
+                        f"padding:10px 14px; border-radius:8px; margin-bottom:10px;"
+                        f"border-left:3px solid #14b8a6'>"
+                        f"<div style='color:#5eead4; font-size:0.78rem; font-weight:600'>📊 中期 60 日視角 · 歷史驗證</div>"
+                        f"<div style='color:#fff; font-size:0.82rem; margin-top:4px'>"
+                        f"70+ 體質股 60 日平均 <b>+10.93%</b> / win <b>60.3%</b> / "
+                        f"vs 0050 <b>alpha +4.57pp</b>(n=194, 2020-26)。"
+                        f"OOS 2023-26:<b>+19.23% / win 85.7% / alpha +9.91pp</b>(n=56)"
+                        f"</div></div>",
+                        unsafe_allow_html=True,
+                    )
+                    if n_high == 0:
+                        st.info("⚪ 今日成交量前 100 檔無人過 70 分(歷史平均每月 2-3 檔過關,訊號稀少屬常態)。"
+                                "可改看「異常量能」或「策略市集」其他訊號。")
+                    else:
+                        st.caption(f"✅ 今日 {n_high} 檔過 70 分。50-69 中等股已過濾(歷史 alpha -1.34pp,不推薦)。")
+                    # 直接渲染 (用 render_stock_row + 健檢分數當 medal)
+                    for idx, (_, r) in enumerate(df_h.iterrows()):
+                        tk_h = r["代號"]
+                        if tk_h not in ticker_map: continue
+                        info_h = ticker_map[tk_h]
+                        score = int(r["健檢分數"])
+                        medal = f"{score}分"
+                        clicked = render_stock_row(tk_h, info_h, "rk_health",
                                                      idx, rank_medal=medal,
                                                      button_label="⭐ 加入觀察清單")
                         if clicked:
                             wl = load_json("watchlist", {"tickers": []})
                             existing = {t["ticker"] for t in wl.get("tickers", [])}
-                            if tk_r in existing:
-                                st.toast(f"{tk_r} 已在觀察清單", icon="⚠️")
+                            if tk_h in existing:
+                                st.toast(f"{tk_h} 已在觀察清單", icon="⚠️")
                             else:
                                 wl.setdefault("tickers", []).append({
-                                    "ticker": tk_r, "type": info_r["type"], "note": "",
+                                    "ticker": tk_h, "type": info_h["type"], "note": "",
                                 })
                                 save_json("watchlist", wl)
-                                st.toast(f"已加入觀察清單: {tk_r}", icon="⭐")
+                                st.toast(f"已加入觀察清單: {tk_h}", icon="⭐")
                         st.divider()
-
-                tab_up, tab_down, tab_vol, tab_health = st.tabs([
-                    "🔴 漲幅前 10", "🟢 跌幅前 10", "📊 成交量前 10",
-                    "🩺 健檢分數前 10"
-                ])
-                with tab_health:
-                    st.markdown("##### 🩺 健檢分數排行 <span style='font-size:0.65rem; background:#f59e0b; color:#16181d; padding:2px 8px; border-radius:6px; letter-spacing:1px; vertical-align:middle; font-weight:700; margin-left:8px'>PRO</span>",
-                                  unsafe_allow_html=True)
-                    if pro_gate("健檢分數排行 (Top 10 體質最佳)"):
-                     top_liquid = rdf[~rdf["代號"].str.startswith("00")].sort_values("成交量", ascending=False).head(100)
-                     st.caption("⚠️ ETF 不適用本健檢模型(無 PER / 月營收),已排除")
-                     with st.spinner("計算健檢分數中(僅算成交量前 100 檔,~10 秒)..."):
-                        health_rows = []
-                        for _, row in top_liquid.iterrows():
-                            tk_h = row["代號"]
-                            try:
-                                ohlcv_h = load_local_ohlcv(tk_h, 250)
-                                if ohlcv_h is None or len(ohlcv_h) < 20:
-                                    continue
-                                indi = calc_technical_indicators(ohlcv_h)
-                                lt = indi.iloc[-1]
-                                tech_d = {
-                                    "price": float(lt["close"]),
-                                    "ma5": float(lt["ma5"]) if not pd.isna(lt["ma5"]) else 0,
-                                    "ma20": float(lt["ma20"]) if not pd.isna(lt["ma20"]) else 0,
-                                    "ma60": float(lt["ma60"]) if not pd.isna(lt["ma60"]) else 0,
-                                    "ma200": float(lt["ma200"]) if not pd.isna(lt["ma200"]) else 0,
-                                    "rsi": float(lt["rsi"]) if not pd.isna(lt["rsi"]) else 50,
-                                    "k": float(lt["k"]) if not pd.isna(lt["k"]) else 50,
-                                    "d": float(lt["d"]) if not pd.isna(lt["d"]) else 50,
-                                }
-                                chip_d = None
-                                inst_h = load_finmind_for_ticker(tk_h, "TaiwanStockInstitutionalInvestorsBuySell")
-                                if inst_h is not None and not inst_h.empty:
-                                    i2 = inst_h.copy()
-                                    i2["date"] = pd.to_datetime(i2["date"])
-                                    i2 = i2.sort_values("date").tail(40)
-                                    last20d = i2["date"].unique()[-20:]
-                                    i2["net"] = i2["buy"] - i2["sell"]
-                                    sub20 = i2[i2["date"].isin(last20d)]
-                                    agg = sub20.groupby("name")["net"].sum() / 1000
-                                    chip_d = {
-                                        "foreign_20d": int(agg.get("Foreign_Investor", 0)),
-                                        "invtrust_20d": int(agg.get("Investment_Trust", 0)),
-                                        "dealer_20d": int(agg.get("Dealer_self", 0)),
-                                    }
-                                funda_d = {}
-                                per_dh = load_finmind_for_ticker(tk_h, "TaiwanStockPER")
-                                if per_dh is not None and not per_dh.empty:
-                                    per_dh["date"] = pd.to_datetime(per_dh["date"])
-                                    lph = per_dh.sort_values("date").iloc[-1]
-                                    funda_d["per"] = float(lph.get("PER", 0))
-                                    funda_d["pbr"] = float(lph.get("PBR", 0))
-                                    funda_d["yield"] = float(lph.get("dividend_yield", 0))
-                                rev_dh = load_finmind_for_ticker(tk_h, "TaiwanStockMonthRevenue")
-                                if rev_dh is not None and not rev_dh.empty:
-                                    rev_dh["date"] = pd.to_datetime(rev_dh["date"])
-                                    rev_dh = rev_dh.sort_values("date")
-                                    yoy_v = (rev_dh["revenue"].pct_change(12) * 100).iloc[-1]
-                                    if not pd.isna(yoy_v):
-                                        funda_d["rev_yoy"] = float(yoy_v)
-                                comp, _sub = calc_composite_score(tech_d, chip_d, funda_d)
-                                health_rows.append({
-                                    "代號": tk_h, "名稱": row["名稱"],
-                                    "產業": row["產業"], "收盤": row["收盤"],
-                                    "漲跌%": row["漲跌%"], "成交量": row["成交量"],
-                                    "健檢分數": comp,
-                                })
-                            except Exception:
-                                continue
-                    if health_rows:
-                        df_all = pd.DataFrame(health_rows).sort_values("健檢分數", ascending=False)
-                        df_h = df_all[df_all["健檢分數"] >= 70].head(10)
-                        n_high = len(df_h)
-                        st.markdown(
-                            f"<div style='background:linear-gradient(135deg, #0f766e 0%, #1a1f27 100%);"
-                            f"padding:10px 14px; border-radius:8px; margin-bottom:10px;"
-                            f"border-left:3px solid #14b8a6'>"
-                            f"<div style='color:#5eead4; font-size:0.78rem; font-weight:600'>📊 中期 60 日視角 · 歷史驗證</div>"
-                            f"<div style='color:#fff; font-size:0.82rem; margin-top:4px'>"
-                            f"70+ 體質股 60 日平均 <b>+10.93%</b> / win <b>60.3%</b> / "
-                            f"vs 0050 <b>alpha +4.57pp</b>(n=194, 2020-26)。"
-                            f"OOS 2023-26:<b>+19.23% / win 85.7% / alpha +9.91pp</b>(n=56)"
-                            f"</div></div>",
-                            unsafe_allow_html=True,
-                        )
-                        if n_high == 0:
-                            st.info("⚪ 今日成交量前 100 檔無人過 70 分(歷史平均每月 2-3 檔過關,訊號稀少屬常態)。"
-                                    "可改看「異常量能」或「策略市集」其他訊號。")
-                        else:
-                            st.caption(f"✅ 今日 {n_high} 檔過 70 分。50-69 中等股已過濾(歷史 alpha -1.34pp,不推薦)。")
-                        # 直接渲染 (用 render_stock_row + 健檢分數當 medal)
-                        for idx, (_, r) in enumerate(df_h.iterrows()):
-                            tk_h = r["代號"]
-                            if tk_h not in ticker_map: continue
-                            info_h = ticker_map[tk_h]
-                            score = int(r["健檢分數"])
-                            medal = f"{score}分"
-                            clicked = render_stock_row(tk_h, info_h, "rk_health",
-                                                         idx, rank_medal=medal,
-                                                         button_label="⭐ 加入觀察清單")
-                            if clicked:
-                                wl = load_json("watchlist", {"tickers": []})
-                                existing = {t["ticker"] for t in wl.get("tickers", [])}
-                                if tk_h in existing:
-                                    st.toast(f"{tk_h} 已在觀察清單", icon="⚠️")
-                                else:
-                                    wl.setdefault("tickers", []).append({
-                                        "ticker": tk_h, "type": info_h["type"], "note": "",
-                                    })
-                                    save_json("watchlist", wl)
-                                    st.toast(f"已加入觀察清單: {tk_h}", icon="⭐")
-                            st.divider()
-                    else:
-                        st.info("沒有可用資料")
-                with tab_up:
-                    render_rank_cards(rdf.sort_values("漲跌%", ascending=False).head(10), "up")
-                with tab_down:
-                    render_rank_cards(rdf.sort_values("漲跌%").head(10), "dn")
-                with tab_vol:
-                    render_rank_cards(rdf.sort_values("成交量", ascending=False).head(10), "vol")
-            else:
-                st.info("沒有可用資料(可能本機 cache 過時)")
+                else:
+                    st.info("沒有可用資料")
+            with tab_up:
+                render_rank_cards(rdf.sort_values("漲跌%", ascending=False).head(10), "up")
+            with tab_down:
+                render_rank_cards(rdf.sort_values("漲跌%").head(10), "dn")
+            with tab_vol:
+                render_rank_cards(rdf.sort_values("成交量", ascending=False).head(10), "vol")
+        else:
+            st.info("沒有可用資料(可能本機 cache 過時)")
 
     # ────── Tab 策略(從排行榜搬出來) ──────
     with tab_strat_top:
