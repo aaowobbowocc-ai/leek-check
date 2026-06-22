@@ -34,30 +34,9 @@
   <div class="ring"></div>
   <div class="title">🩺 登入中…</div>
   <div class="hint">正在把你帶回韭菜健檢</div>
-<script>
-(function() {
-  try {
-    var hash = window.location.hash || '';
-    if (hash.charAt(0) === '#') hash = hash.substring(1);
-    var params = new URLSearchParams(hash);
-    var at = params.get('access_token');
-    var rt = params.get('refresh_token');
-    if (at && rt) {
-      // 寫 cookie(2 分鐘有效,夠 Streamlit 讀一次後清掉)
-      var expires = new Date(Date.now() + 120 * 1000).toUTCString();
-      document.cookie = 'leek_oauth_at=' + encodeURIComponent(at) +
-                        '; path=/; expires=' + expires + '; SameSite=Lax';
-      document.cookie = 'leek_oauth_rt=' + encodeURIComponent(rt) +
-                        '; path=/; expires=' + expires + '; SameSite=Lax';
-    }
-  } catch (e) {
-    console.error('OAuth callback parse failed', e);
-  }
-  // 不論成功 / 失敗都回主畫面
-  setTimeout(function() {
-    window.location.replace('/');
-  }, 200);
-})();
-</script>
+<script src="oauth_callback.js"></script>
+<noscript>
+  <p style="color:#fff; margin-top:20px;">瀏覽器停用了 JavaScript,無法完成登入。</p>
+</noscript>
 </body>
 </html>
