@@ -18,6 +18,9 @@ LOGIN_SUBTITLE = "買進前,先做一次韭菜健檢"
 COOKIE_NAME = "leek_check_session"
 COOKIE_MAX_AGE = 30 * 86400  # 30 天
 
+# Streamlit Cloud 公開 URL,Google OAuth 完成後 redirect 回這裡
+APP_URL = "https://leek-check.streamlit.app"
+
 
 def _get_cookies():
     """Lazy import cookies controller(避免本地沒裝時 import 爆炸)。"""
@@ -61,13 +64,55 @@ def _try_restore_from_cookie() -> bool:
     return False
 
 
+def _try_handle_oauth_callback() -> bool:
+    """檢查 URL 是否帶 OAuth callback code(Google 回流)"""
+    try:
+        params = st.query_params
+        code = params.get("code")
+    except Exception:
+        return False
+    if not code:
+        return False
+    client = db.get_client()
+    if not client:
+        return False
+    try:
+        res = client.auth.exchange_code_for_session({"auth_code": code})
+        if res and res.user and res.session:
+            st.session_state["user_id"] = res.user.id
+            st.session_state["user_email"] = res.user.email
+            st.session_state["access_token"] = res.session.access_token
+            st.session_state["refresh_token"] = res.session.refresh_token
+            cookies = _get_cookies()
+            if cookies:
+                try:
+                    cookies.set(COOKIE_NAME, res.session.refresh_token,
+                                  max_age=COOKIE_MAX_AGE)
+                except Exception:
+                    pass
+            db.set_session_token(res.session.access_token, res.session.refresh_token)
+            # 清掉 URL params(讓網址乾淨)
+            try:
+                st.query_params.clear()
+            except Exception:
+                pass
+            return True
+    except Exception as e:
+        print(f"[auth] OAuth callback failed: {e}")
+    return False
+
+
 def get_current_user_id() -> str:
     """主入口:回傳 user_id(local mode 回 'local-user')。
-    雲端模式未登入會先試 cookie restore,失敗再 render 登入頁面後 st.stop()。"""
+    流程:OAuth callback → session_state → cookie restore → 強迫登入。"""
     if not db.USE_SUPABASE:
         return "local-user"
 
-    # 已登入(session_state 有)
+    # 1. Google OAuth 回流(優先,因為帶 ?code= 等於剛登入完)
+    if _try_handle_oauth_callback():
+        return st.session_state["user_id"]
+
+    # 2. session_state 已有
     if st.session_state.get("user_id"):
         if st.session_state.get("access_token"):
             db.set_session_token(
@@ -76,11 +121,11 @@ def get_current_user_id() -> str:
             )
         return st.session_state["user_id"]
 
-    # 試從 cookie 恢復(保持登入)
+    # 3. 從 cookie 恢復(保持登入)
     if _try_restore_from_cookie():
         return st.session_state["user_id"]
 
-    # 未登入 → 渲染登入頁面
+    # 4. 未登入 → 渲染登入頁面
     _render_login_page()
     st.stop()
 
@@ -111,6 +156,9 @@ def _render_login_page():
         """,
         unsafe_allow_html=True,
     )
+
+    # ── Google 一鍵登入(優先位置)──
+    _render_google_button()
 
     tab_login, tab_signup = st.tabs(["🔑 登入", "✨ 註冊"])
 
@@ -159,6 +207,45 @@ def _render_login_page():
         "🔒 全機 RLS 加密 · 你的資料只有你看得到 · "
         "💡 不報明牌、純客觀分析"
     )
+
+
+def _render_google_button():
+    """Google 一鍵登入按鈕(透過 Supabase Google provider)。"""
+    client = db.get_client()
+    if not client:
+        return
+    try:
+        oauth = client.auth.sign_in_with_oauth({
+            "provider": "google",
+            "options": {"redirect_to": APP_URL},
+        })
+        url = getattr(oauth, "url", None) or oauth.get("url")
+        if not url:
+            return
+        st.markdown(
+            f"""
+            <a href='{url}' style='text-decoration:none; display:block; margin-bottom:14px'>
+              <div style='background:linear-gradient(135deg, #fff 0%, #f1f5f9 100%);
+                          color:#1f2937; padding:12px 18px; border-radius:10px;
+                          font-weight:600; text-align:center; font-size:0.95rem;
+                          border:1px solid #d1d5db;
+                          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                          display:flex; align-items:center; justify-content:center; gap:10px'>
+                <svg width='18' height='18' viewBox='0 0 48 48'>
+                  <path fill='#4285F4' d='M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z'/>
+                  <path fill='#34A853' d='M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z'/>
+                  <path fill='#FBBC05' d='M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24c0 3.55.85 6.91 2.34 9.88l7.35-5.7z'/>
+                  <path fill='#EA4335' d='M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z'/>
+                </svg>
+                用 Google 一鍵登入
+              </div>
+            </a>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.caption("使用 Google 登入後,自動建立帳號,無需 email 驗證。")
+    except Exception as e:
+        print(f"[auth] google oauth url gen failed: {e}")
 
 
 def _do_login(email: str, password: str):

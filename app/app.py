@@ -3437,32 +3437,51 @@ def page_tw_stock_center():
         st.error("⚠️ ticker 對照表沒抓到。請去 settings 確認 IPO 資料")
         return
 
-    # ── CSS:tab 列釘在頂部不消失(修 Streamlit 重 render 時 tab 閃) ──
+    # ── CSS:tab 列「sticky」+ 防 render 閃 + 橫滑可看完 10 tabs ──
     st.markdown("""
     <style>
-      /* Tab 列 sticky 置頂 */
-      .stTabs [data-baseweb="tab-list"] {
+      /* 整個 tab 容器 sticky */
+      div[data-testid="stTabs"] {
         position: sticky !important;
         top: 0 !important;
-        z-index: 999 !important;
+        z-index: 9999 !important;
+        background: #16181d !important;
+        margin-top: -8px !important;
+        padding-top: 8px !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+      }
+      /* Tab 列本體 */
+      .stTabs [data-baseweb="tab-list"] {
         background: #16181d !important;
         padding: 6px 0 4px !important;
         border-bottom: 1px solid #2f343d !important;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.4) !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
         gap: 4px !important;
         overflow-x: auto !important;
         overflow-y: hidden !important;
         white-space: nowrap !important;
         flex-wrap: nowrap !important;
+        min-height: 50px !important;
+        visibility: visible !important;
       }
       .stTabs [data-baseweb="tab"] {
         flex-shrink: 0 !important;
         white-space: nowrap !important;
+        visibility: visible !important;
       }
       /* 隱藏 scroll bar 但保留滑動 */
       .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
         height: 0 !important;
+        width: 0 !important;
         display: none !important;
+      }
+      .stTabs [data-baseweb="tab-list"] {
+        scrollbar-width: none !important;  /* Firefox */
+      }
+      /* 確保 tab content 不蓋到 tab 列 */
+      .stTabs [data-baseweb="tab-panel"] {
+        padding-top: 8px !important;
       }
     </style>
     """, unsafe_allow_html=True)
