@@ -15,22 +15,69 @@ from . import db
 
 LOGIN_TITLE = "🩺 韭菜健檢"
 LOGIN_SUBTITLE = "買進前,先做一次韭菜健檢"
+COOKIE_NAME = "leek_check_session"
+COOKIE_MAX_AGE = 30 * 86400  # 30 天
+
+
+def _get_cookies():
+    """Lazy import cookies controller(避免本地沒裝時 import 爆炸)。"""
+    try:
+        from streamlit_cookies_controller import CookieController
+        return CookieController(key="leek_check_cookies")
+    except Exception:
+        return None
+
+
+def _try_restore_from_cookie() -> bool:
+    """從 cookie 撈 refresh_token,refresh 一次 session。成功回 True。"""
+    cookies = _get_cookies()
+    if not cookies:
+        return False
+    refresh_token = cookies.get(COOKIE_NAME)
+    if not refresh_token:
+        return False
+    client = db.get_client()
+    if not client:
+        return False
+    try:
+        res = client.auth.refresh_session(refresh_token)
+        if res and res.user and res.session:
+            st.session_state["user_id"] = res.user.id
+            st.session_state["user_email"] = res.user.email
+            st.session_state["access_token"] = res.session.access_token
+            st.session_state["refresh_token"] = res.session.refresh_token
+            # 把新的 refresh token 寫回 cookie
+            cookies.set(COOKIE_NAME, res.session.refresh_token,
+                          max_age=COOKIE_MAX_AGE)
+            db.set_session_token(res.session.access_token, res.session.refresh_token)
+            return True
+    except Exception as e:
+        print(f"[auth] cookie restore failed: {e}")
+        # cookie 失效 → 清掉
+        try:
+            cookies.remove(COOKIE_NAME)
+        except Exception:
+            pass
+    return False
 
 
 def get_current_user_id() -> str:
     """主入口:回傳 user_id(local mode 回 'local-user')。
-    雲端模式未登入會 render 登入頁面後 st.stop()。"""
+    雲端模式未登入會先試 cookie restore,失敗再 render 登入頁面後 st.stop()。"""
     if not db.USE_SUPABASE:
         return "local-user"
 
-    # 已登入
+    # 已登入(session_state 有)
     if st.session_state.get("user_id"):
-        # 確保 client 帶 JWT
         if st.session_state.get("access_token"):
             db.set_session_token(
                 st.session_state["access_token"],
                 st.session_state.get("refresh_token"),
             )
+        return st.session_state["user_id"]
+
+    # 試從 cookie 恢復(保持登入)
+    if _try_restore_from_cookie():
         return st.session_state["user_id"]
 
     # 未登入 → 渲染登入頁面
@@ -127,6 +174,14 @@ def _do_login(email: str, password: str):
             if res.session:
                 st.session_state["access_token"] = res.session.access_token
                 st.session_state["refresh_token"] = res.session.refresh_token
+                # 寫 cookie 保持登入(30 天)
+                cookies = _get_cookies()
+                if cookies:
+                    try:
+                        cookies.set(COOKIE_NAME, res.session.refresh_token,
+                                      max_age=COOKIE_MAX_AGE)
+                    except Exception as ce:
+                        print(f"[auth] cookie set failed: {ce}")
             st.success("✅ 登入成功!")
             st.rerun()
         else:
@@ -155,6 +210,14 @@ def _do_signup(email: str, password: str):
                 st.session_state["user_email"] = res.user.email
                 st.session_state["access_token"] = res.session.access_token
                 st.session_state["refresh_token"] = res.session.refresh_token
+                # 寫 cookie 保持登入
+                cookies = _get_cookies()
+                if cookies:
+                    try:
+                        cookies.set(COOKIE_NAME, res.session.refresh_token,
+                                      max_age=COOKIE_MAX_AGE)
+                    except Exception:
+                        pass
                 st.success("🎉 註冊成功,已自動登入!")
                 st.rerun()
             else:
@@ -183,7 +246,7 @@ def _do_magic_link(email: str):
 
 
 def logout():
-    """登出 — 清除 session_state。"""
+    """登出 — 清除 session_state + cookie。"""
     if db.USE_SUPABASE:
         client = db.get_client()
         if client:
@@ -191,6 +254,13 @@ def logout():
                 client.auth.sign_out()
             except Exception:
                 pass
+    # 清 cookie
+    cookies = _get_cookies()
+    if cookies:
+        try:
+            cookies.remove(COOKIE_NAME)
+        except Exception:
+            pass
     for k in ["user_id", "user_email", "access_token", "refresh_token"]:
         st.session_state.pop(k, None)
     st.rerun()

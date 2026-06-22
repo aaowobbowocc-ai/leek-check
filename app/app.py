@@ -3390,7 +3390,37 @@ def page_tw_stock_center():
         st.error("⚠️ ticker 對照表沒抓到。請去 settings 確認 IPO 資料")
         return
 
-    # 9 tabs (策略升頂層)
+    # ── CSS:tab 列釘在頂部不消失(修 Streamlit 重 render 時 tab 閃) ──
+    st.markdown("""
+    <style>
+      /* Tab 列 sticky 置頂 */
+      .stTabs [data-baseweb="tab-list"] {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 999 !important;
+        background: #16181d !important;
+        padding: 6px 0 4px !important;
+        border-bottom: 1px solid #2f343d !important;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.4) !important;
+        gap: 4px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        white-space: nowrap !important;
+        flex-wrap: nowrap !important;
+      }
+      .stTabs [data-baseweb="tab"] {
+        flex-shrink: 0 !important;
+        white-space: nowrap !important;
+      }
+      /* 隱藏 scroll bar 但保留滑動 */
+      .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+        height: 0 !important;
+        display: none !important;
+      }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # 10 tabs (策略升頂層)
     tab_book, tab_brief, tab_market, tab_global, tab_watch, tab_search, tab_rank, tab_strat_top, tab_quiz, tab_about = st.tabs([
         "💰 記帳", "📰 晨報", "🌡️ 大盤", "🌍 多市場", "⭐ 觀察清單", "🔍 搜尋", "🏆 排行榜", "🔬 策略", "🥬 自檢", "❓ 關於"
     ])
