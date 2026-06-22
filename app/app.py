@@ -3441,28 +3441,13 @@ def page_tw_stock_center():
         st.error("⚠️ ticker 對照表沒抓到。請去 settings 確認 IPO 資料")
         return
 
-    # ── CSS:tab 列釘頂 + 防 render 閃 + 橫滑 ──
+    # ── Tab CSS:最小化(只給 tab 橫滑,不再強制 sticky 避免副作用)──
     st.markdown("""
     <style>
-      /* 只把 tab-list 釘頂(不是整個 stTabs,避免內容也黏住)*/
-      .stTabs > div:first-child {
-        position: sticky !important;
-        top: 0 !important;
-        z-index: 9999 !important;
-        background: #16181d !important;
-        padding: 8px 0 4px !important;
-        margin: -8px 0 0 0 !important;
-        border-bottom: 1px solid #2f343d !important;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
-      }
       .stTabs [data-baseweb="tab-list"] {
-        background: transparent !important;
-        gap: 4px !important;
         overflow-x: auto !important;
-        overflow-y: hidden !important;
         white-space: nowrap !important;
         flex-wrap: nowrap !important;
-        min-height: 44px !important;
         scrollbar-width: none !important;
       }
       .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
@@ -3472,19 +3457,6 @@ def page_tw_stock_center():
       .stTabs [data-baseweb="tab"] {
         flex-shrink: 0 !important;
         white-space: nowrap !important;
-      }
-      /* 內容 panel 不要繼承 sticky */
-      .stTabs [data-baseweb="tab-panel"] {
-        padding-top: 8px !important;
-        position: static !important;
-      }
-      /* 上方 app header 的留白拉小,讓 tab 真的能黏到最頂 */
-      header[data-testid="stHeader"] {
-        background: transparent !important;
-        height: 0 !important;
-      }
-      div[data-testid="stMainBlockContainer"] {
-        padding-top: 1rem !important;
       }
     </style>
     """, unsafe_allow_html=True)
