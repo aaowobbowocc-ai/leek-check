@@ -1781,16 +1781,44 @@ def fetch_yfinance_quote(ticker: str):
 
 @st.cache_data(ttl=600)
 def load_local_ohlcv(ticker: str, days: int = 250):
-    """Load OHLCV from local cache (FinMind / yfinance)."""
+    """Load OHLCV from local cache,fallback yfinance live(部署環境用)."""
     p = TW_OHLCV_CACHE / f"{ticker}.parquet"
-    if not p.exists():
-        return None
+    if p.exists():
+        try:
+            df = pd.read_parquet(p)
+            df["date"] = pd.to_datetime(df["date"])
+            return df.sort_values("date").tail(days).reset_index(drop=True)
+        except Exception:
+            pass
+    # ── Fallback: yfinance live(無 cache 環境,例如 Streamlit Cloud)──
+    return _yf_ohlcv_fallback(ticker, days)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _yf_ohlcv_fallback(ticker: str, days: int = 250):
+    """yfinance live OHLCV → 統一回傳跟本地 parquet 同 shape。
+    用於部署環境沒 cache parquet 時。15 分鐘 cache。"""
     try:
-        df = pd.read_parquet(p)
-        df["date"] = pd.to_datetime(df["date"])
-        return df.sort_values("date").tail(days).reset_index(drop=True)
+        import yfinance as yf
+        # period 推估:days=250 → 1y, 50 → 3mo, etc.
+        period = "2y" if days > 300 else "1y" if days > 100 else "3mo" if days > 40 else "1mo"
+        for suffix in [".TW", ".TWO"]:
+            t = yf.Ticker(f"{ticker}{suffix}")
+            h = t.history(period=period, auto_adjust=False)
+            if h.empty:
+                continue
+            df = pd.DataFrame({
+                "date": pd.to_datetime(h.index).tz_localize(None),
+                "open": h["Open"].astype(float),
+                "high": h["High"].astype(float),
+                "low": h["Low"].astype(float),
+                "close": h["Close"].astype(float),
+                "volume": h["Volume"].astype(float),
+            }).reset_index(drop=True)
+            return df.tail(days).reset_index(drop=True)
     except Exception:
-        return None
+        pass
+    return None
 
 
 @st.cache_data(ttl=3600)
