@@ -57,3 +57,18 @@ app/data/ai_cache/
 .vscode/
 .idea/
 *.swp
+
+# Capacitor / Android build artifacts
+mobile/node_modules/
+mobile/android/build/
+mobile/android/.gradle/
+mobile/android/app/build/
+mobile/android/local.properties
+mobile/android/.idea/
+mobile/android/captures/
+mobile/android/*.iml
+mobile/android/app/*.iml
+mobile/ios/App/Pods/
+mobile/ios/App/Podfile.lock
+mobile/ios/App/build/
+mobile/ios/.xcode.env.local

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">韭菜健檢</string>
+    <string name="title_activity_main">韭菜健檢</string>
+    <string name="package_name">tw.leekcheck.app</string>
+    <string name="custom_url_scheme">tw.leekcheck.app</string>
+</resources>
