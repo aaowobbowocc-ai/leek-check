@@ -5330,32 +5330,30 @@ def page_tw_stock_center():
                         unsafe_allow_html=True,
                     )
 
-                # 卡片本身可點(透明 button 覆蓋上去,緊密堆疊)
+                # 緊貼卡片下方的小型可見按鈕(取代之前漏 CSS 的透明覆蓋)
                 with stylable_container(
-                    key=f"wl_card_click_wrap_{idx}_{tk}",
+                    key=f"wl_btn_{idx}_{tk}",
                     css_styles="""
                         button {
-                            margin-top: -90px !important;
-                            margin-bottom: -10px !important;
-                            height: 86px !important;
-                            background: transparent !important;
-                            color: transparent !important;
-                            border: none !important;
-                            box-shadow: none !important;
-                            cursor: pointer !important;
+                            margin-top: -8px !important;
+                            background: rgba(20,184,166,0.08) !important;
+                            color: #5eead4 !important;
+                            border: 1px solid rgba(20,184,166,0.3) !important;
+                            border-top: none !important;
+                            border-radius: 0 0 12px 12px !important;
+                            padding: 4px 0 !important;
+                            font-size: 0.78rem !important;
+                            min-height: 28px !important;
+                            margin-bottom: 4px !important;
                         }
                         button:hover {
-                            background: rgba(20,184,166,0.08) !important;
-                            border-radius: 14px !important;
-                        }
-                        button p {
-                            color: transparent !important;
+                            background: rgba(20,184,166,0.18) !important;
+                            color: #fff !important;
                         }
                     """,
                 ):
-                    if st.button("·", key=f"wl_card_click_{idx}_{tk}",
-                                   use_container_width=True,
-                                   help="點卡片打開健檢"):
+                    if st.button("🔍 翻開健檢", key=f"wl_card_click_{idx}_{tk}",
+                                   use_container_width=True):
                         st.session_state["_inline_view_ticker"] = tk
                         st.rerun()
 
