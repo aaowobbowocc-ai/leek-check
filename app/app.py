@@ -2329,27 +2329,82 @@ def _fetch_multi_market_data_bucketed(bucket: str):
     return result
 
 
+# 雲端 fallback universe — 排行榜 + 策略掃描共用
+TICKER_UNIVERSE_FALLBACK = [
+    "0050", "0056", "00631L", "00878", "00919", "00929", "00939", "00940",
+    "00713", "00892", "00881", "00891", "006208", "00646", "00692", "00701",
+    "2330", "2317", "2454", "2412", "2308", "2382", "2891", "2882", "2881",
+    "2884", "2885", "2886", "2887", "2890", "2892", "5871", "5876", "5880",
+    "2002", "1301", "1303", "1326", "1101", "1102", "2207", "2105", "2603",
+    "2609", "2615", "2618", "3008", "3017", "3034", "3037", "3045", "3231",
+    "3661", "3702", "4904", "4938", "5483", "6271", "6285", "6415", "6505",
+    "6669", "6770", "9904", "9910", "9921", "9933", "9945", "9939",
+    "1815", "2356", "2376", "2379", "2383", "2385", "2408", "2474",
+    "2880", "2883", "2888", "2889", "2912", "3380", "3443", "3653", "3711",
+    "4915", "4961", "5269", "6781", "7402", "8069",
+]
+
+
+def _cloud_strategy_universe() -> list[str]:
+    """雲端策略掃描 universe = 觀察清單 + ~80 檔熱門權值/ETF。"""
+    wl_book = load_json("watchlist", {"tickers": []})
+    wl_tickers = [t["ticker"] for t in wl_book.get("tickers", []) if t.get("type") in TW_TYPES]
+    return list(dict.fromkeys(wl_tickers + TICKER_UNIVERSE_FALLBACK))
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def scan_revenue_yoy_signals(min_yoy: float = 30.0, max_yoy: float = 300.0,
                                min_value_yi: float = 1.0,
                                min_prev_revenue: float = 1e7,
                                top_n: int = 12):
-    """掃描全市場符合「月營收 YoY + 流動性」條件的個股。
+    """掃描符合「月營收 YoY + 流動性」條件的個股。
 
-    依據:memory 「Revenue YoY 60d alpha +3.95% (t=24.19, n=24K)」+
-    「Revenue YoY × Sector 科技類 OOS+MCPT 全通過 alpha +5-7%」
+    依據:memory 「Revenue YoY 60d alpha +3.95% (t=24.19, n=24K)」
 
-    防雜訊過濾:
-      - YoY 範圍 30~300% (排除 +inf / 大基期 / 異常值)
-      - 去年同月營收 > 1000 萬(避免低基期 inflated YoY)
-      - 20 日成交額 > 1 億(L4 流動性)
-
-    回傳 list of dict — 不指示買賣動作,純條件偵測。
+    本機 cache → 掃全市場 ~2000 檔
+    雲端 → 掃 watchlist + ~80 熱門 universe(live API)
     """
     import numpy as np
     finmind_dir = FINMIND_CACHE
     rev_files = list(finmind_dir.glob("TaiwanStockMonthRevenue_*.parquet"))
     hits = []
+
+    # 雲端 fallback
+    if not rev_files:
+        universe = _cloud_strategy_universe()
+        for tk in universe:
+            try:
+                rev = load_finmind_for_ticker(tk, "TaiwanStockMonthRevenue")
+                if rev is None or rev.empty:
+                    continue
+                rev = rev.copy()
+                rev["date"] = pd.to_datetime(rev["date"])
+                rev = rev.sort_values("date")
+                if len(rev) < 13: continue
+                latest_rev = float(rev["revenue"].iloc[-1])
+                prev_year_rev = float(rev["revenue"].iloc[-13])
+                if prev_year_rev < min_prev_revenue: continue
+                if latest_rev <= 0: continue
+                yoy = (latest_rev / prev_year_rev - 1) * 100
+                if not np.isfinite(yoy): continue
+                if yoy < min_yoy or yoy > max_yoy: continue
+                ohlcv = load_local_ohlcv(tk, 25)
+                if ohlcv is None or len(ohlcv) < 20: continue
+                recent = ohlcv.tail(20)
+                avg_value_yi = float((recent["close"] * recent["volume"]).mean() / 1e8)
+                if avg_value_yi < min_value_yi: continue
+                hits.append({
+                    "tk": tk,
+                    "yoy": float(yoy),
+                    "avg_value_yi": avg_value_yi,
+                    "latest_rev_yi": latest_rev / 1e8,
+                })
+            except Exception:
+                continue
+        hits.sort(key=lambda x: x["yoy"], reverse=True)
+        return hits[:top_n]
+
+    # 本機 cache 模式
     for f in rev_files:
         tk = f.stem.replace("TaiwanStockMonthRevenue_", "")
         try:
@@ -7119,20 +7174,7 @@ def page_tw_stock_center():
 
         # 抓所有 cache 的 ticker
         cache_files = list(TW_OHLCV_CACHE.glob("*.parquet"))
-        # ── 雲端 fallback: 沒 cache 時取 「觀察清單 + 熱門 200 大型權值/ETF」live yfinance ──
-        TICKER_UNIVERSE_FALLBACK = [
-            "0050", "0056", "00631L", "00878", "00919", "00929", "00939", "00940",
-            "00713", "00892", "00881", "00891", "006208", "00646", "00692", "00701",
-            "2330", "2317", "2454", "2412", "2308", "2382", "2891", "2882", "2881",
-            "2884", "2885", "2886", "2887", "2890", "2892", "5871", "5876", "5880",
-            "2002", "1301", "1303", "1326", "1101", "1102", "2207", "2105", "2603",
-            "2609", "2615", "2618", "3008", "3017", "3034", "3037", "3045", "3231",
-            "3661", "3702", "4904", "4938", "5483", "6271", "6285", "6415", "6505",
-            "6669", "6770", "9904", "9910", "9921", "9933", "9945", "9939",
-            "1815", "2356", "2376", "2379", "2383", "2385", "2408", "2474", "2603",
-            "2880", "2883", "2888", "2889", "2912", "3380", "3443", "3653", "3711",
-            "4915", "4961", "5269", "6669", "6770", "6781", "7402", "8069",
-        ]
+        # TICKER_UNIVERSE_FALLBACK 已搬到模組頂層(策略掃描共用)
         if not cache_files:
             st.caption("📡 即時模式(雲端):取 ~80 檔熱門權值/ETF + 你的觀察清單")
             wl_book = load_json("watchlist", {"tickers": []})
