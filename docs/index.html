@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>韭菜健檢 — Leek Check</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f766e">
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+  background: linear-gradient(135deg, #0f766e 0%, #0a1a1f 35%, #16181d 100%);
+  color: #fff;
+  min-height: 100vh;
+  line-height: 1.6;
+}
+.container { max-width: 760px; margin: 0 auto; padding: 60px 24px; text-align: center; }
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: #5eead4;
+  letter-spacing: 0.3em;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+h1 {
+  font-size: 3rem;
+  margin: 0 0 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.tagline { font-size: 1.2rem; color: #5eead4; margin: 0 0 8px; }
+.sub { font-style: italic; color: #94a3b8; margin: 0 0 36px; }
+.cta {
+  display: inline-block;
+  background: #14b8a6;
+  color: #16181d;
+  padding: 16px 32px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-decoration: none;
+  letter-spacing: 0.05em;
+  transition: all 0.2s;
+}
+.cta:hover { background: #5eead4; transform: translateY(-2px); }
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin: 48px 0;
+}
+.feat {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid #2f343d;
+  border-radius: 12px;
+  padding: 18px;
+  text-align: left;
+}
+.feat .icon { font-size: 1.5rem; margin-bottom: 6px; }
+.feat .name { font-weight: 700; color: #fff; margin-bottom: 4px; }
+.feat .desc { font-size: 0.82rem; color: #94a3b8; }
+footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid #2f343d;
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+footer a { color: #5eead4; text-decoration: none; }
+footer a:hover { color: #14b8a6; }
+.disclaimer {
+  background: rgba(245, 158, 11, 0.1);
+  border-left: 3px solid #f59e0b;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-top: 20px;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="badge">LEEK CHECK · v0.1</div>
+  <h1>🩺 韭菜健檢</h1>
+  <p class="tagline">買進前,先做一次韭菜健檢</p>
+  <p class="sub">韭菜不是命,是健檢不夠勤</p>
+
+  <a href="https://leek-check.streamlit.app" class="cta">🚀 立即開始</a>
+
+  <div class="features">
+    <div class="feat">
+      <div class="icon">🩺</div>
+      <div class="name">4 面健檢</div>
+      <div class="desc">技術 / 籌碼 / 基本 / 新聞,完整 X 光</div>
+    </div>
+    <div class="feat">
+      <div class="icon">📡</div>
+      <div class="name">7 個真 alpha 策略</div>
+      <div class="desc">memory 驗證過、Walk-Forward 通過</div>
+    </div>
+    <div class="feat">
+      <div class="icon">⭐</div>
+      <div class="name">觀察清單追蹤</div>
+      <div class="desc">卡牌風格、集中度警示、晨報精選</div>
+    </div>
+    <div class="feat">
+      <div class="icon">💰</div>
+      <div class="name">記帳模式</div>
+      <div class="desc">成本 / 損益 / 集中度,跟券商一致</div>
+    </div>
+    <div class="feat">
+      <div class="icon">🤖</div>
+      <div class="name">智能解讀</div>
+      <div class="desc">3 種用詞 × 3 種時間框架</div>
+    </div>
+    <div class="feat">
+      <div class="icon">🔒</div>
+      <div class="name">隱私加密</div>
+      <div class="desc">Supabase RLS,你的資料只有你看</div>
+    </div>
+  </div>
+
+  <div class="disclaimer">
+    ⚠️ 純客觀數據工具 · 不報明牌 · 不喊飆股 · 不指示動作<br>
+    投資決策請自行判斷或諮詢專業顧問,盈虧自負。
+  </div>
+
+  <footer>
+    <a href="privacy.html">隱私政策</a> ·
+    <a href="https://github.com/aaowobbowocc-ai/leek-check">原始碼</a> ·
+    <a href="mailto:aaowobbowocc@gmail.com">聯絡我們</a>
+  </footer>
+</div>
+</body>
+</html>

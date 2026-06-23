@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>韭菜健檢 — 隱私政策</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f766e">
+<style>
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+    background: #16181d;
+    color: #e4e6eb;
+    line-height: 1.7;
+  }
+  .container { max-width: 760px; margin: 0 auto; padding: 32px 24px 80px; }
+  header {
+    background: linear-gradient(135deg, #0f766e 0%, #0a1a1f 35%, #16181d 100%);
+    padding: 48px 24px 32px;
+    margin: -32px -24px 32px;
+    border-bottom: 1px solid #2f343d;
+  }
+  .badge {
+    font-size: 0.72rem;
+    color: #5eead4;
+    letter-spacing: 0.2em;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  h1 {
+    color: #fff;
+    font-size: 2rem;
+    margin: 0 0 6px;
+    font-weight: 800;
+  }
+  .sub { color: #5eead4; font-size: 0.95rem; margin: 0; }
+  .updated { color: #94a3b8; font-size: 0.8rem; margin-top: 8px; }
+  h2 {
+    color: #fff;
+    margin-top: 36px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #2f343d;
+    font-size: 1.3rem;
+  }
+  h3 { color: #5eead4; font-size: 1.05rem; margin-top: 24px; }
+  p { color: #cbd5e1; }
+  ul { color: #cbd5e1; }
+  li { margin-bottom: 6px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.9rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border: 1px solid #2f343d;
+  }
+  th { background: #1e293b; color: #5eead4; font-weight: 700; }
+  td { color: #cbd5e1; }
+  code {
+    background: #1e293b;
+    color: #5eead4;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+  .footnote {
+    background: linear-gradient(135deg, rgba(245,158,11,0.1) 0%, rgba(245,158,11,0.05) 100%);
+    border-left: 4px solid #f59e0b;
+    padding: 14px 18px;
+    border-radius: 8px;
+    margin-top: 40px;
+  }
+  a { color: #5eead4; }
+  a:hover { color: #14b8a6; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="badge">LEEK CHECK · PRIVACY</div>
+  <h1>🩺 韭菜健檢 — 隱私政策</h1>
+  <p class="sub">買進前先做一次韭菜健檢</p>
+  <div class="updated">最後更新:2026-06-23</div>
+</header>
+
+<h2>1. 我們收集什麼資料</h2>
+
+<h3>1.1 帳號資料(你主動提供)</h3>
+<ul>
+  <li><strong>Email</strong> — 用於登入</li>
+  <li><strong>密碼</strong> — 經 Supabase Auth 加密儲存,我們看不到原文</li>
+</ul>
+
+<h3>1.2 用戶生成資料(儲存在 Supabase RLS 加密 DB)</h3>
+<ul>
+  <li>觀察清單 ticker</li>
+  <li>持股股數 / 成本 / 進場日期 / 筆記</li>
+  <li>個人化設定(手續費折抵率、晨報精選等)</li>
+</ul>
+<p><strong>RLS(Row Level Security)保證:</strong>用戶 A 看不到用戶 B 的資料。</p>
+
+<h3>1.3 App 使用資料(本機,不上傳)</h3>
+<ul>
+  <li>session_state(瀏覽器內,關閉就消失)</li>
+  <li>cookie(refresh_token 30 天保持登入)</li>
+  <li>個股健檢 cache(每用戶共用 AI 結果,加速體驗)</li>
+</ul>
+
+<h2>2. 我們不收集什麼</h2>
+<ul>
+  <li>❌ 不追蹤 GPS 位置</li>
+  <li>❌ 不收集聯絡人 / 通訊錄</li>
+  <li>❌ 不存取相片</li>
+  <li>❌ 不錄音 / 不存麥克風資料</li>
+  <li>❌ 不收集財務帳戶連結</li>
+  <li>❌ 不在第三方廣告平台追蹤</li>
+</ul>
+
+<h2>3. 第三方服務(資料處理者)</h2>
+<table>
+  <thead>
+    <tr><th>服務</th><th>用途</th><th>資料種類</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Supabase</td><td>用戶帳號 + RLS 加密 DB</td><td>Email / 觀察清單 / 持股</td></tr>
+    <tr><td>Streamlit Cloud</td><td>App 主機</td><td>連線記錄(無個資)</td></tr>
+    <tr><td>FinMind API</td><td>股票歷史資料</td><td>公開市場資料</td></tr>
+    <tr><td>yfinance</td><td>即時股價</td><td>公開市場資料</td></tr>
+    <tr><td>Google Gemini API</td><td>AI 解讀</td><td>觀察清單 ticker(匿名)</td></tr>
+    <tr><td>Anthropic Claude(可選)</td><td>AI 解讀</td><td>同上</td></tr>
+    <tr><td>OpenAI(可選)</td><td>AI 解讀</td><td>同上</td></tr>
+  </tbody>
+</table>
+<p>所有 AI prompt 都不包含 email / 帳號識別碼。</p>
+
+<h2>4. Cookie</h2>
+<ul>
+  <li><code>leek_check_session</code>:保持登入(30 天有效)</li>
+  <li><code>streamlit-cookies-controller</code>:Streamlit cookies 機制必備</li>
+</ul>
+
+<h2>5. 資料保留期間</h2>
+<ul>
+  <li>帳號:除非用戶要求刪除,否則保留</li>
+  <li>觀察清單 / 持股:同上</li>
+  <li>Cookie:30 天</li>
+</ul>
+
+<h2>6. 用戶權利</h2>
+
+<h3>6.1 刪除帳號</h3>
+<p>點 App 內 <strong>🚪 登出</strong> → email 我們 → 24h 內全清。</p>
+
+<h3>6.2 取得資料副本</h3>
+<p>Email:<a href="mailto:aaowobbowocc@gmail.com">aaowobbowocc@gmail.com</a></p>
+
+<h3>6.3 撤回 AI 解讀</h3>
+<p>App 內每個 AI 區塊都可選不展開,不送 prompt。</p>
+
+<h2>7. 兒童使用</h2>
+<p>韭菜健檢不針對 13 歲以下兒童設計。發現有未成年用戶會立即刪除帳號。</p>
+
+<h2>8. 政策變更</h2>
+<p>重大變更會在 App 內推播通知 + email。</p>
+
+<h2>9. 聯絡我們</h2>
+<p>Email:<a href="mailto:aaowobbowocc@gmail.com">aaowobbowocc@gmail.com</a></p>
+
+<div class="footnote">
+  ⚠️ <strong>本 App 純為盤後分析工具,不構成任何投資建議。</strong><br>
+  所有數據僅供參考,投資決策請自行判斷或諮詢專業顧問,盈虧自負。
+</div>
+
+</div>
+</body>
+</html>
