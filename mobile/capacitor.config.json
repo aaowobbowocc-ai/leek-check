@@ -10,9 +10,13 @@
     "allowNavigation": [
       "leek-check.streamlit.app",
       "*.streamlit.app",
+      "*.streamlit.io",
+      "share.streamlit.io",
       "*.supabase.co",
       "accounts.google.com",
-      "*.googleapis.com"
+      "*.googleapis.com",
+      "*.googleusercontent.com",
+      "*.gstatic.com"
     ]
   },
   "android": {
