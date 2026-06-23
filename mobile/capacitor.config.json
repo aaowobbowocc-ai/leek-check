@@ -4,6 +4,7 @@
   "webDir": "www",
   "server": {
     "url": "https://leek-check.streamlit.app",
+    "androidScheme": "capacitor",
     "cleartext": false,
     "iosScheme": "leekcheck",
     "allowNavigation": [
