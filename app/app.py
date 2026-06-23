@@ -248,10 +248,26 @@ st.markdown("""
         font-size: 1.5rem !important;
     }
 
-    /* 隱藏 Streamlit 自帶 chrome */
-    #MainMenu { visibility: hidden; }
-    footer { visibility: hidden; }
-    header[data-testid="stHeader"] { background: transparent; }
+    /* 隱藏所有 Streamlit Cloud 品牌標籤 */
+    #MainMenu { visibility: hidden !important; display: none !important; }
+    footer { visibility: hidden !important; display: none !important; }
+    header[data-testid="stHeader"] { background: transparent; height: 0 !important; }
+    /* 右上 toolbar(Fork / GitHub / Share) */
+    [data-testid="stToolbar"] { display: none !important; }
+    [data-testid="stDecoration"] { display: none !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
+    /* 右下 Streamlit Cloud "Hosted with Streamlit" / "Made with Streamlit" badge */
+    [data-testid="stAppDeployButton"] { display: none !important; }
+    [data-testid="stToolbarActions"] { display: none !important; }
+    div[class*="viewerBadge"] { display: none !important; }
+    a[href*="streamlit.io"] { display: none !important; }
+    /* "Manage app" 浮動按鈕(Streamlit Cloud 登入者才會看到) */
+    div[data-testid="manage-app-button"] { display: none !important; }
+    /* 紅色「Hosted with Streamlit」ribbon */
+    .reportview-container .main footer { display: none !important; }
+    .stApp > footer { display: none !important; }
+    /* 任何頂部紅色 / Streamlit logo 條 */
+    iframe[src*="streamlit.io"] { display: none !important; }
 
     /* divider 變細 */
     hr { margin: 1rem 0 !important; opacity: 0.5; }
