@@ -72,3 +72,7 @@ mobile/ios/App/Pods/
 mobile/ios/App/Podfile.lock
 mobile/ios/App/build/
 mobile/ios/.xcode.env.local
+
+# Android signing keystore — NEVER commit these (will lose Play Store ownership!)
+mobile/android/keystore/*.jks
+mobile/android/keystore/keystore.properties
