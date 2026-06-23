@@ -201,6 +201,18 @@ def _render_login_page():
         unsafe_allow_html=True,
     )
 
+    # 訪客模式按鈕(快速體驗,資料不保存)
+    if st.button("👻 以訪客身分試用(資料不會保存)",
+                  use_container_width=True, type="secondary"):
+        import uuid as _uuid
+        st.session_state["user_id"] = f"guest-{_uuid.uuid4().hex[:8]}"
+        st.session_state["user_email"] = "訪客模式"
+        st.session_state["is_guest"] = True
+        st.toast("👻 已進入訪客模式 · 觀察清單只存瀏覽器", icon="👻")
+        st.rerun()
+    st.caption("💡 想長期用?用 ✨ 註冊 或 🔑 登入 — 資料雲端加密儲存,跨裝置同步")
+
+    st.divider()
     tab_login, tab_signup = st.tabs(["🔑 登入", "✨ 註冊"])
 
     with tab_login:
@@ -389,6 +401,26 @@ def render_user_menu():
     if not db.USE_SUPABASE:
         st.sidebar.caption("📁 本機模式")
         return
+
+    # 訪客模式 banner
+    if st.session_state.get("is_guest"):
+        st.sidebar.markdown(
+            "<div style='background:linear-gradient(135deg, #1f2937 0%, #1a1f27 100%);"
+            "padding:10px 12px; border-radius:8px; border-left:3px solid #f59e0b;"
+            "margin-bottom:10px'>"
+            "<div style='color:#f59e0b; font-size:0.7rem; font-weight:700'>👻 訪客模式</div>"
+            "<div style='color:#cbd5e1; font-size:0.78rem; margin-top:3px'>"
+            "資料只存瀏覽器 · 清快取就消失"
+            "</div></div>",
+            unsafe_allow_html=True,
+        )
+        if st.sidebar.button("✨ 註冊保存資料", type="primary",
+                                use_container_width=True):
+            for k in ["user_id", "user_email", "is_guest"]:
+                st.session_state.pop(k, None)
+            st.rerun()
+        return
+
     email = st.session_state.get("user_email", "—")
     st.sidebar.markdown(
         f"<div style='background:linear-gradient(135deg, #1e293b 0%, #1a1f27 100%);"
