@@ -59,10 +59,11 @@ app/data/ai_cache/
 *.swp
 
 # Private docs(audit, review, internal planning)排除整個 docs/
-# 但允許 GitHub Pages 公開頁面(privacy + 行銷 landing)
+# 但允許 GitHub Pages 公開頁面(privacy + 行銷 landing + 帳號刪除)
 docs/*
 !docs/privacy.html
 !docs/index.html
+!docs/delete-account.html
 
 # Capacitor / Android build artifacts
 mobile/node_modules/
