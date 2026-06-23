@@ -5,7 +5,6 @@
   "server": {
     "url": "https://leek-check.streamlit.app",
     "cleartext": false,
-    "androidScheme": "https",
     "iosScheme": "leekcheck",
     "allowNavigation": [
       "leek-check.streamlit.app",
