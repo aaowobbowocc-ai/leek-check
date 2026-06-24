@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Home, Star, Search, TrendingUp, Radio, User, Ghost, Wallet
+  Home, Star, Search, TrendingUp, Radio, User, Ghost,
 } from "lucide-react";
 import { useSession } from "@/lib/store";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useRouter } from "next/navigation";
+import { api } from "@/lib/api";
 
 type Tab = "brief" | "watch" | "search" | "rank" | "scan" | "me";
 
@@ -153,14 +156,47 @@ function WatchPanel() {
 }
 
 function SearchPanel() {
+  const [q, setQ] = useState("");
+  const router = useRouter();
+  const { data: results, isFetching } = useQuery({
+    queryKey: ["search", q],
+    queryFn: () => api.searchTickers(q),
+    enabled: q.length >= 1,
+    staleTime: 300_000,
+  });
   return (
     <div className="space-y-4">
       <h2 className="text-2xl font-extrabold text-white">🔍 搜尋</h2>
-      <PlaceholderCard
-        title="開發中"
-        desc="輸入股票代碼或公司名查 4 面健檢"
-        badge="WIP"
+      <p className="text-slate-400 text-sm">輸入股票代碼或公司名 → 4 面健檢</p>
+      <Input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="例:2330 / 台積電 / 0050"
+        autoFocus
       />
+      {isFetching && q.length >= 1 && (
+        <div className="text-sm text-slate-500">搜尋中⋯</div>
+      )}
+      <div className="space-y-2">
+        {(results ?? []).map((r) => (
+          <button
+            key={r.ticker}
+            onClick={() => router.push(`/ticker/${r.ticker}`)}
+            className="w-full text-left bg-ink-900/50 hover:bg-ink-800/80 border border-ink-700 rounded-xl p-3 transition-colors flex items-center justify-between active:scale-[0.98]"
+          >
+            <div>
+              <div className="font-bold text-white">{r.name || r.ticker}</div>
+              <div className="text-xs text-slate-500">{r.industry || "—"}</div>
+            </div>
+            <div className="text-brand-300 font-mono text-sm">{r.ticker}</div>
+          </button>
+        ))}
+        {q.length >= 1 && !isFetching && results?.length === 0 && (
+          <div className="text-sm text-slate-500 text-center py-4">
+            找不到「{q}」相關股票
+          </div>
+        )}
+      </div>
     </div>
   );
 }
