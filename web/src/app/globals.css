@@ -9,115 +9,150 @@
 }
 
 html, body {
-  background: linear-gradient(135deg, #0f766e 0%, #0a1a1f 35%, #16181d 100%);
-  color: #e4e6eb;
+  background: #16181d;
+  color: #ffffff;
   min-height: 100dvh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC",
-                sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
 }
 
-/* iOS-style momentum scroll */
 * { -webkit-overflow-scrolling: touch; }
-
-/* 隱藏 webkit scrollbar(讓手機看起來原生) */
 ::-webkit-scrollbar { width: 0; height: 0; }
 
-/* Touch-friendly buttons */
 button, [role="button"] {
   -webkit-user-select: none;
   user-select: none;
   touch-action: manipulation;
 }
 
-/* Animation utility — page enter */
-.animate-page-in {
-  animation: pageIn 0.3s ease-out;
+/* ════════════════════════════════════════
+   Tabular nums — 數字等寬,價格不跳動
+   ════════════════════════════════════════ */
+.tabular-nums {
+  font-feature-settings: "tnum", "lnum";
+  font-variant-numeric: tabular-nums;
 }
+
+/* ════════════════════════════════════════
+   Page enter
+   ════════════════════════════════════════ */
+.animate-page-in { animation: pageIn 0.3s ease-out; }
 @keyframes pageIn {
   from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ──── Neon / Esports vibe ──── */
-.neon-text-teal {
-  text-shadow:
-    0 0 8px rgba(94, 234, 212, 0.5),
-    0 0 20px rgba(94, 234, 212, 0.3),
-    0 0 32px rgba(20, 184, 166, 0.2);
+/* ════════════════════════════════════════
+   Shimmer skeleton(像 Robinhood / Linear)
+   ════════════════════════════════════════ */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    #1a1d24 0%,
+    #2a2f3a 50%,
+    #1a1d24 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
 }
-.neon-text-amber {
-  text-shadow:
-    0 0 8px rgba(251, 191, 36, 0.5),
-    0 0 20px rgba(245, 158, 11, 0.3),
-    0 0 32px rgba(217, 119, 6, 0.2);
-}
-.neon-text-rose {
-  text-shadow:
-    0 0 8px rgba(244, 63, 94, 0.5),
-    0 0 20px rgba(220, 38, 38, 0.3),
-    0 0 32px rgba(190, 18, 60, 0.2);
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
-.neon-card-glow-teal {
-  box-shadow:
-    inset 0 1px 0 rgba(94, 234, 212, 0.1),
-    0 0 0 1px rgba(20, 184, 166, 0.25),
-    0 0 24px rgba(20, 184, 166, 0.12),
-    0 0 48px rgba(20, 184, 166, 0.06);
+/* ════════════════════════════════════════
+   Hero radial halo
+   ════════════════════════════════════════ */
+.hero-halo {
+  position: relative;
 }
-.neon-card-glow-amber {
-  box-shadow:
-    inset 0 1px 0 rgba(251, 191, 36, 0.1),
-    0 0 0 1px rgba(245, 158, 11, 0.25),
-    0 0 24px rgba(245, 158, 11, 0.12),
-    0 0 48px rgba(245, 158, 11, 0.06);
-}
-.neon-card-glow-rose {
-  box-shadow:
-    inset 0 1px 0 rgba(244, 63, 94, 0.1),
-    0 0 0 1px rgba(244, 63, 94, 0.25),
-    0 0 24px rgba(244, 63, 94, 0.12),
-    0 0 48px rgba(244, 63, 94, 0.06);
-}
-
-/* 跑馬燈式霓虹掃光 */
-.neon-sweep::before {
+.hero-halo::before {
   content: '';
   position: absolute;
-  inset: -2px;
-  border-radius: inherit;
-  background: linear-gradient(
-    115deg,
-    transparent 30%,
-    rgba(94, 234, 212, 0.15) 50%,
-    transparent 70%
+  inset: -40px;
+  background: radial-gradient(
+    circle at 50% 30%,
+    rgba(94, 234, 212, 0.18) 0%,
+    transparent 55%
   );
-  background-size: 200% 200%;
-  animation: sweep 3s ease-in-out infinite;
+  filter: blur(20px);
   pointer-events: none;
   z-index: 0;
 }
-@keyframes sweep {
-  0%, 100% { background-position: 200% 0; }
-  50% { background-position: -100% 0; }
+.hero-halo > * { position: relative; z-index: 1; }
+
+/* ════════════════════════════════════════
+   Live indicator pulse dot
+   ════════════════════════════════════════ */
+.live-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5eead4;
+}
+.live-dot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #5eead4;
+  animation: live-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes live-ping {
+  0%   { transform: scale(1);   opacity: 0.7; }
+  100% { transform: scale(3.5); opacity: 0; }
 }
 
-/* Grid 線條背景(電競面板感) */
-.bg-grid {
-  background-image:
-    linear-gradient(rgba(94, 234, 212, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(94, 234, 212, 0.04) 1px, transparent 1px);
-  background-size: 24px 24px;
+/* ════════════════════════════════════════
+   Conic-gradient animated border(LEGENDARY tier)
+   來自 Cruip 的 technique
+   ════════════════════════════════════════ */
+@property --border-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+.legendary-border {
+  position: relative;
+  background:
+    linear-gradient(155deg, #f59e0b 0%, #1a1d24 50%, #16181d 100%)
+      padding-box,
+    conic-gradient(
+      from var(--border-angle),
+      #2f343d 0deg,
+      #2f343d 240deg,
+      #fcd34d 280deg,
+      #fde68a 300deg,
+      #fcd34d 320deg,
+      #2f343d 360deg
+    ) border-box;
+  border: 2px solid transparent;
+  animation: legendary-rotate 5s linear infinite;
+}
+@keyframes legendary-rotate {
+  to { --border-angle: 360deg; }
 }
 
-/* Pulse glow 動畫 */
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 16px rgba(94, 234, 212, 0.4); }
-  50% { box-shadow: 0 0 32px rgba(94, 234, 212, 0.7), 0 0 64px rgba(20, 184, 166, 0.3); }
+/* ════════════════════════════════════════
+   Price tick flash(報價更新時閃一下)
+   ════════════════════════════════════════ */
+.tick-flash-up   { animation: tick-up   0.6s ease-out; }
+.tick-flash-down { animation: tick-down 0.6s ease-out; }
+@keyframes tick-up {
+  0%   { background-color: rgba(239, 68, 68, 0.25); }
+  100% { background-color: transparent; }
 }
-.pulse-glow {
-  animation: pulse-glow 2.5s ease-in-out infinite;
+@keyframes tick-down {
+  0%   { background-color: rgba(16, 185, 129, 0.25); }
+  100% { background-color: transparent; }
 }
+
+/* ════════════════════════════════════════
+   Glow utilities
+   ════════════════════════════════════════ */
+.glow-teal  { filter: drop-shadow(0 0 8px rgba(94, 234, 212, 0.5)); }
+.glow-amber { filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.5)); }
+.glow-rose  { filter: drop-shadow(0 0 8px rgba(244, 63, 94, 0.5)); }

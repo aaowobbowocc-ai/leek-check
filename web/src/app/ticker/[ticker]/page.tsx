@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { ArrowLeft, Loader2, Stethoscope, Copy, Check } from "lucide-react";
+import { ArrowLeft, Stethoscope, Copy, Check } from "lucide-react";
 import { api, type HealthCheck } from "@/lib/api";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { ScoreRing } from "@/components/ui/score-ring";
@@ -22,15 +22,7 @@ export default function TickerPage() {
   });
 
   if (isLoading) {
-    return (
-      <main className="min-h-dvh flex items-center justify-center px-6">
-        <div className="text-center">
-          <Stethoscope className="w-12 h-12 text-teal-300 mx-auto mb-3" />
-          <Loader2 className="w-5 h-5 animate-spin text-teal-300 mx-auto" />
-          <p className="text-teal-300 text-sm mt-3">{ticker} 健檢中⋯</p>
-        </div>
-      </main>
-    );
+    return <HealthSkeleton ticker={ticker} />;
   }
 
   if (error || !data) {
@@ -89,24 +81,30 @@ function HealthCheckView({ data, onBack }: { data: HealthCheck; onBack: () => vo
       </div>
 
       <div className="px-4 pt-4 space-y-4">
-        {/* Hero quote card (streamlit hero gradient) */}
-        <StCard variant="hero">
-          <div className="text-[10px] text-teal-300 font-bold tracking-[0.2em]">
-            {industry || "—"} · 收盤 {quote.asof}
+        {/* Hero quote card — halo + tabular-nums + live dot (台股紅漲綠跌) */}
+        <StCard variant="hero" className="hero-halo">
+          <div className="flex items-center justify-between text-[10px] text-teal-300 font-bold tracking-[0.2em]">
+            <span>{industry || "—"} · 收盤 {quote.asof}</span>
+            <span className="flex items-center gap-1.5 normal-case tracking-normal text-emerald-300">
+              <span className="live-dot" /> Live
+            </span>
           </div>
           <div className="flex items-end justify-between gap-4 mt-1">
             <div>
-              <div className="text-st-fg leading-none" style={{ fontSize: "3rem", fontWeight: 800 }}>
+              <div
+                className="text-st-fg leading-none tabular-nums"
+                style={{ fontSize: "3rem", fontWeight: 800 }}
+              >
                 {formatNumber(quote.price)}
               </div>
               <div
-                className="font-bold mt-2"
+                className="font-bold mt-2 tabular-nums"
                 style={{
-                  color: up ? "#34d399" : "#f43f5e",
+                  color: up ? "#ef4444" : "#10b981",
                   fontSize: "1rem",
                 }}
               >
-                {up ? "▲" : "▼"} {formatPct(quote.change_pct)}
+                {up ? "▲" : "▼"} {formatPct(Math.abs(quote.change_pct), false)} ({formatPct(quote.change_pct)})
               </div>
             </div>
             <div className="flex-1 max-w-[160px]">
@@ -207,8 +205,9 @@ function Sparkline({ data, up }: { data: number[]; up: boolean }) {
   const points = data
     .map((v, i) => `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * H}`)
     .join(" ");
-  const stroke = up ? "#34d399" : "#f43f5e";
-  const fill = up ? "rgba(52,211,153,0.18)" : "rgba(244,63,94,0.18)";
+  // 台股紅漲綠跌
+  const stroke = up ? "#ef4444" : "#10b981";
+  const fill = up ? "rgba(239,68,68,0.18)" : "rgba(16,185,129,0.18)";
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-12">
       <defs>
@@ -245,6 +244,36 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
         {copied ? "已複製,貼給 AI 對話" : "📋 複製健檢 prompt"}
       </button>
     </StCard>
+  );
+}
+
+function HealthSkeleton({ ticker }: { ticker: string }) {
+  return (
+    <main className="min-h-dvh pb-12 bg-st-bg">
+      <div className="sticky top-0 z-30 bg-st-bg/95 backdrop-blur-md border-b border-st-border">
+        <div style={{ height: "env(safe-area-inset-top)" }} />
+        <div className="px-4 py-3 flex items-center gap-2">
+          <Stethoscope className="w-5 h-5 text-teal-300" />
+          <div className="text-xs text-teal-300 font-mono">{ticker} · 健檢中⋯</div>
+        </div>
+      </div>
+      <div className="px-4 pt-4 space-y-4">
+        <div className="shimmer rounded-st h-32" />
+        <div className="rounded-st border border-st-border p-5">
+          <div className="shimmer h-5 w-24 rounded mb-4" />
+          <div className="flex justify-center mb-4">
+            <div className="shimmer rounded-full" style={{ width: 130, height: 130 }} />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="shimmer h-16 rounded" />
+            <div className="shimmer h-16 rounded" />
+            <div className="shimmer h-16 rounded" />
+          </div>
+        </div>
+        <div className="shimmer rounded-st h-48" />
+        <div className="shimmer rounded-st h-48" />
+      </div>
+    </main>
   );
 }
 

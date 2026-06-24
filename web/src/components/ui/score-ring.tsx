@@ -9,69 +9,105 @@ type Props = {
   size?: number;
 };
 
-/**
- * 完全照搬 streamlit app/app.py:6447-6455 那顆圓環
- * - 130px 容器
- * - 3px solid border
- * - background rgba(20,184,166,0.18)
- * - box-shadow 0 0 24px ring_bg
- * - 中央 2.4rem 分數 + /100 + tier label
- */
 const COLOR_MAP = {
   green: {
-    border: "#5eead4",
+    stroke: "#5eead4",
     bg:     "rgba(20,184,166,0.18)",
     label:  "#5eead4",
-    shadow: "0 0 24px rgba(20,184,166,0.18)",
+    glow:   "rgba(94,234,212,0.5)",
   },
   amber: {
-    border: "#fbbf24",
+    stroke: "#fbbf24",
     bg:     "rgba(245,158,11,0.18)",
     label:  "#fbbf24",
-    shadow: "0 0 24px rgba(245,158,11,0.18)",
+    glow:   "rgba(251,191,36,0.5)",
   },
   rose: {
-    border: "#f43f5e",
+    stroke: "#f43f5e",
     bg:     "rgba(220,38,38,0.18)",
     label:  "#f43f5e",
-    shadow: "0 0 24px rgba(220,38,38,0.18)",
+    glow:   "rgba(244,63,94,0.5)",
   },
 } as const;
 
+/**
+ * Streamlit 1:1 + drop-shadow filter polish(來自 Robinhood / Preline 研究)
+ * - 130px 容器 + 3px solid border + 0 0 24px box-shadow
+ * - 改用 SVG circle + dashoffset 動畫(可控進度條視覺)
+ * - drop-shadow filter on stroke = 質感升級關鍵
+ */
 export function ScoreRing({ score, label, color, size = 130 }: Props) {
   const c = COLOR_MAP[color];
+  const radius = size / 2 - 6;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (Math.min(100, Math.max(0, score)) / 100) * circumference;
+
   return (
     <motion.div
-      initial={{ scale: 0.8, opacity: 0 }}
+      initial={{ scale: 0.7, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
-      transition={{ duration: 0.4, type: "spring", stiffness: 200 }}
+      transition={{ duration: 0.5, type: "spring", stiffness: 220 }}
+      className="relative flex flex-col items-center justify-center"
       style={{
         width: size,
         height: size,
         borderRadius: "50%",
         background: c.bg,
-        border: `3px solid ${c.border}`,
-        boxShadow: c.shadow,
+        boxShadow: `0 0 32px ${c.bg}, inset 0 0 16px ${c.bg}`,
       }}
-      className="flex flex-col items-center justify-center"
     >
-      <div
-        style={{ fontSize: "2.4rem", color: "#fff", fontWeight: 800, lineHeight: 1 }}
+      {/* SVG ring with drop-shadow */}
+      <svg
+        width={size}
+        height={size}
+        className="absolute inset-0 -rotate-90 pointer-events-none"
+        style={{ filter: `drop-shadow(0 0 6px ${c.glow})` }}
       >
-        {score}
-      </div>
-      <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 2 }}>
-        / 100
-      </div>
-      <div
-        style={{
-          fontSize: "0.85rem",
-          color: c.label,
-          marginTop: 4,
-          fontWeight: 700,
-        }}
-      >
-        {label}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="#2f343d"
+          strokeWidth={3}
+        />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke={c.stroke}
+          strokeWidth={3}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: offset }}
+          transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+        />
+      </svg>
+
+      {/* Center content */}
+      <div className="relative z-10 flex flex-col items-center pointer-events-none">
+        <div
+          className="tabular-nums"
+          style={{ fontSize: "2.4rem", color: "#fff", fontWeight: 800, lineHeight: 1 }}
+        >
+          {score}
+        </div>
+        <div style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: 2 }}>
+          / 100
+        </div>
+        <div
+          style={{
+            fontSize: "0.85rem",
+            color: c.label,
+            marginTop: 4,
+            fontWeight: 700,
+            textShadow: `0 0 8px ${c.glow}`,
+          }}
+        >
+          {label}
+        </div>
       </div>
     </motion.div>
   );

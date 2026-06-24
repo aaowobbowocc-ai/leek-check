@@ -27,6 +27,7 @@ export function StockCard({
   ticker, name, industry, quote, avgValueYi, rankMedal, onClick,
 }: Props) {
   const { light, dark, icon, rarity } = cardTier(ticker, industry, avgValueYi);
+  const isLegendary = rarity === "LEGENDARY";
   const chg = quote ? quote.change_pct : 0;
   const c = chgColor(chg);
   const arrow = chgArrow(chg);
@@ -41,12 +42,20 @@ export function StockCard({
       whileTap={{ scale: 0.98 }}
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full text-left rounded-st flex items-center gap-3.5 px-4 py-3.5 relative overflow-hidden mb-1.5"
-      style={{
-        background: `linear-gradient(155deg, ${dark} 0%, #1a1d24 50%, #16181d 100%)`,
-        border: `2px solid ${light}`,
-        boxShadow: "0 4px 14px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08)",
-      }}
+      className={`w-full text-left rounded-st flex items-center gap-3.5 px-4 py-3.5 relative overflow-hidden mb-1.5 ${isLegendary ? "legendary-border" : ""}`}
+      style={
+        isLegendary
+          ? {
+              boxShadow:
+                "0 4px 14px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 24px rgba(252, 211, 77, 0.15)",
+            }
+          : {
+              background: `linear-gradient(155deg, ${dark} 0%, #1a1d24 50%, #16181d 100%)`,
+              border: `2px solid ${light}`,
+              boxShadow:
+                "0 4px 14px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08)",
+            }
+      }
     >
       {/* 左:icon + tier */}
       <div className="flex-shrink-0 text-center min-w-[60px]">
@@ -116,6 +125,7 @@ export function StockCard({
       {/* 右:價格 + 漲跌 */}
       <div className="text-right flex-shrink-0 min-w-[90px]">
         <div
+          className="tabular-nums"
           style={{
             fontSize: "1.4rem",
             color: c,
