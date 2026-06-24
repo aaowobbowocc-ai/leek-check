@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus, Star, Settings as SettingsIcon, TrendingUp, TrendingDown,
-  AlertTriangle, Wallet, BarChart3,
+  Plus, Star, AlertTriangle, Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Chip } from "@/components/ui/chip";
+import { StockCard } from "@/components/stock-card";
 import { api, type Quote } from "@/lib/api";
+import { chgColor, chgArrow } from "@/lib/tier";
 import {
   loadCloudWatchlist, addCloudTicker, removeCloudTicker, updateCloudHolding,
   type WatchlistItem,
@@ -131,13 +131,15 @@ export function WatchPanel() {
 
   return (
     <div className="space-y-4 pb-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      {/* Header — streamlit 樣式 */}
+      <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-extrabold text-white flex items-center gap-2">
-            <Star className="w-6 h-6 text-amber-400 fill-amber-400" /> 觀察清單
+          <h2 className="text-2xl font-extrabold text-st-fg flex items-center gap-2">
+            <Star className="w-6 h-6 text-amber-300" style={{ fill: "#fbbf24" }} /> 我的觀察清單
           </h2>
-          <p className="text-slate-400 text-xs mt-1">{list.length} 檔追蹤中</p>
+          <p className="text-st-muted text-xs mt-1">
+            點卡片進場分析 → 直接展開健檢頁 · {list.length} 檔追蹤中
+          </p>
         </div>
         <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
           <Plus className="w-4 h-4" /> 加股票
@@ -195,9 +197,8 @@ export function WatchPanel() {
 
       {/* Cards */}
       <AnimatePresence mode="popLayout">
-        {list.map((item, i) => {
+        {list.map((item) => {
           const q = quoteMap.get(item.ticker);
-          const up = (q?.change_pct ?? 0) >= 0;
           const hasHolding = !!(item.shares && item.cost_per_share);
           let pnl = 0;
           let pnlPct = 0;
@@ -214,80 +215,53 @@ export function WatchPanel() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ delay: i * 0.03 }}
-              className="bg-ink-900/60 border border-ink-700 rounded-2xl overflow-hidden hover:border-brand-500/40 transition-colors"
+              className="space-y-1.5"
             >
-              {/* Main card body — click to /ticker/{tk} */}
-              <button
+              {/* Streamlit-style tier card */}
+              <StockCard
+                ticker={item.ticker}
+                name={q?.name ?? ""}
+                industry={q?.industry ?? "—"}
+                quote={q}
                 onClick={() => router.push(`/ticker/${item.ticker}`)}
-                className="w-full text-left p-4 active:scale-[0.98] transition-transform"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <span className="text-brand-300 font-mono text-xs font-bold">{item.ticker}</span>
-                      {q?.industry && <Chip tone="default">{q.industry}</Chip>}
-                      {hasHolding && <Chip tone="brand">持股</Chip>}
-                    </div>
-                    <h3 className="font-extrabold text-white truncate">
-                      {q?.name || item.ticker}
-                    </h3>
-                    {q && (
-                      <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-1">
-                        <span>開 {formatNumber(q.open, 1)}</span>
-                        <span>高 {formatNumber(q.high, 1)}</span>
-                        <span>低 {formatNumber(q.low, 1)}</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    {q ? (
-                      <>
-                        <div className="text-2xl font-extrabold text-white leading-none">
-                          {formatNumber(q.price)}
-                        </div>
-                        <div className={`text-xs font-bold flex items-center gap-0.5 justify-end mt-1 ${up ? "text-emerald-400" : "text-rose-400"}`}>
-                          {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                          {formatPct(q.change_pct)}
-                        </div>
-                      </>
-                    ) : quotesQ.isFetching ? (
-                      <div className="text-xs text-slate-500">載入中⋯</div>
-                    ) : (
-                      <div className="text-xs text-slate-500">無資料</div>
-                    )}
-                  </div>
+              />
+
+              {/* 持股損益 row (if has holding) */}
+              {hasHolding && q && (
+                <div
+                  className="rounded-st p-3 grid grid-cols-3 gap-2 text-xs"
+                  style={{
+                    background: "#16181d",
+                    border: "1px solid #2f343d",
+                    borderLeft: `3px solid ${chgColor(pnl >= 0 ? 1 : -1)}`,
+                  }}
+                >
+                  <Cell label="股數" value={`${item.shares!.toLocaleString()}`} />
+                  <Cell label="成本" value={formatNumber(item.cost_per_share!)} />
+                  <Cell
+                    label="損益"
+                    value={`${pnl >= 0 ? "+" : ""}${formatNumber(pnl, 0)}`}
+                    tint={pnl >= 0 ? "up" : "down"}
+                    sub={`${chgArrow(pnlPct)} ${formatPct(pnlPct)}`}
+                  />
                 </div>
+              )}
 
-                {/* 持股損益 row */}
-                {hasHolding && q && (
-                  <div className="mt-3 pt-3 border-t border-ink-800 grid grid-cols-3 gap-2 text-xs">
-                    <Cell label="股數" value={`${item.shares!.toLocaleString()}`} />
-                    <Cell label="成本" value={formatNumber(item.cost_per_share!)} />
-                    <Cell
-                      label="損益"
-                      value={`${pnl >= 0 ? "+" : ""}${formatNumber(pnl, 0)}`}
-                      tint={pnl >= 0 ? "green" : "red"}
-                      sub={formatPct(pnlPct)}
-                    />
-                  </div>
-                )}
-              </button>
-
-              {/* Action bar */}
-              <div className="flex border-t border-ink-800">
+              {/* Action bar (4 面健檢 / 編輯) */}
+              <div className="flex gap-1.5">
                 <button
                   onClick={() => router.push(`/ticker/${item.ticker}`)}
-                  className="flex-1 py-2.5 text-xs font-semibold text-brand-300 hover:bg-brand-500/10 transition-colors flex items-center justify-center gap-1.5"
+                  className="flex-1 rounded-st py-2 text-xs font-semibold text-teal-300 hover:bg-teal-300/10 transition-colors flex items-center justify-center gap-1.5"
+                  style={{ background: "#16181d", border: "1px solid #2f343d" }}
                 >
-                  <BarChart3 className="w-3.5 h-3.5" /> 4 面健檢
+                  🩺 翻開健檢
                 </button>
-                <div className="w-px bg-ink-800" />
                 <button
                   onClick={() => setEditing(item)}
-                  className="flex-1 py-2.5 text-xs font-semibold text-slate-400 hover:bg-ink-800 transition-colors flex items-center justify-center gap-1.5"
+                  className="flex-1 rounded-st py-2 text-xs font-semibold text-st-muted hover:text-st-soft transition-colors flex items-center justify-center gap-1.5"
+                  style={{ background: "#16181d", border: "1px solid #2f343d" }}
                 >
-                  <SettingsIcon className="w-3.5 h-3.5" /> 編輯
+                  ⚙️ 編輯持股
                 </button>
               </div>
             </motion.div>
@@ -312,14 +286,15 @@ export function WatchPanel() {
   );
 }
 
-function Cell({ label, value, sub, tint }: { label: string; value: string; sub?: string; tint?: "green" | "red" }) {
-  const tintCls =
-    tint === "green" ? "text-emerald-400" : tint === "red" ? "text-red-400" : "text-white";
+function Cell({ label, value, sub, tint }: { label: string; value: string; sub?: string; tint?: "up" | "down" }) {
+  // 台股慣例:up 紅 / down 綠
+  const color =
+    tint === "up" ? "#ef4444" : tint === "down" ? "#10b981" : "#fff";
   return (
     <div>
-      <div className="text-[10px] text-slate-500 mb-0.5">{label}</div>
-      <div className={`font-bold ${tintCls}`}>{value}</div>
-      {sub && <div className={`text-[10px] ${tintCls}`}>{sub}</div>}
+      <div className="text-[10px] text-st-muted mb-0.5">{label}</div>
+      <div className="font-bold" style={{ color }}>{value}</div>
+      {sub && <div className="text-[10px] font-bold" style={{ color }}>{sub}</div>}
     </div>
   );
 }
