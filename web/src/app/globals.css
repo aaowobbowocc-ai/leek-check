@@ -40,3 +40,84 @@ button, [role="button"] {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* ──── Neon / Esports vibe ──── */
+.neon-text-teal {
+  text-shadow:
+    0 0 8px rgba(94, 234, 212, 0.5),
+    0 0 20px rgba(94, 234, 212, 0.3),
+    0 0 32px rgba(20, 184, 166, 0.2);
+}
+.neon-text-amber {
+  text-shadow:
+    0 0 8px rgba(251, 191, 36, 0.5),
+    0 0 20px rgba(245, 158, 11, 0.3),
+    0 0 32px rgba(217, 119, 6, 0.2);
+}
+.neon-text-rose {
+  text-shadow:
+    0 0 8px rgba(244, 63, 94, 0.5),
+    0 0 20px rgba(220, 38, 38, 0.3),
+    0 0 32px rgba(190, 18, 60, 0.2);
+}
+
+.neon-card-glow-teal {
+  box-shadow:
+    inset 0 1px 0 rgba(94, 234, 212, 0.1),
+    0 0 0 1px rgba(20, 184, 166, 0.25),
+    0 0 24px rgba(20, 184, 166, 0.12),
+    0 0 48px rgba(20, 184, 166, 0.06);
+}
+.neon-card-glow-amber {
+  box-shadow:
+    inset 0 1px 0 rgba(251, 191, 36, 0.1),
+    0 0 0 1px rgba(245, 158, 11, 0.25),
+    0 0 24px rgba(245, 158, 11, 0.12),
+    0 0 48px rgba(245, 158, 11, 0.06);
+}
+.neon-card-glow-rose {
+  box-shadow:
+    inset 0 1px 0 rgba(244, 63, 94, 0.1),
+    0 0 0 1px rgba(244, 63, 94, 0.25),
+    0 0 24px rgba(244, 63, 94, 0.12),
+    0 0 48px rgba(244, 63, 94, 0.06);
+}
+
+/* 跑馬燈式霓虹掃光 */
+.neon-sweep::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(94, 234, 212, 0.15) 50%,
+    transparent 70%
+  );
+  background-size: 200% 200%;
+  animation: sweep 3s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+@keyframes sweep {
+  0%, 100% { background-position: 200% 0; }
+  50% { background-position: -100% 0; }
+}
+
+/* Grid 線條背景(電競面板感) */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(94, 234, 212, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94, 234, 212, 0.04) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Pulse glow 動畫 */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 16px rgba(94, 234, 212, 0.4); }
+  50% { box-shadow: 0 0 32px rgba(94, 234, 212, 0.7), 0 0 64px rgba(20, 184, 166, 0.3); }
+}
+.pulse-glow {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
