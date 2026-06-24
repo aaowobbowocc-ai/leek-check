@@ -9,6 +9,7 @@ import {
   AlertTriangle, Wallet, BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { api, type Quote } from "@/lib/api";
 import {
   loadCloudWatchlist, addCloudTicker, removeCloudTicker, updateCloudHolding,
@@ -222,29 +223,30 @@ export function WatchPanel() {
                 className="w-full text-left p-4 active:scale-[0.98] transition-transform"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-brand-300 font-mono text-sm">{item.ticker}</span>
-                      {hasHolding && (
-                        <span className="text-[10px] bg-brand-500/20 text-brand-300 font-bold tracking-wider px-1.5 py-0.5 rounded">
-                          持股
-                        </span>
-                      )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-brand-300 font-mono text-xs font-bold">{item.ticker}</span>
+                      {q?.industry && <Chip tone="default">{q.industry}</Chip>}
+                      {hasHolding && <Chip tone="brand">持股</Chip>}
                     </div>
-                    <h3 className="font-extrabold text-white truncate mt-0.5">
+                    <h3 className="font-extrabold text-white truncate">
                       {q?.name || item.ticker}
                     </h3>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      {q?.industry || "—"}
-                    </div>
+                    {q && (
+                      <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-1">
+                        <span>開 {formatNumber(q.open, 1)}</span>
+                        <span>高 {formatNumber(q.high, 1)}</span>
+                        <span>低 {formatNumber(q.low, 1)}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="text-right flex-shrink-0">
                     {q ? (
                       <>
-                        <div className="text-xl font-extrabold text-white">
+                        <div className="text-2xl font-extrabold text-white leading-none">
                           {formatNumber(q.price)}
                         </div>
-                        <div className={`text-xs font-bold flex items-center gap-0.5 justify-end ${up ? "text-emerald-400" : "text-red-400"}`}>
+                        <div className={`text-xs font-bold flex items-center gap-0.5 justify-end mt-1 ${up ? "text-emerald-400" : "text-rose-400"}`}>
                           {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
                           {formatPct(q.change_pct)}
                         </div>
