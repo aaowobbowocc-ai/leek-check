@@ -80,6 +80,15 @@ mobile/ios/App/Podfile.lock
 mobile/ios/App/build/
 mobile/ios/.xcode.env.local
 
+# Web (Next.js) v2 frontend
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+web/.env*.local
+web/.vercel/
+web/*.tsbuildinfo
+
 # Android signing keystore — NEVER commit these (will lose Play Store ownership!)
 mobile/android/keystore/*.jks
 mobile/android/keystore/keystore.properties
