@@ -1,6 +1,9 @@
 package tw.leekcheck.app;
 
+import android.content.Context;
 import android.os.Bundle;
+import android.view.KeyEvent;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -74,5 +77,34 @@ public class MainActivity extends BridgeActivity {
                 CookieManager.getInstance().flush();
             }
         });
+    }
+
+    /**
+     * 攔截實體 / 軟體 BACK 鍵:
+     * 1. 如果軟鍵盤開著 → 收起鍵盤(不退 App)
+     * 2. 如果 WebView 還有歷史 → 後退一頁
+     * 3. 否則 → 退出 App
+     *
+     * 解掉「在輸入框按倒退鍵直接閃退」的問題。
+     */
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            WebView webView = this.getBridge().getWebView();
+            // 1. 鍵盤開著 → 收鍵盤
+            InputMethodManager imm = (InputMethodManager)
+                getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null && imm.isAcceptingText()) {
+                imm.hideSoftInputFromWindow(webView.getWindowToken(), 0);
+                return true;
+            }
+            // 2. WebView 有歷史可退
+            if (webView != null && webView.canGoBack()) {
+                webView.goBack();
+                return true;
+            }
+            // 3. fallback → 預設行為(退 App)
+        }
+        return super.onKeyDown(keyCode, event);
     }
 }

@@ -49,7 +49,12 @@
       "overlaysWebView": false
     },
     "App": {
-      "backButtonExit": true
+      "backButtonExit": false
+    },
+    "Keyboard": {
+      "resize": "native",
+      "style": "DARK",
+      "resizeOnFullScreen": true
     }
   }
 }

@@ -294,6 +294,44 @@ def _render_google_button():
         print(f"[auth] google oauth url gen failed: {e}")
 
 
+def _migrate_pending_guest_data():
+    """訪客升級登入後,把暫存的 watchlist 等資料 push 到 Supabase。"""
+    pending = st.session_state.pop("_pending_guest_data", None)
+    if not pending:
+        return
+    try:
+        uid = st.session_state.get("user_id")
+        if not uid:
+            return
+        # 寫進 session_state(後續 save_settings 會自動同步到 DB)
+        merged = 0
+        for k, v in pending.items():
+            existing = st.session_state.get(k)
+            if isinstance(v, list) and isinstance(existing, list):
+                # 合併不重複
+                seen = {str(x) for x in existing}
+                for item in v:
+                    if str(item) not in seen:
+                        existing.append(item)
+                        merged += 1
+            elif not existing:
+                st.session_state[k] = v
+                merged += 1
+        # 強制 save
+        try:
+            db.save_settings(uid, {
+                k: st.session_state.get(k)
+                for k in ("watchlist", "watchlist_v2", "briefing_featured")
+                if st.session_state.get(k)
+            })
+        except Exception as e:
+            print(f"[auth] migrate save_settings failed: {e}")
+        if merged > 0:
+            st.toast(f"📦 已同步 {merged} 項訪客資料到雲端", icon="✅")
+    except Exception as e:
+        print(f"[auth] guest data migration failed: {e}")
+
+
 def _do_login(email: str, password: str):
     client = db.get_client()
     if not client:
@@ -315,6 +353,7 @@ def _do_login(email: str, password: str):
                                       max_age=COOKIE_MAX_AGE)
                     except Exception as ce:
                         print(f"[auth] cookie set failed: {ce}")
+            _migrate_pending_guest_data()
             st.success("✅ 登入成功!")
             st.rerun()
         else:
@@ -359,6 +398,7 @@ def _do_signup(email: str, password: str):
                                       max_age=COOKIE_MAX_AGE)
                     except Exception:
                         pass
+                _migrate_pending_guest_data()
                 st.success("🎉 註冊成功,已自動登入!")
                 st.rerun()
             else:
@@ -416,6 +456,15 @@ def render_user_menu():
         )
         if st.sidebar.button("✨ 註冊保存資料", type="primary",
                                 use_container_width=True):
+            # 把訪客累積的資料暫存,登入後 migrate 進 Supabase
+            pending = {}
+            for k in ("watchlist", "watchlist_v2", "briefing_featured"):
+                v = st.session_state.get(k)
+                if v:
+                    pending[k] = v
+            if pending:
+                st.session_state["_pending_guest_data"] = pending
+                st.toast(f"✨ 已暫存 {len(pending)} 項訪客資料,登入後自動同步", icon="📦")
             for k in ["user_id", "user_email", "is_guest"]:
                 st.session_state.pop(k, None)
             st.rerun()
