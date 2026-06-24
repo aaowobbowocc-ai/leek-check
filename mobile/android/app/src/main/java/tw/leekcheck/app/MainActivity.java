@@ -1,6 +1,7 @@
 package tw.leekcheck.app;
 
 import android.os.Bundle;
+import android.webkit.CookieManager;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import com.getcapacitor.BridgeActivity;
@@ -50,13 +51,27 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         WebView webView = this.getBridge().getWebView();
-        // 關掉 cache 避免認證後快取舊頁面
-        webView.getSettings().setCacheMode(android.webkit.WebSettings.LOAD_NO_CACHE);
+
+        // 開啟 Cookie 持久化(預設 Capacitor WebView cookie 不寫硬碟,關 App 就消失)
+        // setAcceptCookie + setAcceptThirdPartyCookies → 讓 Supabase refresh_token cookie
+        // 跨重啟保留,user 30 天內不用重新登入
+        CookieManager cookieManager = CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+        // cache 改 default(允許 cookie 跟 HTTP cache 一起用)
+        // 避免關 cache 連 cookie 都被連帶清除
+        webView.getSettings().setCacheMode(android.webkit.WebSettings.LOAD_DEFAULT);
+        webView.getSettings().setDomStorageEnabled(true);
+        webView.getSettings().setDatabaseEnabled(true);
+
         webView.setWebViewClient(new com.getcapacitor.BridgeWebViewClient(this.getBridge()) {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 view.evaluateJavascript(HIDE_STREAMLIT_BRANDING_JS, null);
+                // 每次頁面載入完成立刻 flush cookie 到 disk
+                CookieManager.getInstance().flush();
             }
         });
     }
