@@ -1800,7 +1800,92 @@ def fetch_taiex_state():
 
 def fetch_yfinance_quote(ticker: str):
     """前端 wrapper:把 time bucket 拼進 cache key,讓盤前/盤中/盤後自動失效。"""
+    # 0. session_state 批次預抓的記憶體快取(命中秒回)
+    pref = st.session_state.get("_quote_batch_cache", {})
+    if ticker in pref:
+        return pref[ticker]
     return _fetch_yfinance_quote_bucketed(ticker, _time_bucket())
+
+
+def prefetch_quotes_batch(tickers: list[str]) -> int:
+    """一次 yf.download N 檔(threads=True),把結果寫進 session_state cache。
+    後續 fetch_yfinance_quote 就 O(1) 取記憶體,不再每檔 round trip。
+
+    回傳成功預抓的檔數。
+    """
+    if not tickers:
+        return 0
+    cache = st.session_state.setdefault("_quote_batch_cache", {})
+    todo = [t for t in tickers if t not in cache]
+    if not todo:
+        return 0
+    try:
+        import yfinance as yf
+        # 兩個後綴都試 — TWSE 用 .TW、TPEX 用 .TWO
+        # 為了批次,先用 .TW 試一輪,失敗的再用 .TWO 補
+        sym_tw = [f"{t}.TW" for t in todo]
+        df = yf.download(" ".join(sym_tw), period="5d",
+                          interval="1d", auto_adjust=False,
+                          progress=False, threads=True, group_by="ticker")
+        got = 0
+        retry_two = []
+        for tk, sym in zip(todo, sym_tw):
+            try:
+                if len(sym_tw) == 1:
+                    sub = df
+                else:
+                    sub = df[sym] if sym in df.columns.get_level_values(0) else None
+                if sub is None or sub.empty or sub["Close"].dropna().empty:
+                    retry_two.append(tk)
+                    continue
+                clean = sub.dropna(subset=["Close"])
+                cache[tk] = {
+                    "price": float(clean["Close"].iloc[-1]),
+                    "open": float(clean["Open"].iloc[-1]),
+                    "high": float(clean["High"].iloc[-1]),
+                    "low": float(clean["Low"].iloc[-1]),
+                    "volume": int(clean["Volume"].iloc[-1]),
+                    "prev_close": float(clean["Close"].iloc[-2]) if len(clean) >= 2 else float(clean["Close"].iloc[-1]),
+                    "suffix": ".TW",
+                    "asof": clean.index[-1].strftime("%Y-%m-%d"),
+                }
+                got += 1
+            except Exception:
+                retry_two.append(tk)
+        # .TW 失敗的補打 .TWO
+        if retry_two:
+            sym_two = [f"{t}.TWO" for t in retry_two]
+            try:
+                df2 = yf.download(" ".join(sym_two), period="5d",
+                                    interval="1d", auto_adjust=False,
+                                    progress=False, threads=True, group_by="ticker")
+                for tk, sym in zip(retry_two, sym_two):
+                    try:
+                        sub = df2 if len(sym_two) == 1 else (
+                            df2[sym] if sym in df2.columns.get_level_values(0) else None
+                        )
+                        if sub is None or sub.empty or sub["Close"].dropna().empty:
+                            continue
+                        clean = sub.dropna(subset=["Close"])
+                        cache[tk] = {
+                            "price": float(clean["Close"].iloc[-1]),
+                            "open": float(clean["Open"].iloc[-1]),
+                            "high": float(clean["High"].iloc[-1]),
+                            "low": float(clean["Low"].iloc[-1]),
+                            "volume": int(clean["Volume"].iloc[-1]),
+                            "prev_close": float(clean["Close"].iloc[-2]) if len(clean) >= 2 else float(clean["Close"].iloc[-1]),
+                            "suffix": ".TWO",
+                            "asof": clean.index[-1].strftime("%Y-%m-%d"),
+                        }
+                        got += 1
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+        return got
+    except Exception as e:
+        print(f"[prefetch_quotes_batch] failed: {e}")
+        return 0
 
 
 @st.cache_data(ttl=86400, show_spinner=False)
@@ -3830,6 +3915,10 @@ def page_tw_stock_center():
 
         _book_wl = load_json("watchlist", {"tickers": []})
         _book_items = [t for t in _book_wl.get("tickers", []) if t.get("type") in TW_TYPES]
+        # 一次批次預抓所有持股股價 → 後續 P&L 計算 O(1)
+        _book_tks_pf = list({_it["ticker"] for _it in _book_items if _it.get("ticker")})
+        if _book_tks_pf:
+            prefetch_quotes_batch(_book_tks_pf)
         _book_holdings = []
         for _it in _book_items:
             _hp = compute_holding_pnl(_it)
@@ -4689,6 +4778,12 @@ def page_tw_stock_center():
 
     # ────── Tab 0: 觀察清單 ──────
     with tab_watch:
+        # 一次預抓所有觀察清單股價(yf.download threads=True),後續 fetch O(1)
+        _wl_data_pf = load_json("watchlist", {"tickers": []})
+        _wl_tks_pf = list({t["ticker"] for t in _wl_data_pf.get("tickers", [])
+                              if t.get("type") in TW_TYPES and t.get("ticker")})
+        if _wl_tks_pf:
+            prefetch_quotes_batch(_wl_tks_pf)
         # 如果目前卡片被點開 → 直接渲染 inline 健檢頁,不要顯示卡牌
         if st.session_state.get("_inline_view_ticker"):
             inline_tk = st.session_state["_inline_view_ticker"]
