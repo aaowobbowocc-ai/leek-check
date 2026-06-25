@@ -9,7 +9,7 @@ import { api, type HealthCheck } from "@/lib/api";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { ScoreRing } from "@/components/ui/score-ring";
 import { StCard, StHeader, StCaption } from "@/components/ui/st-card";
-import { PriceChart, RevenueBarChart, ChipStackedBar, TechGrid, FundaGrid } from "@/components/charts";
+import { PriceChart, RevenueBarChart, ChipStackedBar, TechGrid, FundaGrid, HealthScanGrid } from "@/components/charts";
 
 export default function TickerPage() {
   const params = useParams<{ ticker: string }>();
@@ -172,6 +172,22 @@ function HealthCheckView({ data, onBack }: { data: HealthCheck; onBack: () => vo
                 <div key={i} className="text-xs text-st-soft">{n}</div>
               ))}
             </div>
+          </StCard>
+        )}
+
+        {/* 🏥 體質掃描(4 維度連續方向)*/}
+        {data.funda.rev_history && (
+          <StCard>
+            <StHeader emoji="🏥" title="體質掃描" sub="4 維度連續 6 期方向 · ↑紅↓綠" />
+            <HealthScanGrid
+              rev12={data.funda.rev_history}
+              eps={null}
+              gpm={null}
+              current={null}
+            />
+            <StCaption className="mt-3">
+              💡 接單能力(月營收)有資料,EPS/毛利率/流動比 待 backend 接入 FinMind 財報
+            </StCaption>
           </StCard>
         )}
 

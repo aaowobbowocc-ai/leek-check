@@ -4,19 +4,26 @@ import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { Wallet, AlertTriangle, TrendingUp, TrendingDown, PieChart, Banknote } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Wallet, AlertTriangle, PieChart, Banknote } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/store";
-import { loadCloudWatchlist, type WatchlistItem } from "@/lib/watchlist";
+import { loadCloudWatchlist, updateCloudHolding, type WatchlistItem } from "@/lib/watchlist";
 import { createClient } from "@/lib/supabase/client";
 import { chgColor, chgArrow, cardTier } from "@/lib/tier";
 import { formatNumber, formatCurrency, formatPct } from "@/lib/utils";
+import { Sheet } from "@/components/ui/sheet";
+import { Input } from "@/components/ui/input";
 
 export function BookPanel() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const isGuest = useSession((s) => s.isGuest);
   const guestList = useSession((s) => s.guestWatchlist);
+  const updateGuest = useSession((s) => s.updateGuestHolding);
   const [userId, setUserId] = useState<string | null>(null);
+  const [selling, setSelling] = useState<WatchlistItem | null>(null);
 
   useEffect(() => {
     if (isGuest) return;
@@ -171,24 +178,27 @@ export function BookPanel() {
               const tier = cardTier(ticker, industry);
               const concPct = portfolio.totalMv > 0 ? (it.mv / portfolio.totalMv) * 100 : 0;
               return (
-                <motion.button
+                <motion.div
                   key={ticker}
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.04 }}
-                  onClick={() => router.push(`/ticker/${ticker}`)}
-                  whileTap={{ scale: 0.98 }}
-                  className="w-full text-left rounded-st p-3 relative"
-                  style={{
-                    background: [
-                      "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.08) 0%, transparent 35%)",
-                      "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
-                    ].join(", "),
-                    border: `1px solid #3a4150`,
-                    borderLeft: `3px solid ${tier.light}`,
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
-                  }}
+                  className="relative"
                 >
+                  <motion.button
+                    onClick={() => router.push(`/ticker/${ticker}`)}
+                    whileTap={{ scale: 0.98 }}
+                    className="w-full text-left rounded-st p-3"
+                    style={{
+                      background: [
+                        "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.08) 0%, transparent 35%)",
+                        "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+                      ].join(", "),
+                      border: `1px solid #3a4150`,
+                      borderLeft: `3px solid ${tier.light}`,
+                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+                    }}
+                  >
                   {/* row 1: ticker + name + price */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
@@ -245,7 +255,15 @@ export function BookPanel() {
                       {concPct.toFixed(1)}%
                     </span>
                   </div>
-                </motion.button>
+                  </motion.button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setSelling(it.item); }}
+                    className="absolute top-2 right-2 text-[10px] font-bold text-rose-300 active:scale-95 px-2 py-1 rounded"
+                    style={{ background: "rgba(244,63,94,0.12)", border: "1px solid rgba(244,63,94,0.35)" }}
+                  >
+                    📉 賣出
+                  </button>
+                </motion.div>
               );
             })}
           </div>
@@ -259,7 +277,128 @@ export function BookPanel() {
           實際賣出會再扣 ~0.4255%(手續費 + 證交稅)。
         </div>
       )}
+
+      {/* SellSheet — 賣出計算實現損益 */}
+      <SellSheet
+        item={selling}
+        currentPrice={selling ? quoteMap.get(selling.ticker)?.price : undefined}
+        open={!!selling}
+        onClose={() => setSelling(null)}
+        onConfirm={async (sellPrice, sellShares) => {
+          if (!selling) return;
+          const remaining = selling.shares! - sellShares;
+          if (isGuest) {
+            if (remaining <= 0) {
+              updateGuest(selling.ticker, selling.type, null, null, null);
+            } else {
+              updateGuest(selling.ticker, selling.type, remaining, selling.cost_per_share!, selling.entry_date);
+            }
+          } else {
+            try {
+              if (remaining <= 0) {
+                await updateCloudHolding(selling.ticker, selling.type, null, null, null);
+              } else {
+                await updateCloudHolding(selling.ticker, selling.type, remaining, selling.cost_per_share!, selling.entry_date);
+              }
+              await queryClient.invalidateQueries({ queryKey: ["watchlist-cloud", userId] });
+            } catch (e) { alert("賣出失敗:" + (e as Error).message); }
+          }
+          setSelling(null);
+        }}
+      />
     </div>
+  );
+}
+
+function SellSheet({
+  item, currentPrice, open, onClose, onConfirm,
+}: {
+  item: WatchlistItem | null;
+  currentPrice?: number;
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (sellPrice: number, sellShares: number) => Promise<void>;
+}) {
+  const [price, setPrice] = useState("");
+  const [shares, setShares] = useState("");
+  useEffect(() => {
+    if (item) {
+      setPrice(currentPrice ? currentPrice.toFixed(2) : "");
+      setShares(String(item.shares ?? ""));
+    }
+  }, [item, currentPrice]);
+  if (!item) return null;
+
+  const p = Number(price);
+  const s = Number(shares);
+  const valid = p > 0 && s > 0 && s <= (item.shares ?? 0);
+  const cost = item.cost_per_share! * 1.001425 * s;          // gross cost incl buy fee
+  const sellNet = p * s * (1 - 0.001425 - 0.003);             // 扣手續費 + 證交稅
+  const realized = sellNet - cost;
+  const realizedPct = cost > 0 ? (realized / cost) * 100 : 0;
+  const tint = realized >= 0 ? "#ef4444" : "#10b981";
+
+  return (
+    <Sheet open={open} onClose={onClose} title={`📉 賣出 ${item.ticker}`}>
+      <div className="space-y-4 pb-6">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-xs text-st-muted mb-1">賣出價</div>
+            <Input
+              type="number"
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="例:520"
+            />
+          </div>
+          <div>
+            <div className="text-xs text-st-muted mb-1">
+              賣出股數(最多 {item.shares?.toLocaleString()})
+            </div>
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={shares}
+              onChange={(e) => setShares(e.target.value)}
+              placeholder={String(item.shares ?? "")}
+            />
+          </div>
+        </div>
+
+        {/* 即時計算 */}
+        {valid && (
+          <div
+            className="rounded-st p-4 space-y-2"
+            style={{ background: "#0f1218", border: `1px solid ${tint}40`, borderLeft: `3px solid ${tint}` }}
+          >
+            <div className="text-xs text-st-muted">實現損益(扣手續費 + 證交稅 0.4255%)</div>
+            <div className="tabular-nums font-extrabold" style={{ fontSize: "1.6rem", color: tint }}>
+              {realized >= 0 ? "+" : ""}{Math.round(realized).toLocaleString()}
+            </div>
+            <div className="tabular-nums text-sm font-bold" style={{ color: tint }}>
+              {realized >= 0 ? "▲" : "▼"} {realizedPct.toFixed(2)}%
+            </div>
+            <div className="text-[10px] text-st-muted pt-2 border-t border-st-border">
+              成本:{Math.round(cost).toLocaleString()} · 賣出淨:{Math.round(sellNet).toLocaleString()}
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <Button variant="primary" size="lg" className="flex-1" disabled={!valid}
+                    onClick={() => onConfirm(p, s)}>
+            ✅ 確認賣出
+          </Button>
+          <Button variant="ghost" size="lg" onClick={onClose}>取消</Button>
+        </div>
+
+        <div className="text-[10px] text-st-muted leading-relaxed">
+          💡 實現損益 = 賣出淨入(扣 0.4255%) − 買進成本(含 0.1425%)。
+          剩餘股數會留在持股,全賣出則自動清掉。
+        </div>
+      </div>
+    </Sheet>
   );
 }
 

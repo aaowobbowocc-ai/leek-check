@@ -238,6 +238,74 @@ export function RevenueBarChart({ data }: { data: RevHistory[] }) {
 }
 
 /* ────────────────────────────────────────
+   HealthScanGrid — 體質掃描 4 維度連續方向圖
+   ──────────────────────────────────────── */
+export function HealthScanGrid({
+  rev12, eps, gpm, current,
+}: {
+  rev12?: RevHistory[];           // 月營收 12 期(我們有)
+  eps?: { period: string; value: number }[] | null;
+  gpm?: { period: string; value: number }[] | null;
+  current?: { period: string; value: number }[] | null;
+}) {
+  const dims: Array<{ key: string; emoji: string; label: string; data: { period: string; value: number }[] | undefined | null; unit: string }> = [
+    {
+      key: "rev",
+      emoji: "📈",
+      label: "接單能力",
+      data: rev12?.map((r) => ({ period: r.month, value: r.yoy })),
+      unit: "%",
+    },
+    { key: "eps", emoji: "💵", label: "獲利能力", data: eps, unit: "" },
+    { key: "gpm", emoji: "🛠️", label: "經營能力", data: gpm, unit: "%" },
+    { key: "current", emoji: "🏦", label: "償債能力", data: current, unit: "倍" },
+  ];
+
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {dims.map((d) => {
+        const data = d.data ?? [];
+        const last6 = data.slice(-6);
+        const direction = last6.length >= 2
+          ? (last6[last6.length - 1].value >= last6[0].value ? "up" : "down")
+          : "flat";
+        const arrows = last6.map((p, i) => {
+          if (i === 0) return "·";
+          const prev = last6[i - 1].value;
+          if (p.value > prev) return "↑";
+          if (p.value < prev) return "↓";
+          return "→";
+        });
+        const c = direction === "up" ? "#ef4444" : direction === "down" ? "#10b981" : "#94a3b8";
+        return (
+          <div
+            key={d.key}
+            className="rounded p-2.5"
+            style={{ background: "#0f1218", border: "1px solid #2f343d", borderLeft: `3px solid ${c}` }}
+          >
+            <div className="text-[10px] text-st-muted font-bold tracking-wider">
+              {d.emoji} {d.label}
+            </div>
+            {last6.length > 0 ? (
+              <>
+                <div className="tabular-nums font-extrabold mt-1" style={{ fontSize: "0.95rem", color: c }}>
+                  {arrows.join(" ")}
+                </div>
+                <div className="tabular-nums text-[10px] text-st-soft">
+                  最新 {last6[last6.length - 1].value.toFixed(2)}{d.unit}
+                </div>
+              </>
+            ) : (
+              <div className="text-[10px] text-st-muted mt-1">資料不足</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────
    ChipStackedBar — 法人 3 色橫條
    ──────────────────────────────────────── */
 export function ChipStackedBar({
