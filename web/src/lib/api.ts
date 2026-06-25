@@ -127,16 +127,43 @@ export interface MarketIndex {
   change_pct: number;
   asof: string;
 }
+export interface TaiexFull {
+  price: number;
+  prev_close: number;
+  change_pct: number;
+  asof: string;
+  ma200_dist_pct: number | null;
+  ret_20d: number | null;
+  ret_60d: number | null;
+  sparkline_30d: number[];
+  temperature: string;
+  temperature_emoji: string;
+}
+
+export interface InstitutionalSummary {
+  foreign_20d: number;
+  invtrust_20d: number;
+  dealer_20d: number;
+  note: string;
+}
+
 export interface MarketDashboard {
-  taiex: MarketIndex | null;
+  taiex: TaiexFull | null;
   vix: MarketIndex | null;
   sp500: MarketIndex | null;
   nasdaq: MarketIndex | null;
+  sox: MarketIndex | null;
+  dxy: MarketIndex | null;
   dxj: MarketIndex | null;
   nikkei: MarketIndex | null;
   gold: MarketIndex | null;
   oil: MarketIndex | null;
   silver: MarketIndex | null;
+  usdtwd: MarketIndex | null;
+  btc: MarketIndex | null;
+  eth: MarketIndex | null;
+  institutional: InstitutionalSummary | null;
+  international_note: string;
 }
 
 export interface RankItem {

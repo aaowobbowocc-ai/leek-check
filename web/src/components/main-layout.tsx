@@ -483,68 +483,287 @@ function MarketDashboardCard() {
     queryFn: () => api.getMarketDashboard(),
     staleTime: 5 * 60_000,
   });
-  const items: Array<{ key: "taiex" | "vix" | "sp500" | "nasdaq" | "nikkei" | "dxj" | "gold" | "oil" | "silver"; emoji: string }> = [
-    { key: "taiex", emoji: "🇹🇼" },
-    { key: "vix", emoji: "😱" },
-    { key: "sp500", emoji: "🇺🇸" },
-    { key: "nasdaq", emoji: "💻" },
-    { key: "nikkei", emoji: "🇯🇵" },
-    { key: "dxj", emoji: "💴" },
-    { key: "gold", emoji: "🪙" },
-    { key: "oil", emoji: "🛢️" },
-    { key: "silver", emoji: "🥈" },
-  ];
+
+  if (isLoading) {
+    return (
+      <div className="shimmer rounded-st" style={{ height: 600 }} />
+    );
+  }
+  if (!data) return null;
+
+  return (
+    <div className="space-y-3">
+      {/* ─── 加權指數 hero ─── */}
+      {data.taiex && <TaiexHeroCard taiex={data.taiex} />}
+
+      {/* ─── 🧠 市場情緒(VIX + 估值) ─── */}
+      <SectionCard emoji="🧠" title="市場情緒" sub="規則化判讀,非預測">
+        <div className="grid grid-cols-2 gap-2">
+          {data.vix && <VixCard vix={data.vix} />}
+          {data.taiex?.ma200_dist_pct != null && <ValuationCard dist={data.taiex.ma200_dist_pct} />}
+        </div>
+      </SectionCard>
+
+      {/* ─── 📊 三大法人 ─── */}
+      {data.institutional && (
+        <SectionCard emoji="📊" title="三大法人" sub="全市場 20 日累計(張)">
+          <InstitutionalCard inst={data.institutional} />
+        </SectionCard>
+      )}
+
+      {/* ─── 🌍 國際市場連動 ─── */}
+      <SectionCard emoji="🌍" title="國際市場連動" sub="台股早盤常跟美股夜盤連動">
+        <div className="grid grid-cols-3 gap-1.5 mb-3">
+          {[
+            { key: "sp500", emoji: "🇺🇸" },
+            { key: "nasdaq", emoji: "💻" },
+            { key: "sox", emoji: "🔌" },
+            { key: "dxy", emoji: "💵" },
+            { key: "oil", emoji: "🛢️" },
+            { key: "gold", emoji: "🪙" },
+            { key: "usdtwd", emoji: "🇹🇼" },
+            { key: "btc", emoji: "₿" },
+            { key: "eth", emoji: "Ξ" },
+          ].map(({ key, emoji }) => {
+            const idx = data[key as "sp500"];
+            if (!idx) return <SkelTile key={key} />;
+            return <IntlTile key={key} idx={idx} emoji={emoji} />;
+          })}
+        </div>
+        <div className="text-[11px] text-st-muted text-center pt-2 border-t border-st-border">
+          {data.international_note}
+        </div>
+      </SectionCard>
+
+      {/* ─── 🪙 商品 + 日股 ─── */}
+      <SectionCard emoji="🪙" title="商品 + 日股">
+        <div className="grid grid-cols-3 gap-1.5">
+          {data.silver && <IntlTile idx={data.silver} emoji="🥈" />}
+          {data.nikkei && <IntlTile idx={data.nikkei} emoji="🇯🇵" />}
+          {data.dxj && <IntlTile idx={data.dxj} emoji="💴" />}
+        </div>
+      </SectionCard>
+
+      {/* AI placeholder */}
+      <SectionCard emoji="🤖" title="智能國際情勢" badge="PRO">
+        <p className="text-xs text-st-muted leading-relaxed">
+          ✨ 開發中 — AI 會根據今日國際資產表現,
+          用 3 種時間框架 × 3 種語氣寫一段對台股的影響判讀。
+        </p>
+      </SectionCard>
+
+      <SectionCard emoji="🤖" title="智能新聞情緒" badge="PRO">
+        <p className="text-xs text-st-muted leading-relaxed">
+          ✨ 開發中 — AI 解讀今日 Google News 對台股的潛在影響。
+        </p>
+      </SectionCard>
+
+      {/* Disclaimer */}
+      <div className="text-[10px] text-st-muted leading-relaxed px-1 pt-2">
+        ⚠️ 純客觀數據展示。投資決策請自行判斷或諮詢專業顧問,盈虧自負。
+      </div>
+    </div>
+  );
+}
+
+function SectionCard({
+  emoji, title, sub, badge, children,
+}: { emoji: string; title: string; sub?: string; badge?: string; children: React.ReactNode }) {
   return (
     <div
       className="rounded-st p-4"
       style={{
         background: [
-          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.06), transparent 35%)",
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.05), transparent 35%)",
           "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
         ].join(", "),
         border: "1px solid #3a4150",
-        borderLeft: "3px solid #60a5fa",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
       }}
     >
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-2xl">🌡️</span>
-        <div>
-          <div className="text-xs text-blue-400 font-bold tracking-wider">大盤狀態</div>
-          <div className="font-extrabold text-st-fg text-sm">全球指數即時</div>
+        <span className="text-xl">{emoji}</span>
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-extrabold text-st-fg text-sm">{title}</h3>
+            {badge && (
+              <span className="text-[9px] font-bold tracking-widest text-amber-300 bg-amber-500/15 border border-amber-500/40 px-1.5 py-0.5 rounded">
+                {badge}
+              </span>
+            )}
+          </div>
+          {sub && <div className="text-[10px] text-st-muted mt-0.5">{sub}</div>}
         </div>
       </div>
-      {isLoading && <div className="text-xs text-st-muted">載入中⋯</div>}
-      {data && (
-        <div className="grid grid-cols-2 gap-2">
-          {items.map(({ key, emoji }) => {
-            const idx = data[key];
-            if (!idx) return null;
-            const c = chgColor(idx.change_pct);
-            return (
-              <div
-                key={key}
-                className="rounded p-2"
-                style={{ background: "#0f1218", border: "1px solid #2f343d" }}
-              >
-                <div className="flex items-center gap-1.5 text-[10px] text-st-muted mb-1">
-                  <span>{emoji}</span>
-                  <span className="font-bold truncate">{idx.name}</span>
-                </div>
-                <div className="flex items-baseline justify-between">
-                  <div className="tabular-nums font-extrabold text-st-fg" style={{ fontSize: "0.95rem" }}>
-                    {idx.price.toFixed(idx.price > 100 ? 0 : 2)}
-                  </div>
-                  <div className="tabular-nums font-bold text-[10px]" style={{ color: c }}>
-                    {chgArrow(idx.change_pct)} {Math.abs(idx.change_pct).toFixed(2)}%
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {children}
     </div>
+  );
+}
+
+function TaiexHeroCard({ taiex }: { taiex: import("@/lib/api").TaiexFull }) {
+  const c = chgColor(taiex.change_pct);
+  const tempColor = taiex.ma200_dist_pct == null ? "#94a3b8" :
+    taiex.ma200_dist_pct > 30 ? "#f43f5e" :
+    taiex.ma200_dist_pct > 15 ? "#fbbf24" :
+    taiex.ma200_dist_pct > -5 ? "#5eead4" : "#60a5fa";
+  return (
+    <div
+      className="rounded-st p-4 hero-halo"
+      style={{
+        background: "linear-gradient(135deg, #0f766e 0%, #0a1a1f 50%, #16181d 100%)",
+        border: "1px solid #2f343d",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 0 24px rgba(20,184,166,0.12)",
+      }}
+    >
+      <div className="text-[10px] tracking-widest text-teal-300 font-bold">
+        🇹🇼 加權指數 ^TWII · {taiex.asof}
+      </div>
+      <div className="flex items-end justify-between mt-1 gap-3">
+        <div>
+          <div className="text-st-fg tabular-nums leading-none" style={{ fontSize: "2.4rem", fontWeight: 800 }}>
+            {taiex.price.toLocaleString("zh-TW", { maximumFractionDigits: 0 })}
+          </div>
+          <div className="tabular-nums font-bold mt-2" style={{ color: c }}>
+            {chgArrow(taiex.change_pct)} {Math.abs(taiex.price - taiex.prev_close).toFixed(2)} ({chgArrow(taiex.change_pct) === "▼" ? "" : "+"}{taiex.change_pct.toFixed(2)}%)
+          </div>
+        </div>
+        {taiex.sparkline_30d.length > 0 && (
+          <div className="flex-1 max-w-[140px]">
+            <MiniSpark data={taiex.sparkline_30d} />
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-st-border/50">
+        <Inline label="大盤溫度" value={
+          <span style={{ color: tempColor }}>
+            {taiex.temperature_emoji} {taiex.temperature}
+          </span>
+        } sub={taiex.ma200_dist_pct != null ? `距 MA200 ${taiex.ma200_dist_pct >= 0 ? "+" : ""}${taiex.ma200_dist_pct.toFixed(1)}%` : ""} />
+        <Inline label="20 日" value={taiex.ret_20d != null ? `${taiex.ret_20d >= 0 ? "+" : ""}${taiex.ret_20d.toFixed(2)}%` : "—"} tint={taiex.ret_20d != null && taiex.ret_20d >= 0 ? "up" : "down"} />
+        <Inline label="60 日" value={taiex.ret_60d != null ? `${taiex.ret_60d >= 0 ? "+" : ""}${taiex.ret_60d.toFixed(2)}%` : "—"} tint={taiex.ret_60d != null && taiex.ret_60d >= 0 ? "up" : "down"} />
+      </div>
+    </div>
+  );
+}
+
+function VixCard({ vix }: { vix: import("@/lib/api").MarketIndex }) {
+  const v = vix.price;
+  const verdict = v > 30 ? { lbl: "🚨 高恐慌", c: "#f43f5e", desc: "市場恐慌中,留意黑天鵝" } :
+                  v > 25 ? { lbl: "😟 警戒", c: "#fbbf24", desc: "波動升高,謹慎為上" } :
+                  v < 18 ? { lbl: "😎 過度樂觀", c: "#fbbf24", desc: "市場無感,小心反轉" } :
+                  { lbl: "😐 平靜", c: "#5eead4", desc: "市場情緒正常區間" };
+  return (
+    <div className="rounded p-2.5" style={{ background: "#0f1218", border: `1px solid ${verdict.c}40`, borderLeft: `3px solid ${verdict.c}` }}>
+      <div className="text-[10px] text-st-muted">📉 VIX 恐慌指數</div>
+      <div className="tabular-nums font-extrabold text-st-fg mt-1" style={{ fontSize: "1.5rem" }}>
+        {v.toFixed(2)}
+      </div>
+      <div className="text-xs font-bold mt-1" style={{ color: verdict.c }}>{verdict.lbl}</div>
+      <div className="text-[10px] text-st-muted mt-0.5">{verdict.desc}</div>
+    </div>
+  );
+}
+
+function ValuationCard({ dist }: { dist: number }) {
+  const verdict = dist > 30 ? { lbl: "🚨 過熱", c: "#f43f5e", desc: "過去 10 年僅 5% 時間在此區間" } :
+                  dist > 15 ? { lbl: "🌡️ 偏熱", c: "#fbbf24", desc: "估值偏高,留意均值回歸" } :
+                  dist > -5 ? { lbl: "✅ 合理", c: "#5eead4", desc: "估值在中性區" } :
+                  { lbl: "❄️ 偏冷", c: "#60a5fa", desc: "估值低位,可分批進場" };
+  return (
+    <div className="rounded p-2.5" style={{ background: "#0f1218", border: `1px solid ${verdict.c}40`, borderLeft: `3px solid ${verdict.c}` }}>
+      <div className="text-[10px] text-st-muted">📊 大盤估值</div>
+      <div className="tabular-nums font-extrabold text-st-fg mt-1" style={{ fontSize: "1.5rem", color: verdict.c }}>
+        {dist >= 0 ? "+" : ""}{dist.toFixed(1)}%
+      </div>
+      <div className="text-xs font-bold mt-1" style={{ color: verdict.c }}>{verdict.lbl}</div>
+      <div className="text-[10px] text-st-muted mt-0.5">{verdict.desc}</div>
+    </div>
+  );
+}
+
+function InstitutionalCard({ inst }: { inst: import("@/lib/api").InstitutionalSummary }) {
+  const rows = [
+    { label: "外資 20d", v: inst.foreign_20d, color: "#5eead4" },
+    { label: "投信 20d", v: inst.invtrust_20d, color: "#fbbf24" },
+    { label: "自營 20d", v: inst.dealer_20d, color: "#a78bfa" },
+  ];
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {rows.map(r => (
+          <div key={r.label} className="rounded p-2 text-center" style={{ background: "#0f1218", border: "1px solid #2f343d", borderLeft: `3px solid ${r.color}` }}>
+            <div className="text-[10px] text-st-muted">{r.label}</div>
+            <div className="tabular-nums font-bold mt-0.5" style={{
+              fontSize: "0.95rem",
+              color: r.v > 0 ? "#ef4444" : r.v < 0 ? "#10b981" : "#fff",
+            }}>
+              {r.v > 0 ? "▲" : r.v < 0 ? "▼" : "—"} {Math.abs(r.v).toLocaleString("zh-TW")}
+            </div>
+            <div className="text-[8px] text-st-muted">張</div>
+          </div>
+        ))}
+      </div>
+      <div className="text-[11px] text-st-soft text-center mt-3 pt-2 border-t border-st-border">
+        {inst.note}
+      </div>
+    </div>
+  );
+}
+
+function IntlTile({ idx, emoji }: { idx: import("@/lib/api").MarketIndex; emoji: string }) {
+  const c = chgColor(idx.change_pct);
+  return (
+    <div className="rounded p-2" style={{ background: "#0f1218", border: "1px solid #2f343d" }}>
+      <div className="flex items-center gap-1 text-[9px] text-st-muted truncate">
+        <span>{emoji}</span>
+        <span className="font-bold truncate">{idx.name}</span>
+      </div>
+      <div className="tabular-nums font-extrabold text-st-fg mt-0.5" style={{ fontSize: "0.85rem" }}>
+        {idx.price >= 10000 ? idx.price.toLocaleString("zh-TW", { maximumFractionDigits: 0 }) :
+         idx.price >= 100 ? idx.price.toFixed(2) :
+         idx.price.toFixed(3)}
+      </div>
+      <div className="tabular-nums text-[10px] font-bold mt-0.5" style={{ color: c }}>
+        {chgArrow(idx.change_pct)} {Math.abs(idx.change_pct).toFixed(2)}%
+      </div>
+    </div>
+  );
+}
+
+function SkelTile() {
+  return (
+    <div className="rounded p-2 shimmer" style={{ height: 56, border: "1px solid #2f343d" }} />
+  );
+}
+
+function Inline({ label, value, sub, tint }: {
+  label: string; value: React.ReactNode; sub?: string; tint?: "up" | "down";
+}) {
+  const c = tint === "up" ? "#ef4444" : tint === "down" ? "#10b981" : "#fff";
+  return (
+    <div className="text-center">
+      <div className="text-[10px] text-st-muted">{label}</div>
+      <div className="tabular-nums font-bold mt-0.5" style={{ color: c, fontSize: "0.85rem" }}>
+        {value}
+      </div>
+      {sub && <div className="text-[9px] text-st-muted mt-0.5 tabular-nums">{sub}</div>}
+    </div>
+  );
+}
+
+function MiniSpark({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const W = 140, H = 50;
+  const points = data.map((v, i) => `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * H}`).join(" ");
+  const up = data[data.length - 1] >= data[0];
+  const stroke = up ? "#ef4444" : "#10b981";
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-12">
+      <polyline points={points} stroke={stroke} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
+    </svg>
   );
 }
 
