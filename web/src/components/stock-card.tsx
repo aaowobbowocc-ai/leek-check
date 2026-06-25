@@ -54,11 +54,18 @@ export function StockCard({
               ].join(", "),
             }
           : {
-              background: `linear-gradient(155deg, ${dark} 0%, #1a1d24 50%, #16181d 100%)`,
+              background: [
+                // 對角反光帶
+                "linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.06) 50%, transparent 65%)",
+                // 頂部弧光
+                "radial-gradient(ellipse 80% 50% at 50% 0%, rgba(255,255,255,0.08), transparent 65%)",
+                // 底色(155° tier 漸層)
+                `linear-gradient(155deg, ${dark} 0%, #1a1d24 50%, #16181d 100%)`,
+              ].join(", "),
               border: `1px solid ${light}`,
               boxShadow: [
                 "0 4px 14px rgba(0,0,0,0.45)",
-                "inset 0 1px 0 rgba(255,255,255,0.15)",
+                "inset 0 1px 0 rgba(255,255,255,0.18)",
                 "inset 0 -1px 0 rgba(0,0,0,0.5)",
                 "inset 0 0 0 1px rgba(255,255,255,0.04)",
               ].join(", "),

@@ -43,12 +43,21 @@ export function StockPill({
       animate={{ opacity: 1, y: 0 }}
       className="w-full text-left rounded-st flex items-center gap-3 px-3 py-2.5 relative overflow-hidden transition-colors"
       style={{
-        background: `linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)`,
+        // 3 層金屬質感:
+        // 1. 對角反光帶(105°,中央亮)— 主要金屬光澤
+        // 2. 頂部弧光(radial,中央偏上)— 環境光
+        // 3. 底色 vertical gradient — 髮絲鋁感
+        background: [
+          "linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.07) 50%, transparent 65%)",
+          "radial-gradient(ellipse 90% 55% at 50% 0%, rgba(255,255,255,0.09), transparent 70%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        ].join(", "),
         border: `1px solid ${expanded ? light : "#3a4150"}`,
         boxShadow: [
-          "inset 0 1px 0 rgba(255,255,255,0.08)",
-          "inset 0 -1px 0 rgba(0,0,0,0.45)",
-          "inset 0 0 0 1px rgba(255,255,255,0.02)",
+          "inset 0 1px 0 rgba(255,255,255,0.12)",   // 頂高光加亮
+          "inset 0 -1px 0 rgba(0,0,0,0.5)",          // 底深陰影
+          "inset 1px 0 0 rgba(255,255,255,0.04)",    // 左內框
+          "inset -1px 0 0 rgba(0,0,0,0.3)",          // 右內框
         ].join(", "),
       }}
     >
