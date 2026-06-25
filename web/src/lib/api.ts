@@ -136,6 +136,20 @@ export interface MarketDashboard {
   nikkei: MarketIndex | null;
 }
 
+export interface RankItem {
+  ticker: string;
+  name: string;
+  industry: string;
+  price: number;
+  change_pct: number;
+  volume: number;
+}
+
+export interface RankOut {
+  type: string;
+  items: RankItem[];
+}
+
 export const api = {
   searchTickers: (q: string) => get<TickerInfo[]>(`/api/search?q=${encodeURIComponent(q)}`),
   getQuote: (tk: string) => get<Quote>(`/api/quote/${tk}`),
@@ -144,4 +158,6 @@ export const api = {
   getStrategyResults: () => get<StrategyResults>("/api/strategy/results"),
   aiExplain: (body: AiExplainIn) => post<{ text: string; model: string }>("/api/ai/explain", body),
   getMarketDashboard: () => get<MarketDashboard>("/api/market/dashboard"),
+  getRanking: (by: "up" | "down" | "volume", limit = 20) =>
+    get<RankOut>(`/api/ranking?by=${by}&limit=${limit}`),
 };

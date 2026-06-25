@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Sunrise, Star, Search, Radio, User, Ghost, LogOut, Flame, X, Wallet,
+  Sunrise, Star, Search, Radio, User, Ghost, LogOut, Flame, X, Wallet, Trophy,
+  ArrowUpRight, ArrowDownRight, BarChart3,
 } from "lucide-react";
 import { useSession } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -387,6 +388,62 @@ function TrendingDownIcon({ className }: { className: string }) {
   return <svg viewBox="0 0 16 16" className={className} fill="currentColor"><path d="M3 5l4 4 3-3 5 5v-3h2v6h-5v-2h3L9 6l-3 3-5-5z"/></svg>;
 }
 
+function RankRow({ rank, item, onClick, mode }: {
+  rank: number; item: import("@/lib/api").RankItem; onClick: () => void;
+  mode: "up" | "down" | "vol";
+}) {
+  const c = chgColor(item.change_pct);
+  const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
+  const showVol = mode === "vol";
+  const Icon = mode === "up" ? ArrowUpRight : mode === "down" ? ArrowDownRight : BarChart3;
+  return (
+    <motion.button
+      onClick={onClick}
+      whileTap={{ scale: 0.98 }}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full text-left rounded-st flex items-center gap-3 p-3"
+      style={{
+        background: "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        border: "1px solid #3a4150",
+        borderLeft: `3px solid ${c}`,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      <div className="w-7 text-center text-base font-bold tabular-nums" style={{ color: rank <= 3 ? "#fbbf24" : "#94a3b8" }}>
+        {medal}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2">
+          <span className="tabular-nums text-sm font-bold text-st-fg">{item.ticker}</span>
+          <span className="text-xs text-st-soft truncate">{item.name}</span>
+        </div>
+        <div className="text-[10px] text-st-muted">{item.industry || "—"}</div>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <div className="tabular-nums font-bold text-st-fg text-sm">
+          {item.price.toFixed(2)}
+        </div>
+        {showVol ? (
+          <div className="text-[10px] text-purple-300 tabular-nums">
+            <Icon className="w-3 h-3 inline" /> {fmtVolMain(item.volume)}
+          </div>
+        ) : (
+          <div className="text-[10px] tabular-nums font-bold" style={{ color: c }}>
+            <Icon className="w-3 h-3 inline" /> {chgArrow(item.change_pct)} {Math.abs(item.change_pct).toFixed(2)}%
+          </div>
+        )}
+      </div>
+    </motion.button>
+  );
+}
+
+function fmtVolMain(v: number): string {
+  if (v >= 100_000_000) return `${(v / 100_000_000).toFixed(1)}億`;
+  if (v >= 10_000) return `${(v / 10_000).toFixed(0)}萬`;
+  return v.toLocaleString();
+}
+
 function MiniQuoteRow({ q, onClick }: { q: import("@/lib/api").Quote; onClick: () => void }) {
   const c = chgColor(q.change_pct);
   return (
@@ -404,8 +461,18 @@ function MiniQuoteRow({ q, onClick }: { q: import("@/lib/api").Quote; onClick: (
 
 function SearchPanel() {
   const [q, setQ] = useState("");
+  const [mode, setMode] = useState<"hot" | "up" | "down" | "vol">("hot");
   const router = useRouter();
   const isSearching = q.trim().length >= 1;
+
+  // 排行榜 fetch (依 mode)
+  const rankBy = mode === "up" ? "up" : mode === "down" ? "down" : "volume";
+  const { data: rankData, isLoading: rankLoading } = useQuery({
+    queryKey: ["ranking", rankBy],
+    queryFn: () => api.getRanking(rankBy as "up" | "down" | "volume", 20),
+    enabled: !isSearching && mode !== "hot",
+    staleTime: 3 * 60_000,
+  });
 
   // 搜尋結果
   const { data: results, isFetching: searchFetching } = useQuery({
@@ -482,8 +549,47 @@ function SearchPanel() {
         </>
       )}
 
-      {/* 熱門股(空白搜尋時顯示)*/}
+      {/* Mode toggle(空白搜尋時顯示)*/}
       {!isSearching && (
+        <div className="flex gap-1 bg-st-bg border border-st-border rounded-st p-1">
+          {([
+            { k: "hot", label: "🔥 熱門", color: "#fbbf24" },
+            { k: "up", label: "▲ 漲幅榜", color: "#ef4444" },
+            { k: "down", label: "▼ 跌幅榜", color: "#10b981" },
+            { k: "vol", label: "📊 量爆榜", color: "#a78bfa" },
+          ] as const).map((m) => (
+            <button
+              key={m.k}
+              onClick={() => setMode(m.k)}
+              className="flex-1 text-[11px] font-bold py-1.5 rounded transition-colors"
+              style={{
+                background: mode === m.k ? m.color + "30" : "transparent",
+                color: mode === m.k ? m.color : "#94a3b8",
+                border: mode === m.k ? `1px solid ${m.color}60` : "1px solid transparent",
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 排行榜模式 — 拉 ranking data */}
+      {!isSearching && mode !== "hot" && (
+        <div className="space-y-2">
+          {rankLoading && (
+            <div className="text-xs text-st-muted text-center py-4">
+              📡 載入排行榜中⋯
+            </div>
+          )}
+          {rankData?.items.map((r, i) => (
+            <RankRow key={r.ticker} rank={i + 1} item={r} onClick={() => router.push(`/ticker/${r.ticker}`)} mode={mode} />
+          ))}
+        </div>
+      )}
+
+      {/* 熱門股(空白搜尋時顯示)*/}
+      {!isSearching && mode === "hot" && (
         <div className="space-y-5">
           {/* 大標 */}
           <div className="flex items-center gap-2 mt-2">
