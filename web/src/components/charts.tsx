@@ -15,9 +15,16 @@ export function PriceChart({ bars }: { bars: OhlcvBar[] }) {
       </div>
     );
   }
+  // 軸標保留 margin
   const W = 320;
-  const H = 140;
-  const PAD = 4;
+  const H = 160;
+  const ML = 36;  // Y 軸左邊空間
+  const MR = 4;
+  const MT = 4;
+  const MB = 22;  // X 軸下方空間
+  const plotW = W - ML - MR;
+  const plotH = H - MT - MB;
+
   const closes = bars.map((b) => b.close);
   const ma20s = bars.map((b) => b.ma20).filter((v) => v > 0);
   const ma60s = bars.map((b) => b.ma60).filter((v) => v > 0);
@@ -25,9 +32,13 @@ export function PriceChart({ bars }: { bars: OhlcvBar[] }) {
   const min = Math.min(...allVals);
   const max = Math.max(...allVals);
   const range = max - min || 1;
+  const mid = (min + max) / 2;
 
-  const toXY = (v: number, i: number) =>
-    `${PAD + (i / (bars.length - 1)) * (W - PAD * 2)},${H - PAD - ((v - min) / range) * (H - PAD * 2)}`;
+  const toXY = (v: number, i: number) => {
+    const x = ML + (i / (bars.length - 1)) * plotW;
+    const y = MT + plotH - ((v - min) / range) * plotH;
+    return `${x},${y}`;
+  };
 
   const closePath = bars.map((b, i) => toXY(b.close, i)).join(" ");
   const ma20Path = bars.map((b, i) => (b.ma20 > 0 ? toXY(b.ma20, i) : null)).filter(Boolean).join(" ");
@@ -39,32 +50,80 @@ export function PriceChart({ bars }: { bars: OhlcvBar[] }) {
   const stroke = up ? "#ef4444" : "#10b981";
   const fill = up ? "rgba(239,68,68,0.12)" : "rgba(16,185,129,0.12)";
 
+  // Y 軸 3 個刻度(min / mid / max)
+  const yTicks = [
+    { v: max, y: MT },
+    { v: mid, y: MT + plotH / 2 },
+    { v: min, y: MT + plotH },
+  ];
+  // X 軸 4 個刻度(start / 1/3 / 2/3 / end)
+  const xIdx = [0, Math.floor(bars.length / 3), Math.floor((bars.length * 2) / 3), bars.length - 1];
+  const xTicks = xIdx.map((i) => ({
+    date: bars[i].date.slice(5),  // MM-DD
+    x: ML + (i / (bars.length - 1)) * plotW,
+  }));
+
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-40" preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
         <defs>
           <linearGradient id="priceFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={fill} />
             <stop offset="100%" stopColor="transparent" />
           </linearGradient>
         </defs>
+
+        {/* Y axis grid lines + labels */}
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line
+              x1={ML} y1={t.y} x2={W - MR} y2={t.y}
+              stroke="#2f343d" strokeWidth={0.5} strokeDasharray="2,3"
+            />
+            <text
+              x={ML - 4} y={t.y + 3}
+              textAnchor="end"
+              className="tabular-nums"
+              fill="#94a3b8" fontSize="9"
+            >
+              {t.v.toFixed(1)}
+            </text>
+          </g>
+        ))}
+
+        {/* X axis labels */}
+        {xTicks.map((t, i) => (
+          <text
+            key={i}
+            x={t.x} y={H - 6}
+            textAnchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"}
+            className="tabular-nums"
+            fill="#94a3b8" fontSize="9"
+          >
+            {t.date}
+          </text>
+        ))}
+
+        {/* Plot area border */}
+        <line x1={ML} y1={MT + plotH} x2={W - MR} y2={MT + plotH} stroke="#2f343d" strokeWidth={0.8} />
+
         {/* 收盤 area fill */}
         <polygon
-          points={`${PAD},${H - PAD} ${closePath} ${W - PAD},${H - PAD}`}
+          points={`${ML},${MT + plotH} ${closePath} ${W - MR},${MT + plotH}`}
           fill="url(#priceFill)"
         />
-        {/* MA60 (黃線) */}
+        {/* MA60 黃線 */}
         {ma60Path && (
-          <polyline points={ma60Path} stroke="#fbbf24" strokeWidth={1} fill="none" strokeDasharray="3,2" opacity={0.8} />
+          <polyline points={ma60Path} stroke="#fbbf24" strokeWidth={1} fill="none" strokeDasharray="3,2" opacity={0.85} />
         )}
-        {/* MA20 (藍線) */}
+        {/* MA20 藍線 */}
         {ma20Path && (
-          <polyline points={ma20Path} stroke="#60a5fa" strokeWidth={1.2} fill="none" opacity={0.85} />
+          <polyline points={ma20Path} stroke="#60a5fa" strokeWidth={1.2} fill="none" opacity={0.9} />
         )}
         {/* 收盤線 */}
         <polyline points={closePath} stroke={stroke} strokeWidth={1.8} fill="none" strokeLinejoin="round" />
       </svg>
-      <div className="flex items-center justify-end gap-3 text-[10px] text-st-muted mt-1">
+      <div className="flex items-center justify-end gap-3 text-[10px] text-st-muted">
         <span className="flex items-center gap-1">
           <span className="w-3 h-0.5" style={{ background: stroke }} /> 收盤
         </span>
@@ -72,7 +131,7 @@ export function PriceChart({ bars }: { bars: OhlcvBar[] }) {
           <span className="w-3 h-0.5 bg-blue-400" /> MA20
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-3 h-0.5 bg-amber-300 border-dashed" style={{ borderTop: "1px dashed #fbbf24" }} /> MA60
+          <span className="w-3 h-px bg-amber-300" /> MA60
         </span>
       </div>
     </div>
@@ -91,22 +150,55 @@ export function RevenueBarChart({ data }: { data: RevHistory[] }) {
     );
   }
   const W = 320;
-  const H = 110;
-  const PAD = 4;
+  const H = 140;
+  const ML = 30;
+  const MR = 4;
+  const MT = 4;
+  const MB = 22;
+  const plotW = W - ML - MR;
+  const plotH = H - MT - MB;
   const BAR_GAP = 2;
   const yoys = data.map((d) => d.yoy);
   const absMax = Math.max(...yoys.map(Math.abs), 10);
-  const barW = (W - PAD * 2) / data.length - BAR_GAP;
-  const zeroY = H / 2;
+  const barW = plotW / data.length - BAR_GAP;
+  const zeroY = MT + plotH / 2;
+
+  // Y 軸 3 個刻度
+  const yTicks = [
+    { v: absMax, y: MT },
+    { v: 0, y: zeroY },
+    { v: -absMax, y: MT + plotH },
+  ];
+  // X 軸 4 個月份標
+  const xIdx = [0, Math.floor(data.length / 3), Math.floor((data.length * 2) / 3), data.length - 1];
 
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-28">
-        {/* zero line */}
-        <line x1={PAD} y1={zeroY} x2={W - PAD} y2={zeroY} stroke="#2f343d" strokeWidth={1} strokeDasharray="2,2" />
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
+        {/* Y axis */}
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line
+              x1={ML} y1={t.y} x2={W - MR} y2={t.y}
+              stroke={t.v === 0 ? "#475569" : "#2f343d"}
+              strokeWidth={t.v === 0 ? 0.8 : 0.5}
+              strokeDasharray={t.v === 0 ? "0" : "2,3"}
+            />
+            <text
+              x={ML - 4} y={t.y + 3}
+              textAnchor="end"
+              className="tabular-nums"
+              fill="#94a3b8" fontSize="9"
+            >
+              {t.v >= 0 ? "+" : ""}{t.v.toFixed(0)}%
+            </text>
+          </g>
+        ))}
+
+        {/* Bars */}
         {data.map((d, i) => {
-          const x = PAD + i * (barW + BAR_GAP);
-          const h = (Math.abs(d.yoy) / absMax) * (H / 2 - PAD);
+          const x = ML + i * (barW + BAR_GAP);
+          const h = (Math.abs(d.yoy) / absMax) * (plotH / 2);
           const y = d.yoy >= 0 ? zeroY - h : zeroY;
           const color = d.yoy >= 0 ? "#ef4444" : "#10b981";
           return (
@@ -124,11 +216,23 @@ export function RevenueBarChart({ data }: { data: RevHistory[] }) {
             />
           );
         })}
+
+        {/* X labels */}
+        {xIdx.map((i, n) => {
+          const x = ML + i * (barW + BAR_GAP) + barW / 2;
+          return (
+            <text
+              key={n}
+              x={x} y={H - 6}
+              textAnchor="middle"
+              className="tabular-nums"
+              fill="#94a3b8" fontSize="9"
+            >
+              {data[i].month.split("/")[1]}/{data[i].month.split("/")[0].slice(-2)}
+            </text>
+          );
+        })}
       </svg>
-      <div className="flex justify-between text-[9px] text-st-muted px-1 mt-1">
-        <span>{data[0].month}</span>
-        <span>{data[data.length - 1].month}</span>
-      </div>
     </div>
   );
 }

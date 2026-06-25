@@ -239,9 +239,12 @@ function MiniChart({ data }: { data: number[] }) {
   const min = Math.min(...data);
   const max = Math.max(...data);
   const range = max - min || 1;
-  const W = 300, H = 44;
+  const ML = 28, MR = 4, MT = 2, MB = 12;
+  const W = 320, H = 70;
+  const plotW = W - ML - MR;
+  const plotH = H - MT - MB;
   const points = data
-    .map((v, i) => `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * (H - 4) - 2}`)
+    .map((v, i) => `${ML + (i / (data.length - 1)) * plotW},${MT + plotH - ((v - min) / range) * plotH}`)
     .join(" ");
   const first = data[0];
   const last = data[data.length - 1];
@@ -257,31 +260,39 @@ function MiniChart({ data }: { data: number[] }) {
     >
       <div className="flex items-center justify-between mb-1 text-[10px]">
         <span className="text-st-muted font-bold tracking-wider">📈 20 日走勢</span>
-        <span
-          className="tabular-nums font-bold"
-          style={{ color: stroke }}
-        >
+        <span className="tabular-nums font-bold" style={{ color: stroke }}>
           {up ? "▲" : "▼"} {Math.abs(chg).toFixed(2)}%
         </span>
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-10" preserveAspectRatio="none">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }}>
         <defs>
-          <linearGradient id={`mini-${stroke}`} x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id="miniGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={fill} />
             <stop offset="100%" stopColor="transparent" />
           </linearGradient>
         </defs>
+        {/* Y labels (high / low) */}
+        <text x={ML - 4} y={MT + 7} textAnchor="end" className="tabular-nums" fill="#94a3b8" fontSize="8">
+          {max.toFixed(1)}
+        </text>
+        <text x={ML - 4} y={MT + plotH} textAnchor="end" className="tabular-nums" fill="#94a3b8" fontSize="8">
+          {min.toFixed(1)}
+        </text>
+        {/* X labels */}
+        <text x={ML} y={H - 3} textAnchor="start" fill="#94a3b8" fontSize="8">
+          -20d
+        </text>
+        <text x={W - MR} y={H - 3} textAnchor="end" fill="#94a3b8" fontSize="8">
+          今日
+        </text>
+        {/* Baseline */}
+        <line x1={ML} y1={MT + plotH} x2={W - MR} y2={MT + plotH} stroke="#2f343d" strokeWidth={0.5} />
+        {/* Area + line */}
         <polygon
-          points={`0,${H} ${points} ${W},${H}`}
-          fill={`url(#mini-${stroke})`}
+          points={`${ML},${MT + plotH} ${points} ${W - MR},${MT + plotH}`}
+          fill="url(#miniGrad)"
         />
-        <polyline
-          points={points}
-          stroke={stroke}
-          strokeWidth={1.5}
-          fill="none"
-          strokeLinejoin="round"
-        />
+        <polyline points={points} stroke={stroke} strokeWidth={1.5} fill="none" strokeLinejoin="round" />
       </svg>
     </div>
   );
