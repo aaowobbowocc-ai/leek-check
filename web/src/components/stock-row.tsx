@@ -38,6 +38,15 @@ export function StockRow({
 }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { light } = cardTier(ticker, industry);
+  // 防連點:500ms 內只能 click 一次
+  const [pinBusy, setPinBusy] = useState(false);
+  const [watchBusy, setWatchBusy] = useState(false);
+  const guard = (fn: (() => void) | undefined, setBusy: (b: boolean) => void) => () => {
+    if (!fn) return;
+    setBusy(true);
+    fn();
+    setTimeout(() => setBusy(false), 500);
+  };
 
   // Lazy load health-check 只在展開時 fetch
   const { data: hc, isLoading: hcLoading } = useQuery({
@@ -181,26 +190,7 @@ export function StockRow({
                 </div>
               )}
 
-              {/* ⭐ 加入觀察按鈕(熱門股 / 排行榜用)*/}
-              {onAddWatch && (
-                <button
-                  onClick={onAddWatch}
-                  className="w-full mb-1.5 rounded-st py-2 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all border"
-                  style={{
-                    background: isInWatch
-                      ? "linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent-deep) 8%, transparent))"
-                      : "linear-gradient(180deg, #1c2028, #11141a)",
-                    borderColor: isInWatch
-                      ? "color-mix(in srgb, var(--accent) 50%, transparent)"
-                      : "#2a3340",
-                    color: isInWatch ? "var(--accent)" : "#94a3b8",
-                  }}
-                >
-                  {isInWatch ? "★ 已在觀察清單(點移除)" : "☆ 加入觀察清單"}
-                </button>
-              )}
-
-              {/* Action buttons */}
+              {/* Action buttons — ⭐ 加觀察 + 📰 加晨報 + 編輯 同一排 */}
               <div className="flex gap-1.5 pt-1">
                 {/* 主按鈕:翻開健檢 — frosted glass accent (跟 btn-smart 同風格) */}
                 <motion.button
@@ -233,11 +223,35 @@ export function StockRow({
                 </motion.button>
 
                 {/* 副按鈕:編輯 */}
+                {/* ⭐ 加觀察 */}
+                {onAddWatch && (
+                  <motion.button
+                    onClick={guard(onAddWatch, setWatchBusy)}
+                    disabled={watchBusy}
+                    whileTap={{ scale: 0.9 }}
+                    className="rounded-st px-2.5 py-2 flex items-center justify-center text-base disabled:opacity-50"
+                    style={{
+                      background: isInWatch
+                        ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent-deep) 30%, transparent))"
+                        : "linear-gradient(180deg, #1c2028, #11141a)",
+                      border: `1px solid ${isInWatch ? "var(--accent)" : "#2a3340"}`,
+                      color: isInWatch ? "var(--accent)" : "#64748b",
+                      boxShadow: isInWatch
+                        ? "0 0 12px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.15)"
+                        : "inset 0 1px 0 rgba(255,255,255,0.06)",
+                    }}
+                    title={isInWatch ? "已在觀察清單(點移除)" : "加入觀察清單"}
+                  >
+                    {isInWatch ? "★" : "☆"}
+                  </motion.button>
+                )}
+                {/* 📰 加晨報 */}
                 {onPin && (
                   <motion.button
-                    onClick={onPin}
+                    onClick={guard(onPin, setPinBusy)}
+                    disabled={pinBusy}
                     whileTap={{ scale: 0.9 }}
-                    className="rounded-st px-2.5 py-2 flex items-center justify-center text-base"
+                    className="rounded-st px-2.5 py-2 flex items-center justify-center text-base disabled:opacity-50"
                     style={{
                       background: isPicked
                         ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent-deep) 30%, transparent))"

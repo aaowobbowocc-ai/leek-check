@@ -1913,74 +1913,19 @@ function StrategyCollapsible({
                 const isPicked = picks.includes(h.ticker);
                 const canPin = picks.length < 5 || isPicked;
                 return (
-                  <div
+                  <StrategyHitRow
                     key={h.ticker}
-                    className="rounded flex items-center gap-1.5 px-2.5 py-2"
-                    style={{ background: "#0f1218", border: "1px solid #2a3340" }}
-                  >
-                    <button
-                      onClick={() => router.push(`/ticker/${h.ticker}`)}
-                      className="flex items-center justify-between gap-2 flex-1 min-w-0 text-left active:scale-[0.98]"
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <span className="tabular-nums text-xs font-bold flex-shrink-0" style={{ color: meta.color }}>{h.ticker}</span>
-                        <span className="text-xs text-st-soft truncate">{h.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 text-right">
-                        {q && (
-                          <div className="tabular-nums text-[10px] font-bold" style={{ color: c }}>
-                            {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(2)}%
-                          </div>
-                        )}
-                        {h.metric != null && (
-                          <div
-                            className="text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded"
-                            style={{
-                              color: meta.color,
-                              background: `${meta.color}15`,
-                              border: `1px solid ${meta.color}30`,
-                            }}
-                          >
-                            {h.metric.toFixed(1)}
-                          </div>
-                        )}
-                      </div>
-                    </button>
-
-                    {/* ⭐ 加入/移除觀察 */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); addToWatch(h.ticker); }}
-                      title={inWl ? "已在觀察清單(點移除)" : "加入觀察清單"}
-                      className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-sm active:scale-90"
-                      style={{
-                        background: inWl
-                          ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 35%, transparent), color-mix(in srgb, var(--accent-deep) 25%, transparent))"
-                          : "linear-gradient(180deg, #1c2028, #11141a)",
-                        border: `1px solid ${inWl ? "color-mix(in srgb, var(--accent) 50%, transparent)" : "#2a3340"}`,
-                        color: inWl ? "var(--accent)" : "#64748b",
-                        filter: inWl ? "none" : "opacity(0.7)",
-                      }}
-                    >
-                      {inWl ? "★" : "☆"}
-                    </button>
-
-                    {/* 📰 加入晨報 */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); if (canPin) togglePick(h.ticker); }}
-                      disabled={!canPin}
-                      title={isPicked ? "已在晨報精選" : canPin ? "加入晨報精選 (最多 5 檔)" : "晨報精選已滿 5/5"}
-                      className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-base active:scale-90 disabled:opacity-30"
-                      style={{
-                        background: isPicked
-                          ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 35%, transparent), color-mix(in srgb, var(--accent-deep) 25%, transparent))"
-                          : "linear-gradient(180deg, #1c2028, #11141a)",
-                        border: `1px solid ${isPicked ? "color-mix(in srgb, var(--accent) 50%, transparent)" : "#2a3340"}`,
-                        filter: isPicked ? "none" : "grayscale(1) opacity(0.5)",
-                      }}
-                    >
-                      📰
-                    </button>
-                  </div>
+                    h={h}
+                    q={q}
+                    c={c}
+                    inWl={inWl}
+                    isPicked={isPicked}
+                    canPin={canPin}
+                    metaColor={meta.color}
+                    onOpen={() => router.push(`/ticker/${h.ticker}`)}
+                    onAddWatch={() => addToWatch(h.ticker)}
+                    onTogglePick={() => togglePick(h.ticker)}
+                  />
                 );
               })}
               <div className="text-[10px] text-st-muted text-center pt-1">
@@ -1990,6 +1935,99 @@ function StrategyCollapsible({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/** 策略命中行 — 拆成獨立元件方便 debounce */
+function StrategyHitRow({
+  h, q, c, inWl, isPicked, canPin, metaColor, onOpen, onAddWatch, onTogglePick,
+}: {
+  h: import("@/lib/api").StrategyHit;
+  q?: import("@/lib/api").Quote;
+  c: string;
+  inWl: boolean;
+  isPicked: boolean;
+  canPin: boolean;
+  metaColor: string;
+  onOpen: () => void;
+  onAddWatch: () => void;
+  onTogglePick: () => void;
+}) {
+  const [wBusy, setWBusy] = useState(false);
+  const [pBusy, setPBusy] = useState(false);
+  const guard = (fn: () => void, set: (b: boolean) => void) => () => {
+    set(true);
+    fn();
+    setTimeout(() => set(false), 500);
+  };
+  return (
+    <div
+      className="rounded flex items-center gap-1.5 px-2.5 py-2"
+      style={{ background: "#0f1218", border: "1px solid #2a3340" }}
+    >
+      <button
+        onClick={onOpen}
+        className="flex items-center justify-between gap-2 flex-1 min-w-0 text-left active:scale-[0.98]"
+      >
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="tabular-nums text-xs font-bold flex-shrink-0" style={{ color: metaColor }}>{h.ticker}</span>
+          <span className="text-xs text-st-soft truncate">{h.name}</span>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0 text-right">
+          {q && (
+            <div className="tabular-nums text-[10px] font-bold" style={{ color: c }}>
+              {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(2)}%
+            </div>
+          )}
+          {h.metric != null && (
+            <div
+              className="text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded"
+              style={{
+                color: metaColor,
+                background: `${metaColor}15`,
+                border: `1px solid ${metaColor}30`,
+              }}
+            >
+              {h.metric.toFixed(1)}
+            </div>
+          )}
+        </div>
+      </button>
+
+      {/* ⭐ 加入/移除觀察(防連點)*/}
+      <button
+        onClick={guard(onAddWatch, setWBusy)}
+        disabled={wBusy}
+        title={inWl ? "已在觀察清單(點移除)" : "加入觀察清單"}
+        className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-sm active:scale-90 disabled:opacity-50"
+        style={{
+          background: inWl
+            ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 35%, transparent), color-mix(in srgb, var(--accent-deep) 25%, transparent))"
+            : "linear-gradient(180deg, #1c2028, #11141a)",
+          border: `1px solid ${inWl ? "color-mix(in srgb, var(--accent) 50%, transparent)" : "#2a3340"}`,
+          color: inWl ? "var(--accent)" : "#64748b",
+        }}
+      >
+        {inWl ? "★" : "☆"}
+      </button>
+
+      {/* 📰 加入/移除晨報(防連點)*/}
+      <button
+        onClick={canPin ? guard(onTogglePick, setPBusy) : undefined}
+        disabled={!canPin || pBusy}
+        title={isPicked ? "已在晨報精選" : canPin ? "加入晨報精選 (最多 5 檔)" : "晨報精選已滿 5/5"}
+        className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-base active:scale-90 disabled:opacity-30"
+        style={{
+          background: isPicked
+            ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 35%, transparent), color-mix(in srgb, var(--accent-deep) 25%, transparent))"
+            : "linear-gradient(180deg, #1c2028, #11141a)",
+          border: `1px solid ${isPicked ? "color-mix(in srgb, var(--accent) 50%, transparent)" : "#2a3340"}`,
+          filter: isPicked ? "none" : "grayscale(1) opacity(0.5)",
+        }}
+      >
+        📰
+      </button>
     </div>
   );
 }
