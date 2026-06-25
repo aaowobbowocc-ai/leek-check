@@ -369,30 +369,17 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
         </div>
       </div>
 
-      {/* CTA button */}
-      <motion.button
+      {/* CTA button — frosted glass + 流光 */}
+      <button
         onClick={runAi}
         disabled={loading}
-        whileTap={{ scale: 0.96 }}
-        className="w-full relative overflow-hidden rounded-st py-3 px-3 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60"
-        style={{
-          background: [
-            "linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.25) 50%, transparent 65%)",
-            "linear-gradient(180deg, #a78bfa 0%, #7c3aed 60%, #5b21b6 100%)",
-          ].join(", "),
-          border: "1px solid #c4b5fd",
-          boxShadow: [
-            "0 4px 14px rgba(124, 58, 237, 0.4)",
-            "inset 0 1px 0 rgba(255, 255, 255, 0.4)",
-            "inset 0 -1px 0 rgba(0, 0, 0, 0.2)",
-            "0 0 24px rgba(167, 139, 250, 0.3)",
-          ].join(", "),
-          color: "#fff",
-        }}
+        className="btn-smart w-full"
       >
         <Sparkles className="w-4 h-4" />
-        {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "✨ 產出健檢報告"}
-      </motion.button>
+        <span className="relative z-10">
+          {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "產出健檢報告"}
+        </span>
+      </button>
 
       {error && (
         <div className="mt-3 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded p-2">

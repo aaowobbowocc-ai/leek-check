@@ -978,14 +978,9 @@ function AiMarketInsightCard({ dashboard }: { dashboard: import("@/lib/api").Mar
       <button
         onClick={run}
         disabled={loading}
-        className="w-full py-2.5 rounded-st text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60"
-        style={{
-          background: "linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%)",
-          color: "#fff",
-          boxShadow: "0 4px 14px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.3)",
-        }}
+        className="btn-smart w-full"
       >
-        ✨ {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "產出整理報告"}
+        ✨ <span className="relative z-10">{loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "產出整理報告"}</span>
       </button>
       {aiText && (
         <motion.div
@@ -1069,14 +1064,9 @@ function AiNewsSentimentCard() {
       <button
         onClick={run}
         disabled={loading || !news?.length}
-        className="w-full py-2.5 rounded-st text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60"
-        style={{
-          background: "linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%)",
-          color: "#fff",
-          boxShadow: "0 4px 14px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.3)",
-        }}
+        className="btn-smart w-full"
       >
-        ✨ {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : `整理新聞情緒(${news?.length ?? 0} 條)`}
+        ✨ <span className="relative z-10">{loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : `整理新聞情緒(${news?.length ?? 0} 條)`}</span>
       </button>
       {aiText && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -1586,6 +1576,16 @@ function StrategyCollapsible({
   const meta = STRATEGY_META[strategyKey] ?? { icon: "📊", name: strategyKey, alpha: "—", frame: "—", color: "#94a3b8" };
   const hasHits = hits.length > 0;
 
+  // 展開時 batch fetch quotes 顯示漲跌
+  const tks = hits.map(h => h.ticker);
+  const { data: quotes } = useQuery({
+    queryKey: ["quotes-batch", [...tks].sort()],
+    queryFn: () => tks.length ? api.getQuotesBatch(tks) : Promise.resolve([]),
+    enabled: open && tks.length > 0,
+    staleTime: 60_000,
+  });
+  const qMap = new Map((quotes ?? []).map(q => [q.ticker, q]));
+
   return (
     <div
       className="rounded-st overflow-hidden"
@@ -1646,24 +1646,44 @@ function StrategyCollapsible({
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 pt-1 space-y-1 border-t border-st-border">
-              {hits.map((h) => (
-                <button
-                  key={h.ticker}
-                  onClick={() => router.push(`/ticker/${h.ticker}`)}
-                  className="w-full text-left rounded flex items-center justify-between px-2.5 py-2 hover:bg-white/[0.03] active:scale-[0.98]"
-                  style={{ background: "#0f1218", border: "1px solid #2a3340" }}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="tabular-nums text-xs font-bold" style={{ color: meta.color }}>{h.ticker}</span>
-                    <span className="text-xs text-st-soft truncate">{h.name}</span>
-                  </div>
-                  {h.metric != null && (
-                    <span className="text-[10px] tabular-nums font-bold flex-shrink-0" style={{ color: meta.color }}>
-                      {h.metric.toFixed(2)}
-                    </span>
-                  )}
-                </button>
-              ))}
+              {hits.map((h) => {
+                const q = qMap.get(h.ticker);
+                const c = q ? chgColor(q.change_pct) : "#94a3b8";
+                return (
+                  <button
+                    key={h.ticker}
+                    onClick={() => router.push(`/ticker/${h.ticker}`)}
+                    className="w-full text-left rounded flex items-center justify-between gap-2 px-2.5 py-2 hover:bg-white/[0.03] active:scale-[0.98]"
+                    style={{ background: "#0f1218", border: "1px solid #2a3340" }}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className="tabular-nums text-xs font-bold flex-shrink-0" style={{ color: meta.color }}>{h.ticker}</span>
+                      <span className="text-xs text-st-soft truncate">{h.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0 text-right">
+                      {/* 當日漲跌 */}
+                      {q && (
+                        <div className="tabular-nums text-[10px] font-bold" style={{ color: c }}>
+                          {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(2)}%
+                        </div>
+                      )}
+                      {/* 策略指標 */}
+                      {h.metric != null && (
+                        <div
+                          className="text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded"
+                          style={{
+                            color: meta.color,
+                            background: `${meta.color}15`,
+                            border: `1px solid ${meta.color}30`,
+                          }}
+                        >
+                          {h.metric.toFixed(1)}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
               <div className="text-[10px] text-st-muted text-center pt-1">
                 共 {hits.length} 檔
               </div>
