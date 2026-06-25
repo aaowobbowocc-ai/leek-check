@@ -60,20 +60,26 @@ class MarketDashboard(BaseModel):
 
 def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
     try:
+        import math
         import yfinance as yf
         t = yf.Ticker(symbol)
         h = t.history(period="10d", auto_adjust=False)
         if h.empty:
             return None
-        close = float(h["Close"].iloc[-1])
-        prev = float(h["Close"].iloc[-2]) if len(h) >= 2 else close
+        close_raw = h["Close"].iloc[-1]
+        if close_raw is None or (isinstance(close_raw, float) and math.isnan(close_raw)):
+            return None
+        close = float(close_raw)
+        prev_raw = h["Close"].iloc[-2] if len(h) >= 2 else close_raw
+        prev = float(prev_raw) if prev_raw and not math.isnan(prev_raw) else close
         chg = (close / prev - 1) * 100 if prev else 0.0
         return MarketIndex(
             symbol=symbol, name=name,
             price=close, change_pct=round(chg, 2),
             asof=h.index[-1].strftime("%Y-%m-%d"),
         )
-    except Exception:
+    except Exception as e:
+        print(f"[_fetch_yf_index] {symbol} failed: {e}")
         return None
 
 

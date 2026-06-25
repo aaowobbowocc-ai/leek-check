@@ -888,7 +888,8 @@ function SectionCard({
 }
 
 function TaiexHeroCard({ taiex }: { taiex: import("@/lib/api").TaiexFull }) {
-  const c = chgColor(taiex.change_pct);
+  if (!taiex || taiex.price == null) return null;
+  const c = chgColor(taiex.change_pct ?? 0);
   const tempColor = taiex.ma200_dist_pct == null ? "#94a3b8" :
     taiex.ma200_dist_pct > 30 ? "#f43f5e" :
     taiex.ma200_dist_pct > 15 ? "#fbbf24" :
@@ -941,6 +942,7 @@ function TaiexHeroCard({ taiex }: { taiex: import("@/lib/api").TaiexFull }) {
 }
 
 function VixCard({ vix }: { vix: import("@/lib/api").MarketIndex }) {
+  if (!vix || vix.price == null) return null;
   const v = vix.price;
   const verdict = v > 30 ? { lbl: "🚨 高恐慌", c: "#f43f5e", desc: "市場恐慌中,留意黑天鵝" } :
                   v > 25 ? { lbl: "😟 警戒", c: "#fbbf24", desc: "波動升高,謹慎為上" } :
@@ -1005,12 +1007,14 @@ function InstitutionalCard({ inst }: { inst: import("@/lib/api").InstitutionalSu
 }
 
 function IntlTile({ idx, emoji }: { idx: import("@/lib/api").MarketIndex; emoji: string }) {
-  const c = chgColor(idx.change_pct);
+  // 防 backend 回 null/undefined price (yfinance 部分商品 symbol 失敗)
+  const price = idx.price ?? null;
+  const chg = idx.change_pct ?? null;
+  const c = chg != null ? chgColor(chg) : "#94a3b8";
   return (
     <div
       className="rounded p-2 relative overflow-hidden"
       style={{
-        // 金屬感:左上反光 + 漸層底
         background: [
           "radial-gradient(circle at 15% 18%, rgba(255,255,255,0.08), transparent 35%)",
           "linear-gradient(180deg, #1a1e25 0%, #14171c 50%, #0e1116 100%)",
@@ -1025,12 +1029,13 @@ function IntlTile({ idx, emoji }: { idx: import("@/lib/api").MarketIndex; emoji:
         <span className="font-bold truncate">{idx.name}</span>
       </div>
       <div className="tabular-nums font-extrabold text-st-fg mt-0.5" style={{ fontSize: "0.85rem" }}>
-        {idx.price >= 10000 ? idx.price.toLocaleString("zh-TW", { maximumFractionDigits: 0 }) :
-         idx.price >= 100 ? idx.price.toFixed(2) :
-         idx.price.toFixed(3)}
+        {price == null ? "—" :
+         price >= 10000 ? price.toLocaleString("zh-TW", { maximumFractionDigits: 0 }) :
+         price >= 100 ? price.toFixed(2) :
+         price.toFixed(3)}
       </div>
       <div className="tabular-nums text-[10px] font-bold mt-0.5" style={{ color: c }}>
-        {chgArrow(idx.change_pct)} {Math.abs(idx.change_pct).toFixed(2)}%
+        {chg == null ? "資料缺" : `${chgArrow(chg)} ${Math.abs(chg).toFixed(2)}%`}
       </div>
     </div>
   );
