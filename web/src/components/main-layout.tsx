@@ -204,6 +204,20 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
         </p>
       </motion.div>
 
+      {/* ═══════ 🌡️ 大盤即時(TAIEX + 國際 + 商品)═══════ */}
+      <GroupHeader emoji="🌡️" label="大盤即時" />
+      <MarketDashboardCard />
+
+      {/* ═══════ 🤖 AI 判讀群 ═══════
+          (組件已在 MarketDashboardCard 內了:AI 國際情勢 + AI 新聞情緒)
+          —— 留在這裡 placeholder 之後 AI 拆出來)
+      */}
+
+      {/* ═══════ 📰 新聞群(已在 MarketDashboardCard 內) ═══════ */}
+
+      {/* ═══════ ⭐ 我的觀察 ═══════ */}
+      <GroupHeader emoji="⭐" label="我的觀察" />
+
       {/* 策略命中今日 */}
       {stratQ.data && totalHits > 0 && (
         <motion.button
@@ -272,7 +286,6 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
             </button>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {/* 漲多 top 3 */}
             <div>
               <div className="text-[10px] text-st-muted font-bold mb-1 flex items-center gap-1">
                 <TrendingUpIcon className="w-3 h-3 text-red-400" /> 漲多 TOP 3
@@ -288,7 +301,7 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
                 <TrendingDownIcon className="w-3 h-3 text-emerald-400" /> 跌多 TOP 3
               </div>
               <div className="space-y-1">
-                {wlSummary.bot.map((q) => (
+                {wlSummary.bot.map((q: import("@/lib/api").Quote) => (
                   <MiniQuoteRow key={q.ticker} q={q} onClick={() => router.push(`/ticker/${q.ticker}`)} />
                 ))}
               </div>
@@ -326,9 +339,6 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
           onToggle={() => setRoundupOpen(!roundupOpen)}
         />
       )}
-
-      {/* 🌡️ 大盤狀態 — real data */}
-      <MarketDashboardCard />
     </div>
   );
 }
@@ -493,25 +503,28 @@ function MarketDashboardCard() {
 
   return (
     <div className="space-y-3">
-      {/* ─── 加權指數 hero ─── */}
+      {/* ════════ Group 1: 即時市場 ════════ */}
       {data.taiex && <TaiexHeroCard taiex={data.taiex} />}
 
-      {/* ─── 🧠 市場情緒(VIX + 估值) ─── */}
-      <SectionCard emoji="🧠" title="市場情緒" sub="規則化判讀,非預測">
-        <div className="grid grid-cols-2 gap-2">
-          {data.vix && <VixCard vix={data.vix} />}
-          {data.taiex?.ma200_dist_pct != null && <ValuationCard dist={data.taiex.ma200_dist_pct} />}
-        </div>
-      </SectionCard>
-
-      {/* ─── 📊 三大法人 ─── */}
-      {data.institutional && (
-        <SectionCard emoji="📊" title="三大法人" sub="全市場 20 日累計(張)">
-          <InstitutionalCard inst={data.institutional} />
+      {/* 市場情緒 + 法人(同類:單一數值判讀,並排省空間) */}
+      <div className="grid grid-cols-1 gap-3">
+        {/* 市場情緒 — VIX + 估值 */}
+        <SectionCard emoji="🧠" title="市場情緒" sub="規則化判讀,非預測">
+          <div className="grid grid-cols-2 gap-2">
+            {data.vix && <VixCard vix={data.vix} />}
+            {data.taiex?.ma200_dist_pct != null && <ValuationCard dist={data.taiex.ma200_dist_pct} />}
+          </div>
         </SectionCard>
-      )}
 
-      {/* ─── 🌍 國際市場連動 ─── */}
+        {/* 三大法人 */}
+        {data.institutional && (
+          <SectionCard emoji="📊" title="三大法人" sub="全市場 20 日累計(張)">
+            <InstitutionalCard inst={data.institutional} />
+          </SectionCard>
+        )}
+      </div>
+
+      {/* 國際市場 + 商品(同類:tile 展示)*/}
       <SectionCard emoji="🌍" title="國際市場連動" sub="台股早盤常跟美股夜盤連動">
         <div className="grid grid-cols-3 gap-1.5 mb-3">
           {[
@@ -530,36 +543,51 @@ function MarketDashboardCard() {
             return <IntlTile key={key} idx={idx} emoji={emoji} />;
           })}
         </div>
-        <div className="text-[11px] text-st-muted text-center pt-2 border-t border-st-border">
-          {data.international_note}
+        {/* 商品 + 日股(視覺整合到國際連動下方)*/}
+        <div className="text-[10px] text-st-muted font-bold tracking-wider mb-1.5 mt-3">
+          🪙 商品 + 日股
         </div>
-      </SectionCard>
-
-      {/* ─── 🪙 商品 + 日股 ─── */}
-      <SectionCard emoji="🪙" title="商品 + 日股">
         <div className="grid grid-cols-3 gap-1.5">
           {data.silver && <IntlTile idx={data.silver} emoji="🥈" />}
           {data.nikkei && <IntlTile idx={data.nikkei} emoji="🇯🇵" />}
           {data.dxj && <IntlTile idx={data.dxj} emoji="💴" />}
         </div>
+        <div className="text-[11px] text-st-muted text-center pt-3 mt-3 border-t border-st-border">
+          {data.international_note}
+        </div>
       </SectionCard>
 
-      {/* 🌍 智能國際情勢 (AI) */}
+      {/* ════════ Group 2: 🤖 AI 判讀(同類聚合)════════ */}
+      <GroupHeader emoji="🤖" label="AI 判讀" sub="Gemini 用你選的語氣 × 時間框架" />
       <AiMarketInsightCard dashboard={data} />
-
-      {/* 🗞️ 世界大事 */}
-      <WorldNewsCard />
-
-      {/* 🤖 智能新聞情緒 (AI) */}
       <AiNewsSentimentCard />
 
-      {/* 📰 大盤新聞 */}
+      {/* ════════ Group 3: 📰 新聞(同類聚合)════════ */}
+      <GroupHeader emoji="📰" label="新聞" sub="Google News · 30 分快取" />
+      <WorldNewsCard />
       <MarketNewsCard />
 
       {/* Disclaimer */}
-      <div className="text-[10px] text-st-muted leading-relaxed px-1 pt-2">
+      <div className="text-[10px] text-st-muted leading-relaxed px-1 pt-4">
         ⚠️ 純客觀數據展示。投資決策請自行判斷或諮詢專業顧問,盈虧自負。
       </div>
+    </div>
+  );
+}
+
+/** 大區塊群組標題(置左,有底色拉長條)*/
+function GroupHeader({ emoji, label, sub }: { emoji: string; label: string; sub?: string }) {
+  return (
+    <div className="flex items-center gap-2.5 pt-4 pb-1 mt-2">
+      <span className="text-2xl">{emoji}</span>
+      <div className="flex-1">
+        <h3 className="text-base font-extrabold text-st-fg tracking-wide">{label}</h3>
+        {sub && <p className="text-[10px] text-st-muted">{sub}</p>}
+      </div>
+      <div
+        className="flex-1 h-px ml-2"
+        style={{ background: "linear-gradient(90deg, #3a4150, transparent)" }}
+      />
     </div>
   );
 }
@@ -711,7 +739,19 @@ function InstitutionalCard({ inst }: { inst: import("@/lib/api").InstitutionalSu
 function IntlTile({ idx, emoji }: { idx: import("@/lib/api").MarketIndex; emoji: string }) {
   const c = chgColor(idx.change_pct);
   return (
-    <div className="rounded p-2" style={{ background: "#0f1218", border: "1px solid #2f343d" }}>
+    <div
+      className="rounded p-2 relative overflow-hidden"
+      style={{
+        // 金屬感:左上反光 + 漸層底
+        background: [
+          "radial-gradient(circle at 15% 18%, rgba(255,255,255,0.08), transparent 35%)",
+          "linear-gradient(180deg, #1a1e25 0%, #14171c 50%, #0e1116 100%)",
+        ].join(", "),
+        border: "1px solid #2f343d",
+        borderLeft: `2px solid ${c}`,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
       <div className="flex items-center gap-1 text-[9px] text-st-muted truncate">
         <span>{emoji}</span>
         <span className="font-bold truncate">{idx.name}</span>
