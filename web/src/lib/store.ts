@@ -5,6 +5,8 @@ import { persist } from "zustand/middleware";
 import type { WatchlistItem } from "@/lib/watchlist";
 
 type SessionState = {
+  hasHydrated: boolean;
+  setHydrated: () => void;
   isGuest: boolean;
   setGuest: (v: boolean) => void;
 
@@ -26,6 +28,8 @@ type SessionState = {
 export const useSession = create<SessionState>()(
   persist(
     (set) => ({
+      hasHydrated: false,
+      setHydrated: () => set({ hasHydrated: true }),
       isGuest: false,
       setGuest: (v) => set({ isGuest: v }),
 
@@ -60,6 +64,11 @@ export const useSession = create<SessionState>()(
 
       clearGuest: () => set({ isGuest: false, guestWatchlist: [] }),
     }),
-    { name: "leek-check-guest-v1" }
+    {
+      name: "leek-check-guest-v1",
+      onRehydrateStorage: () => (state) => {
+        state?.setHydrated();
+      },
+    }
   )
 );

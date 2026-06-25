@@ -15,7 +15,7 @@ import { WatchPanel } from "@/components/watch-panel";
 import { BookPanel } from "@/components/book-panel";
 import { StockRow } from "@/components/stock-row";
 import { createClient } from "@/lib/supabase/client";
-import { HOT_STOCK_CATEGORIES, ALL_HOT_TICKERS } from "@/lib/tier";
+import { HOT_STOCK_CATEGORIES, ALL_HOT_TICKERS, chgColor, chgArrow } from "@/lib/tier";
 
 type Tab = "brief" | "watch" | "book" | "search" | "scan" | "me";
 
@@ -29,7 +29,7 @@ const TABS: { id: Tab; icon: typeof Star; label: string }[] = [
 ];
 
 export function MainLayout() {
-  const [active, setActive] = useState<Tab>("watch");
+  const [active, setActive] = useState<Tab>("brief");
   const isGuest = useSession((s) => s.isGuest);
   const clearGuest = useSession((s) => s.clearGuest);
   const router = useRouter();
@@ -146,7 +146,7 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
 
   // 觀察清單批次 quote
   const wlQuotesQ = useQuery({
-    queryKey: ["wl-quotes", wlTickers.join(",")],
+    queryKey: ["wl-quotes", [...wlTickers].sort()],
     queryFn: () => wlTickers.length ? api.getQuotesBatch(wlTickers) : Promise.resolve([]),
     enabled: wlTickers.length > 0,
     staleTime: 60_000,
@@ -294,7 +294,7 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
         </motion.div>
       )}
 
-      {!wlSummary && (
+      {!wlSummary && (wlQ.isFetched || isGuest) && wlList.length === 0 && (
         <div
           className="rounded-st p-5 text-center"
           style={{ background: "#16181d", border: "1px dashed #2f343d" }}
@@ -352,8 +352,7 @@ function MarketDashboardCard() {
           {items.map(({ key, emoji }) => {
             const idx = data[key];
             if (!idx) return null;
-            const up = idx.change_pct >= 0;
-            const c = up ? "#ef4444" : "#10b981";
+            const c = chgColor(idx.change_pct);
             return (
               <div
                 key={key}
@@ -369,7 +368,7 @@ function MarketDashboardCard() {
                     {idx.price.toFixed(idx.price > 100 ? 0 : 2)}
                   </div>
                   <div className="tabular-nums font-bold text-[10px]" style={{ color: c }}>
-                    {up ? "▲" : "▼"} {Math.abs(idx.change_pct).toFixed(2)}%
+                    {chgArrow(idx.change_pct)} {Math.abs(idx.change_pct).toFixed(2)}%
                   </div>
                 </div>
               </div>
@@ -389,16 +388,15 @@ function TrendingDownIcon({ className }: { className: string }) {
 }
 
 function MiniQuoteRow({ q, onClick }: { q: import("@/lib/api").Quote; onClick: () => void }) {
-  const up = q.change_pct >= 0;
-  const c = up ? "#ef4444" : "#10b981";
+  const c = chgColor(q.change_pct);
   return (
     <button
       onClick={onClick}
-      className="w-full text-left flex items-center justify-between gap-1 rounded px-1.5 py-1 hover:bg-white/[0.02] active:scale-[0.97]"
+      className="w-full text-left flex items-center justify-between gap-1 rounded px-1.5 py-1.5 hover:bg-white/[0.02] active:scale-[0.97]"
     >
       <span className="text-[10px] text-st-soft truncate flex-1 min-w-0">{q.ticker}</span>
       <span className="tabular-nums text-[10px] font-bold flex-shrink-0" style={{ color: c }}>
-        {up ? "▲" : "▼"} {Math.abs(q.change_pct).toFixed(1)}%
+        {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(1)}%
       </span>
     </button>
   );

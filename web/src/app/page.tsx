@@ -11,10 +11,12 @@ import { MainLayout } from "@/components/main-layout";
 export default function HomePage() {
   const router = useRouter();
   const isGuest = useSession((s) => s.isGuest);
+  const hasHydrated = useSession((s) => s.hasHydrated);
   const [authChecked, setAuthChecked] = useState(false);
   const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
+    if (!hasHydrated) return;  // 等 zustand 先讀完 localStorage
     const supabase = createClient();
     supabase.auth.getSession().then(({ data }) => {
       const hasSession = !!data.session;
@@ -24,9 +26,9 @@ export default function HomePage() {
         router.replace("/login");
       }
     });
-  }, [isGuest, router]);
+  }, [isGuest, router, hasHydrated]);
 
-  if (!authChecked) {
+  if (!hasHydrated || !authChecked) {
     return (
       <main className="min-h-dvh flex flex-col items-center justify-center">
         <motion.div

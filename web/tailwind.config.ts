@@ -12,11 +12,23 @@ const config: Config = {
       colors: {
         // ── Streamlit 直接對應 ──
         st: {
-          bg:     "#16181d",   // 主背景(sub-card 也用)
-          border: "#2f343d",   // 所有邊框
-          fg:     "#ffffff",   // 主字
-          muted:  "#94a3b8",   // 灰字
-          soft:   "#cbd5e1",   // 副字
+          bg:     "#16181d",
+          border: "#2f343d",
+          fg:     "#ffffff",
+          muted:  "#94a3b8",
+          soft:   "#cbd5e1",
+        },
+        // ── brand 別名(= teal,讓既有 brand-* class 不失效)──
+        brand: {
+          200: "#99f6e4", 300: "#5eead4", 400: "#2dd4bf",
+          500: "#14b8a6", 600: "#0d9488", 700: "#0f766e",
+        },
+        // ── ink 階梯(深色背景階)──
+        ink: {
+          700: "#2a3340",
+          800: "#1a1d24",
+          900: "#16181d",
+          950: "#0f1218",
         },
         // ── Brand teal(健康 + 主品牌) ──
         teal: {

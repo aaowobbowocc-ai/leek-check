@@ -36,7 +36,7 @@ export function BookPanel() {
   const tickers = holdings.map((x) => x.ticker);
 
   const quotesQ = useQuery({
-    queryKey: ["quotes-batch", tickers.join(",")],
+    queryKey: ["quotes-batch", [...tickers].sort()],
     queryFn: () => (tickers.length ? api.getQuotesBatch(tickers) : Promise.resolve([])),
     enabled: tickers.length > 0,
     staleTime: 60_000,
