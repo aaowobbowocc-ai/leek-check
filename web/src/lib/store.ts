@@ -15,6 +15,10 @@ type SessionState = {
   briefingPicks: string[];
   togglePick: (ticker: string) => void;
 
+  /** 🎨 主題色(電競風格)*/
+  accentTheme: "teal" | "cyan" | "purple" | "amber" | "rose" | "rgb";
+  setAccent: (t: "teal" | "cyan" | "purple" | "amber" | "rose" | "rgb") => void;
+
   guestWatchlist: WatchlistItem[];
   addGuestItem: (item: WatchlistItem) => void;
   removeGuestItem: (ticker: string, type: string) => void;
@@ -36,6 +40,9 @@ export const useSession = create<SessionState>()(
       setHydrated: () => set({ hasHydrated: true }),
       isGuest: false,
       setGuest: (v) => set({ isGuest: v }),
+
+      accentTheme: "teal",
+      setAccent: (t) => set({ accentTheme: t }),
 
       briefingPicks: [],
       togglePick: (ticker) =>

@@ -1820,7 +1820,7 @@ function MePanel() {
   const clearGuest = useSession((s) => s.clearGuest);
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
-  const [sub, setSub] = useState<"home" | "global" | "selfcheck" | "about">("home");
+  const [sub, setSub] = useState<"home" | "global" | "selfcheck" | "about" | "theme">("home");
 
   useEffect(() => {
     const sb = createClient();
@@ -1830,6 +1830,7 @@ function MePanel() {
   if (sub === "global") return <GlobalMarketsPanel onBack={() => setSub("home")} />;
   if (sub === "selfcheck") return <SelfCheckPanel onBack={() => setSub("home")} />;
   if (sub === "about") return <AboutPanel onBack={() => setSub("home")} />;
+  if (sub === "theme") return <ThemePanel onBack={() => setSub("home")} />;
 
   return (
     <div className="space-y-4 pb-4">
@@ -1884,6 +1885,12 @@ function MePanel() {
           title="多市場"
           desc="台美日韓印越黃金 — 全球 ETF 配置"
           onClick={() => setSub("global")}
+        />
+        <MenuItem
+          icon="🎨"
+          title="主題色"
+          desc="切換 6 種電競配色 + 🌈 RGB 自動循環"
+          onClick={() => setSub("theme")}
         />
         <MenuItem
           icon="🥬"
@@ -2055,6 +2062,97 @@ function GlobalMarketsPanel({ onBack }: { onBack: () => void }) {
             </div>
           </motion.div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ────── 主題色 panel(電競 RGB)────── */
+const THEME_OPTIONS: Array<{
+  key: "teal" | "cyan" | "purple" | "amber" | "rose" | "rgb";
+  emoji: string;
+  label: string;
+  desc: string;
+  color: string;  // 預覽色
+}> = [
+  { key: "teal", emoji: "🟢", label: "Teal 青綠", desc: "預設 / 健康主題", color: "#5eead4" },
+  { key: "cyan", emoji: "🔵", label: "Cyan 電競藍", desc: "經典電競配色", color: "#67e8f9" },
+  { key: "purple", emoji: "🟣", label: "Purple 電競紫", desc: "雷蛇 / 賽博龐克", color: "#c4b5fd" },
+  { key: "amber", emoji: "🟡", label: "Amber 黃金", desc: "高貴 + 警戒感", color: "#fcd34d" },
+  { key: "rose", emoji: "🔴", label: "Rose 烈焰紅", desc: "激進 / 攻擊感", color: "#fda4af" },
+  { key: "rgb", emoji: "🌈", label: "RGB 自動循環", desc: "8 秒走完 360° 色相 — 真電競", color: "transparent" },
+];
+
+function ThemePanel({ onBack }: { onBack: () => void }) {
+  const accent = useSession((s) => s.accentTheme);
+  const setAccent = useSession((s) => s.setAccent);
+  return (
+    <div className="space-y-4 pb-4">
+      <button onClick={onBack} className="text-teal-300 text-sm flex items-center gap-2">
+        <span>←</span> 回 我的
+      </button>
+      <h2 className="text-2xl font-extrabold text-st-fg">🎨 主題色</h2>
+      <p className="text-st-muted text-xs">
+        切換 App 主色 — 影響按鈕 / 邊框 / glow 等(漲跌紅綠不受影響,維持台股慣例)
+      </p>
+
+      <div className="space-y-2">
+        {THEME_OPTIONS.map((opt) => {
+          const isActive = accent === opt.key;
+          return (
+            <button
+              key={opt.key}
+              onClick={() => setAccent(opt.key)}
+              className="w-full text-left rounded-st p-3.5 flex items-center gap-3 active:scale-[0.98] transition-transform"
+              style={{
+                background: isActive
+                  ? `linear-gradient(135deg, ${opt.color}25, ${opt.color}10)`
+                  : "linear-gradient(180deg, #1c2028 0%, #16181d 100%)",
+                border: isActive
+                  ? `2px solid ${opt.color === "transparent" ? "#fbbf24" : opt.color}`
+                  : "1px solid #3a4150",
+                boxShadow: isActive
+                  ? `0 0 24px ${opt.color === "transparent" ? "rgba(167,139,250,0.3)" : opt.color + "60"}, inset 0 1px 0 rgba(255,255,255,0.1)`
+                  : "inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.3)",
+              }}
+            >
+              {/* color swatch */}
+              <div
+                className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center text-lg"
+                style={
+                  opt.key === "rgb"
+                    ? {
+                        background: "conic-gradient(from 0deg, #ef4444, #f59e0b, #84cc16, #06b6d4, #8b5cf6, #ef4444)",
+                        animation: "spin 3s linear infinite",
+                        boxShadow: "0 0 16px rgba(167,139,250,0.4)",
+                      }
+                    : {
+                        background: opt.color,
+                        boxShadow: `0 0 16px ${opt.color}80`,
+                      }
+                }
+              >
+                {opt.emoji}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-extrabold text-st-fg text-sm">{opt.label}</div>
+                <div className="text-[10px] text-st-muted">{opt.desc}</div>
+              </div>
+              {isActive && (
+                <div className="text-xs font-bold tabular-nums" style={{
+                  color: opt.color === "transparent" ? "#a78bfa" : opt.color,
+                }}>
+                  ✓ 使用中
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="text-[10px] text-st-muted leading-relaxed pt-2 px-1">
+        💡 RGB 模式為高階電競感,色相每 8 秒循環一次。
+        如果在意效能或眼睛累,選 Teal/Cyan 等靜態色即可。
       </div>
     </div>
   );

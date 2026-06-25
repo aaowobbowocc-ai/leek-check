@@ -6,6 +6,70 @@
   color-scheme: dark;
   --safe-top: env(safe-area-inset-top);
   --safe-bottom: env(safe-area-inset-bottom);
+  /* 🎨 預設 teal — 透過 data-accent 切換 */
+  --accent: #5eead4;
+  --accent-mid: #14b8a6;
+  --accent-deep: #0f766e;
+  --accent-glow: rgba(94, 234, 212, 0.35);
+  --accent-soft: rgba(20, 184, 166, 0.18);
+}
+
+/* 🟢 Teal (預設) */
+[data-accent="teal"] {
+  --accent: #5eead4; --accent-mid: #14b8a6; --accent-deep: #0f766e;
+  --accent-glow: rgba(94, 234, 212, 0.35);
+  --accent-soft: rgba(20, 184, 166, 0.18);
+}
+/* 🔵 Cyan(電競藍)*/
+[data-accent="cyan"] {
+  --accent: #67e8f9; --accent-mid: #06b6d4; --accent-deep: #0e7490;
+  --accent-glow: rgba(103, 232, 249, 0.4);
+  --accent-soft: rgba(6, 182, 212, 0.18);
+}
+/* 🟣 Purple(電競紫)*/
+[data-accent="purple"] {
+  --accent: #c4b5fd; --accent-mid: #8b5cf6; --accent-deep: #6d28d9;
+  --accent-glow: rgba(196, 181, 253, 0.4);
+  --accent-soft: rgba(139, 92, 246, 0.18);
+}
+/* 🟡 Amber(電競金)*/
+[data-accent="amber"] {
+  --accent: #fcd34d; --accent-mid: #f59e0b; --accent-deep: #b45309;
+  --accent-glow: rgba(252, 211, 77, 0.4);
+  --accent-soft: rgba(245, 158, 11, 0.18);
+}
+/* 🔴 Rose(電競紅)*/
+[data-accent="rose"] {
+  --accent: #fda4af; --accent-mid: #f43f5e; --accent-deep: #be123c;
+  --accent-glow: rgba(253, 164, 175, 0.4);
+  --accent-soft: rgba(244, 63, 94, 0.18);
+}
+/* 🌈 RGB(自動 hue 旋轉,真正電競感)*/
+[data-accent="rgb"] {
+  --accent: hsl(var(--rgb-hue, 180), 90%, 70%);
+  --accent-mid: hsl(var(--rgb-hue, 180), 75%, 55%);
+  --accent-deep: hsl(var(--rgb-hue, 180), 60%, 40%);
+  --accent-glow: hsla(var(--rgb-hue, 180), 90%, 70%, 0.4);
+  --accent-soft: hsla(var(--rgb-hue, 180), 75%, 55%, 0.18);
+  animation: rgb-cycle 8s linear infinite;
+}
+@property --rgb-hue {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 180;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes rgb-cycle {
+  0%   { --rgb-hue: 0; }    /* 紅 */
+  17%  { --rgb-hue: 60; }   /* 黃 */
+  33%  { --rgb-hue: 120; }  /* 綠 */
+  50%  { --rgb-hue: 180; }  /* 青 */
+  67%  { --rgb-hue: 240; }  /* 藍 */
+  83%  { --rgb-hue: 300; }  /* 紫 */
+  100% { --rgb-hue: 360; }  /* 紅(回到) */
 }
 
 html, body {
