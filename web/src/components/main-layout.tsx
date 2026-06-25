@@ -4,15 +4,17 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Sunrise, Star, Search, Radio, User, Ghost, LogOut,
+  Sunrise, Star, Search, Radio, User, Ghost, LogOut, Flame, X,
 } from "lucide-react";
 import { useSession } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, type Quote } from "@/lib/api";
 import { WatchPanel } from "@/components/watch-panel";
+import { StockCard } from "@/components/stock-card";
 import { createClient } from "@/lib/supabase/client";
+import { HOT_STOCK_CATEGORIES, ALL_HOT_TICKERS } from "@/lib/tier";
 
 type Tab = "brief" | "watch" | "search" | "scan" | "me";
 
@@ -155,45 +157,142 @@ function BriefPanel() {
 function SearchPanel() {
   const [q, setQ] = useState("");
   const router = useRouter();
-  const { data: results, isFetching } = useQuery({
+  const isSearching = q.trim().length >= 1;
+
+  // 搜尋結果
+  const { data: results, isFetching: searchFetching } = useQuery({
     queryKey: ["search", q],
     queryFn: () => api.searchTickers(q),
-    enabled: q.length >= 1,
+    enabled: isSearching,
     staleTime: 300_000,
   });
+
+  // 熱門股 batch quote(只在空白時跑)
+  const { data: hotQuotes, isLoading: hotLoading } = useQuery({
+    queryKey: ["hot-quotes", ALL_HOT_TICKERS.join(",")],
+    queryFn: () => api.getQuotesBatch(ALL_HOT_TICKERS),
+    enabled: !isSearching,
+    staleTime: 120_000,
+  });
+  const hotQuoteMap: Record<string, Quote> = {};
+  (hotQuotes ?? []).forEach((q) => { hotQuoteMap[q.ticker] = q; });
+
   return (
-    <div className="space-y-4">
-      <h2 className="text-2xl font-extrabold text-white">🔍 搜尋</h2>
-      <p className="text-slate-400 text-sm">輸入股票代碼或公司名 → 4 面健檢</p>
-      <Input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="例:2330 / 台積電 / 0050"
-        autoFocus
-      />
-      {isFetching && q.length >= 1 && (
-        <div className="text-sm text-slate-500">搜尋中⋯</div>
-      )}
-      <div className="space-y-2">
-        {(results ?? []).map((r) => (
+    <div className="space-y-4 pb-4">
+      {/* Search header */}
+      <div>
+        <h2 className="text-2xl font-extrabold text-st-fg">🔍 搜尋</h2>
+        <p className="text-st-muted text-xs mt-1">
+          輸入代碼或公司名 → 看 4 面健檢分數
+        </p>
+      </div>
+
+      {/* Search input with clear button */}
+      <div className="relative">
+        <Search className="w-4 h-4 text-st-muted absolute left-4 top-1/2 -translate-y-1/2 z-10" />
+        <Input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="2330 / 台積電 / 0050"
+          autoFocus
+          className="pl-10 pr-10"
+        />
+        {q && (
           <button
-            key={r.ticker}
-            onClick={() => router.push(`/ticker/${r.ticker}`)}
-            className="w-full text-left bg-ink-900/50 hover:bg-ink-800/80 border border-ink-700 rounded-xl p-3 transition-colors flex items-center justify-between active:scale-[0.98]"
+            onClick={() => setQ("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-st-muted hover:text-st-fg p-1.5"
+            aria-label="清除"
           >
-            <div>
-              <div className="font-bold text-white">{r.name || r.ticker}</div>
-              <div className="text-xs text-slate-500">{r.industry || "—"}</div>
-            </div>
-            <div className="text-brand-300 font-mono text-sm">{r.ticker}</div>
+            <X className="w-4 h-4" />
           </button>
-        ))}
-        {q.length >= 1 && !isFetching && results?.length === 0 && (
-          <div className="text-sm text-slate-500 text-center py-4">
-            找不到「{q}」相關股票
-          </div>
         )}
       </div>
+
+      {/* 搜尋結果 */}
+      {isSearching && (
+        <>
+          {searchFetching && (
+            <div className="text-sm text-st-muted">搜尋中⋯</div>
+          )}
+          <div className="space-y-1.5">
+            {(results ?? []).slice(0, 20).map((r) => (
+              <StockCard
+                key={r.ticker}
+                ticker={r.ticker}
+                name={r.name}
+                industry={r.industry}
+                quote={hotQuoteMap[r.ticker]}
+                onClick={() => router.push(`/ticker/${r.ticker}`)}
+              />
+            ))}
+            {!searchFetching && results?.length === 0 && (
+              <div className="text-sm text-st-muted text-center py-8">
+                找不到「{q}」相關股票
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* 熱門股(空白搜尋時顯示)*/}
+      {!isSearching && (
+        <div className="space-y-5">
+          {/* 大標 */}
+          <div className="flex items-center gap-2 mt-2">
+            <Flame className="w-4 h-4 text-amber-300" />
+            <span className="text-xs text-amber-300 font-bold tracking-widest">
+              熱門股推薦
+            </span>
+          </div>
+
+          {/* 每個分類 */}
+          {HOT_STOCK_CATEGORIES.map((cat, ci) => (
+            <motion.div
+              key={cat.key}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: ci * 0.05 }}
+              className="space-y-2"
+            >
+              <div>
+                <h3 className="text-base font-extrabold text-st-fg flex items-center gap-2">
+                  <span className="text-xl">{cat.emoji}</span>
+                  {cat.label}
+                </h3>
+                <p className="text-[10px] text-st-muted">{cat.desc}</p>
+              </div>
+              <div className="space-y-1">
+                {cat.tickers.map((tk) => {
+                  const q = hotQuoteMap[tk];
+                  if (hotLoading && !q) {
+                    return (
+                      <div
+                        key={tk}
+                        className="shimmer rounded-st h-[78px]"
+                      />
+                    );
+                  }
+                  return (
+                    <StockCard
+                      key={tk}
+                      ticker={tk}
+                      name={q?.name ?? ""}
+                      industry={q?.industry ?? ""}
+                      quote={q}
+                      onClick={() => router.push(`/ticker/${tk}`)}
+                    />
+                  );
+                })}
+              </div>
+            </motion.div>
+          ))}
+
+          {/* 小提示 */}
+          <div className="text-center text-[10px] text-st-muted pt-2">
+            💡 找不到想看的?直接輸入代碼或公司名搜尋
+          </div>
+        </div>
+      )}
     </div>
   );
 }

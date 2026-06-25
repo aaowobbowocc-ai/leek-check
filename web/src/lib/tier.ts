@@ -102,3 +102,55 @@ export function chgArrow(chgPct: number): string {
   if (chgPct < 0) return "▼";
   return "—";
 }
+
+/** 熱門股分類(空白搜尋時推薦)*/
+export type HotCategory = {
+  key: string;
+  emoji: string;
+  label: string;
+  desc: string;
+  tickers: string[];
+};
+
+export const HOT_STOCK_CATEGORIES: HotCategory[] = [
+  {
+    key: "weight",
+    emoji: "🏆",
+    label: "權值股 LEGENDARY",
+    desc: "市場最熱、流動性最好的台股",
+    tickers: ["2330", "2454", "2317", "2308", "2382"],
+  },
+  {
+    key: "etf_core",
+    emoji: "🌐",
+    label: "核心 ETF",
+    desc: "大盤 + 主流選股 ETF",
+    tickers: ["0050", "0056", "00878", "00692", "00919"],
+  },
+  {
+    key: "ai",
+    emoji: "🤖",
+    label: "AI 概念",
+    desc: "AI 伺服器 + 算力族群",
+    tickers: ["3231", "2376", "3702", "8069", "2492"],
+  },
+  {
+    key: "finance",
+    emoji: "🏦",
+    label: "金融股",
+    desc: "金控 + 證券,股息族最愛",
+    tickers: ["2891", "2884", "2885", "2881", "2890"],
+  },
+  {
+    key: "shipping",
+    emoji: "🚢",
+    label: "航運股",
+    desc: "短線散戶熱門族群",
+    tickers: ["2603", "2618", "2609", "2615", "2606"],
+  },
+];
+
+/** 全部熱門股(batch fetch 用)*/
+export const ALL_HOT_TICKERS = Array.from(
+  new Set(HOT_STOCK_CATEGORIES.flatMap((c) => c.tickers))
+);
