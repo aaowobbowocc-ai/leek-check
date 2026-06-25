@@ -147,6 +147,11 @@ export function WatchPanel() {
         </Button>
       </div>
 
+      {/* 📊 漲跌分布 mini stats(只在 quotes 載入後)*/}
+      {quotesQ.data && quotesQ.data.length > 0 && (
+        <WatchStatsRow quotes={quotesQ.data} />
+      )}
+
       {/* Portfolio summary (有持股才秀) */}
       {summary.holdingCount > 0 && (
         <motion.div
@@ -256,6 +261,76 @@ export function WatchPanel() {
         onSave={handleSaveHolding}
         onRemove={editing ? () => handleRemove(editing) : undefined}
       />
+    </div>
+  );
+}
+
+function WatchStatsRow({ quotes }: { quotes: import("@/lib/api").Quote[] }) {
+  const ups = quotes.filter(q => q.change_pct > 0).length;
+  const flats = quotes.filter(q => q.change_pct === 0).length;
+  const downs = quotes.filter(q => q.change_pct < 0).length;
+  const avgChg = quotes.length > 0
+    ? quotes.reduce((s, q) => s + q.change_pct, 0) / quotes.length
+    : 0;
+  const top = [...quotes].sort((a, b) => b.change_pct - a.change_pct)[0];
+  const bot = [...quotes].sort((a, b) => a.change_pct - b.change_pct)[0];
+  return (
+    <div
+      className="rounded-st p-3"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.05), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      <div className="grid grid-cols-4 gap-2 text-center">
+        <div>
+          <div className="text-[10px] text-st-muted">漲</div>
+          <div className="tabular-nums font-extrabold text-rose-400" style={{ fontSize: "1.05rem" }}>
+            {ups}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] text-st-muted">平</div>
+          <div className="tabular-nums font-extrabold text-st-muted" style={{ fontSize: "1.05rem" }}>
+            {flats}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] text-st-muted">跌</div>
+          <div className="tabular-nums font-extrabold text-emerald-400" style={{ fontSize: "1.05rem" }}>
+            {downs}
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] text-st-muted">平均</div>
+          <div className="tabular-nums font-extrabold" style={{
+            fontSize: "1.05rem",
+            color: avgChg > 0 ? "#ef4444" : avgChg < 0 ? "#10b981" : "#94a3b8",
+          }}>
+            {avgChg >= 0 ? "+" : ""}{avgChg.toFixed(2)}%
+          </div>
+        </div>
+      </div>
+      {top && bot && (
+        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-st-border text-[10px]">
+          <div>
+            <span className="text-st-muted">🔥 最強 </span>
+            <span className="text-rose-400 font-bold tabular-nums">
+              {top.ticker} {top.change_pct >= 0 ? "+" : ""}{top.change_pct.toFixed(2)}%
+            </span>
+          </div>
+          <div className="text-right">
+            <span className="text-emerald-400 font-bold tabular-nums">
+              {bot.ticker} {bot.change_pct >= 0 ? "+" : ""}{bot.change_pct.toFixed(2)}%
+            </span>
+            <span className="text-st-muted"> 最弱 ❄️</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -575,6 +575,114 @@ function MarketDashboardCard() {
   );
 }
 
+/** 大盤 mini snapshot — 搜尋頁頂端 + 全 tab 共用 */
+function MarketMiniSnapshot() {
+  const { data } = useQuery({
+    queryKey: ["market-dashboard"],
+    queryFn: () => api.getMarketDashboard(),
+    staleTime: 5 * 60_000,
+  });
+  if (!data) return null;
+  return (
+    <div
+      className="rounded-st px-3 py-2.5 flex items-center gap-2 overflow-x-auto"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.05), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      {[
+        { label: "TAIEX", val: data.taiex?.price, pct: data.taiex?.change_pct },
+        { label: "VIX", val: data.vix?.price, pct: data.vix?.change_pct },
+        { label: "SP500", val: data.sp500?.price, pct: data.sp500?.change_pct },
+        { label: "NASDAQ", val: data.nasdaq?.price, pct: data.nasdaq?.change_pct },
+        { label: "BTC", val: data.btc?.price, pct: data.btc?.change_pct },
+        { label: "USDTWD", val: data.usdtwd?.price, pct: data.usdtwd?.change_pct },
+      ].map((it) => {
+        if (it.val == null || it.pct == null) return null;
+        const c = chgColor(it.pct);
+        return (
+          <div key={it.label} className="flex-shrink-0 px-2.5 py-1.5 rounded border" style={{
+            background: "#0f1218",
+            borderColor: c + "40",
+            borderLeft: `2px solid ${c}`,
+          }}>
+            <div className="text-[9px] text-st-muted font-bold">{it.label}</div>
+            <div className="text-[10px] font-bold tabular-nums" style={{ color: c }}>
+              {chgArrow(it.pct)} {Math.abs(it.pct).toFixed(2)}%
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 策略今日摘要 banner */
+function StrategySummaryBanner({ data }: { data: import("@/lib/api").StrategyResults }) {
+  const STRATEGY_META_LOCAL: Record<string, { icon: string; name: string }> = {
+    rev_yoy: { icon: "💰", name: "月營收高成長" },
+    low_retail: { icon: "👻", name: "散戶極端低位" },
+    quiet_limitdown: { icon: "📉", name: "量縮跌停反彈" },
+    quiet_limitup: { icon: "📈", name: "量縮漲停" },
+    ab_consensus: { icon: "🤝", name: "AB 雙重共識" },
+    govbank_reverse: { icon: "🏦", name: "政府行庫反向" },
+  };
+  // 找出命中最多的 3 個策略
+  const top3 = Object.entries(data.strategies)
+    .filter(([, h]) => h.length > 0)
+    .sort((a, b) => b[1].length - a[1].length)
+    .slice(0, 3);
+  const totalHits = Object.values(data.strategies).reduce((s, a) => s + a.length, 0);
+  return (
+    <div
+      className="rounded-st p-4"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.08), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        borderLeft: "3px solid #5eead4",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xl">🎯</span>
+        <div>
+          <div className="text-xs text-teal-300 font-bold tracking-wider">今日重點</div>
+          <div className="font-extrabold text-st-fg text-sm">
+            {totalHits} 檔命中 7 種策略
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5 mt-2">
+        {top3.length > 0 ? top3.map(([key, hits]) => {
+          const meta = STRATEGY_META_LOCAL[key] ?? { icon: "📊", name: key };
+          return (
+            <div key={key} className="rounded p-2 text-center" style={{ background: "#0f1218", border: "1px solid #2f343d" }}>
+              <div className="text-lg">{meta.icon}</div>
+              <div className="text-[10px] text-st-soft truncate mt-1">{meta.name}</div>
+              <div className="tabular-nums text-base font-extrabold text-teal-300 mt-0.5">
+                {hits.length}
+              </div>
+              <div className="text-[8px] text-st-muted">檔</div>
+            </div>
+          );
+        }) : (
+          <div className="col-span-3 text-xs text-st-muted text-center py-2">
+            今日所有策略都沒命中(冷盤 / 沒 setup)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** 大區塊群組標題(置左,有底色拉長條)*/
 function GroupHeader({ emoji, label, sub }: { emoji: string; label: string; sub?: string }) {
   return (
@@ -1139,6 +1247,9 @@ function SearchPanel() {
         </p>
       </div>
 
+      {/* 大盤 mini snapshot — 不在搜尋時顯示 */}
+      {!isSearching && <MarketMiniSnapshot />}
+
       {/* Search input with clear button */}
       <div className="relative">
         <Search className="w-4 h-4 text-st-muted absolute left-4 top-1/2 -translate-y-1/2 z-10" />
@@ -1306,6 +1417,9 @@ function ScanPanel() {
           {data && ` · 共 ${Object.values(data.strategies).reduce((s, a) => s + a.length, 0)} 檔命中`}
         </p>
       </div>
+
+      {/* 📊 今日策略摘要 banner */}
+      {data && <StrategySummaryBanner data={data} />}
       {isLoading && (
         <>
           <div className="shimmer h-16 rounded-st" />
@@ -1449,6 +1563,9 @@ function MePanel() {
     <div className="space-y-4 pb-4">
       <h2 className="text-2xl font-extrabold text-st-fg">👤 我的</h2>
 
+      {/* 📊 活動統計 */}
+      <UserStatsCard isGuest={isGuest} />
+
       {isGuest ? (
         <div
           className="rounded-st p-5"
@@ -1536,6 +1653,47 @@ function MePanel() {
           <LogOut className="w-4 h-4" /> 登出
         </Button>
       )}
+    </div>
+  );
+}
+
+/** 用戶活動統計卡 */
+function UserStatsCard({ isGuest }: { isGuest: boolean }) {
+  const guestList = useSession((s) => s.guestWatchlist);
+  const picks = useSession((s) => s.briefingPicks);
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    if (isGuest) return;
+    createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, [isGuest]);
+  const cloudQ = useQuery({
+    queryKey: ["watchlist-cloud", userId],
+    queryFn: () => import("@/lib/watchlist").then(m => m.loadCloudWatchlist()),
+    enabled: !isGuest && !!userId,
+    staleTime: 60_000,
+  });
+  const list = isGuest ? guestList : (cloudQ.data ?? []);
+  const holdingsCount = list.filter(x => x.shares && x.cost_per_share).length;
+
+  return (
+    <div
+      className="rounded-st p-4"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.06), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        borderLeft: "3px solid #5eead4",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      <div className="text-xs text-teal-300 font-bold tracking-widest mb-3">📊 我的使用統計</div>
+      <div className="grid grid-cols-3 gap-2">
+        <Inline label="觀察追蹤" value={`${list.length}`} sub="檔" />
+        <Inline label="持股檔數" value={`${holdingsCount}`} sub="檔" />
+        <Inline label="晨報精選" value={`${picks.length}/5`} sub="檔" />
+      </div>
     </div>
   );
 }
