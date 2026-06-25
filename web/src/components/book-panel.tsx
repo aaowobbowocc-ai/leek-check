@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { Wallet, AlertTriangle, PieChart, Banknote } from "lucide-react";
+import { Wallet, AlertTriangle, PieChart, Banknote, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AddTickerSheet } from "@/components/add-ticker-sheet";
+import { addCloudTicker } from "@/lib/watchlist";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/store";
 import { loadCloudWatchlist, updateCloudHolding, type WatchlistItem } from "@/lib/watchlist";
@@ -22,8 +24,12 @@ export function BookPanel() {
   const isGuest = useSession((s) => s.isGuest);
   const guestList = useSession((s) => s.guestWatchlist);
   const updateGuest = useSession((s) => s.updateGuestHolding);
+  const addGuest = useSession((s) => s.addGuestItem);
   const [userId, setUserId] = useState<string | null>(null);
   const [selling, setSelling] = useState<WatchlistItem | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [pickFromWatch, setPickFromWatch] = useState(false);
+  const [newHolding, setNewHolding] = useState<WatchlistItem | null>(null);
 
   useEffect(() => {
     if (isGuest) return;
@@ -94,8 +100,28 @@ export function BookPanel() {
           <Wallet className="w-6 h-6 text-teal-300" /> 記帳
         </h2>
         <p className="text-st-muted text-xs mt-1">
-          觀察清單填股數+成本 → 自動同步進來 · {portfolio.items.length} 檔持股
+          {portfolio.items.length} 檔持股 · 添加方式 ↓
         </p>
+      </div>
+
+      {/* 兩個加持股按鈕 */}
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="primary" size="md" onClick={() => setAdding(true)}>
+          <Plus className="w-4 h-4" /> 直接加股票
+        </Button>
+        {(() => {
+          const candidates = list.filter(x => !x.shares && !x.cost_per_share);
+          return (
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setPickFromWatch(true)}
+              disabled={candidates.length === 0}
+            >
+              <Search className="w-4 h-4" /> 從觀察加 ({candidates.length})
+            </Button>
+          );
+        })()}
       </div>
 
       {/* Empty */}
@@ -278,6 +304,54 @@ export function BookPanel() {
         </div>
       )}
 
+      {/* AddTickerSheet — 從搜尋加新股票(加完開 holding modal)*/}
+      <AddTickerSheet
+        open={adding}
+        onClose={() => setAdding(false)}
+        onPick={async (info) => {
+          const newItem: WatchlistItem = { ticker: info.ticker, type: info.type };
+          if (isGuest) addGuest(newItem);
+          else if (userId) {
+            try {
+              await addCloudTicker({ ...newItem, position: list.length }, userId);
+              await queryClient.invalidateQueries({ queryKey: ["watchlist-cloud", userId] });
+            } catch (e) { alert("加入失敗:" + (e as Error).message); }
+          }
+          setAdding(false);
+          setNewHolding(newItem);  // 立刻打開填股數的 modal
+        }}
+        existingKeys={new Set(list.map((x) => `${x.ticker}-${x.type}`))}
+      />
+
+      {/* 從觀察清單選 sheet */}
+      <PickFromWatchSheet
+        open={pickFromWatch}
+        candidates={list.filter(x => !x.shares && !x.cost_per_share)}
+        quoteMap={quoteMap}
+        onClose={() => setPickFromWatch(false)}
+        onPick={(item) => { setPickFromWatch(false); setNewHolding(item); }}
+      />
+
+      {/* 填股數 + 成本 sheet — 共用 */}
+      <FillHoldingSheet
+        item={newHolding}
+        currentPrice={newHolding ? quoteMap.get(newHolding.ticker)?.price : undefined}
+        open={!!newHolding}
+        onClose={() => setNewHolding(null)}
+        onConfirm={async (shares, cost) => {
+          if (!newHolding) return;
+          if (isGuest) {
+            updateGuest(newHolding.ticker, newHolding.type, shares, cost, new Date().toISOString().slice(0, 10));
+          } else {
+            try {
+              await updateCloudHolding(newHolding.ticker, newHolding.type, shares, cost, new Date().toISOString().slice(0, 10));
+              await queryClient.invalidateQueries({ queryKey: ["watchlist-cloud", userId] });
+            } catch (e) { alert("儲存失敗:" + (e as Error).message); }
+          }
+          setNewHolding(null);
+        }}
+      />
+
       {/* SellSheet — 賣出計算實現損益 */}
       <SellSheet
         item={selling}
@@ -307,6 +381,127 @@ export function BookPanel() {
         }}
       />
     </div>
+  );
+}
+
+function PickFromWatchSheet({
+  open, candidates, quoteMap, onClose, onPick,
+}: {
+  open: boolean;
+  candidates: WatchlistItem[];
+  quoteMap: Map<string, import("@/lib/api").Quote>;
+  onClose: () => void;
+  onPick: (item: WatchlistItem) => void;
+}) {
+  return (
+    <Sheet open={open} onClose={onClose} title="📂 從觀察清單選">
+      <div className="space-y-2 pb-6">
+        {candidates.length === 0 && (
+          <div className="text-sm text-st-muted text-center py-6">
+            觀察清單裡所有股票都已記帳
+          </div>
+        )}
+        {candidates.map((c) => {
+          const q = quoteMap.get(c.ticker);
+          return (
+            <button
+              key={`${c.ticker}-${c.type}`}
+              onClick={() => onPick(c)}
+              className="w-full text-left rounded-st p-3 flex items-center justify-between active:scale-[0.98]"
+              style={{ background: "#16181d", border: "1px solid #2f343d" }}
+            >
+              <div>
+                <div className="tabular-nums font-bold text-st-fg">{c.ticker}</div>
+                <div className="text-xs text-st-muted">{q?.name ?? "—"} · {q?.industry ?? "—"}</div>
+              </div>
+              <div className="text-right">
+                {q && (
+                  <div className="tabular-nums text-sm font-bold text-st-fg">
+                    {q.price.toFixed(2)}
+                  </div>
+                )}
+                <div className="text-[10px] text-teal-300">→ 填股數</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </Sheet>
+  );
+}
+
+function FillHoldingSheet({
+  item, currentPrice, open, onClose, onConfirm,
+}: {
+  item: WatchlistItem | null;
+  currentPrice?: number;
+  open: boolean;
+  onClose: () => void;
+  onConfirm: (shares: number, cost: number) => Promise<void>;
+}) {
+  const [shares, setShares] = useState("");
+  const [cost, setCost] = useState("");
+  useEffect(() => {
+    if (item) {
+      setShares("");
+      setCost(currentPrice ? currentPrice.toFixed(2) : "");
+    }
+  }, [item, currentPrice]);
+  if (!item) return null;
+
+  const s = Number(shares);
+  const c = Number(cost);
+  const valid = s > 0 && c > 0;
+  const totalCost = s * c * 1.001425;
+
+  return (
+    <Sheet open={open} onClose={onClose} title={`💰 填 ${item.ticker} 持股`}>
+      <div className="space-y-4 pb-6">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="text-xs text-st-muted mb-1">股數</div>
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={shares}
+              onChange={(e) => setShares(e.target.value)}
+              placeholder="例:1000"
+              autoFocus
+            />
+          </div>
+          <div>
+            <div className="text-xs text-st-muted mb-1">平均成本(每股)</div>
+            <Input
+              type="number"
+              inputMode="decimal"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+              placeholder={currentPrice ? `現價 ${currentPrice.toFixed(2)}` : "例:500"}
+            />
+          </div>
+        </div>
+
+        {valid && (
+          <div
+            className="rounded-st p-3"
+            style={{ background: "#0f1218", border: "1px solid #2f343d", borderLeft: "3px solid #5eead4" }}
+          >
+            <div className="text-xs text-st-muted">總成本(含買進 0.1425% 手續費)</div>
+            <div className="tabular-nums font-extrabold text-st-fg mt-1" style={{ fontSize: "1.4rem" }}>
+              NT$ {Math.round(totalCost).toLocaleString()}
+            </div>
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <Button variant="primary" size="lg" className="flex-1" disabled={!valid}
+                    onClick={() => onConfirm(s, c)}>
+            ✅ 儲存
+          </Button>
+          <Button variant="ghost" size="lg" onClick={onClose}>取消</Button>
+        </div>
+      </div>
+    </Sheet>
   );
 }
 

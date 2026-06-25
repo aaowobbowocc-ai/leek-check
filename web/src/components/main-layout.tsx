@@ -202,6 +202,14 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
         <p className="text-teal-200 text-xs mt-2">
           開盤前 5 分鐘看一眼 · 盤後分析,不適合盤中即時下單
         </p>
+
+        {/* 今日 1 行摘要 — 大盤 / 觀察 / 策略 */}
+        <TodayDigest
+          watchlistTotal={wlSummary?.total ?? 0}
+          watchlistUps={wlSummary?.ups ?? 0}
+          watchlistDowns={wlSummary?.downs ?? 0}
+          strategyHits={totalHits}
+        />
       </motion.div>
 
       {/* ═══════ 🌡️ 大盤即時(TAIEX + 國際 + 商品)═══════ */}
@@ -571,6 +579,55 @@ function MarketDashboardCard() {
       <div className="text-[10px] text-st-muted leading-relaxed px-1 pt-4">
         ⚠️ 純客觀數據展示。投資決策請自行判斷或諮詢專業顧問,盈虧自負。
       </div>
+    </div>
+  );
+}
+
+/** 今日摘要 — 晨報頂部一行(大盤 / 觀察 / 策略)*/
+function TodayDigest({
+  watchlistTotal, watchlistUps, watchlistDowns, strategyHits,
+}: {
+  watchlistTotal: number; watchlistUps: number; watchlistDowns: number;
+  strategyHits: number;
+}) {
+  const { data: dash } = useQuery({
+    queryKey: ["market-dashboard"],
+    queryFn: () => api.getMarketDashboard(),
+    staleTime: 5 * 60_000,
+  });
+  const taiexChg = dash?.taiex?.change_pct;
+  return (
+    <div
+      className="mt-3 grid grid-cols-3 gap-1.5 pt-3 border-t border-white/10"
+    >
+      <Inline
+        label="加權指數"
+        value={
+          taiexChg != null
+            ? <span style={{ color: chgColor(taiexChg) }}>
+                {chgArrow(taiexChg)} {Math.abs(taiexChg).toFixed(2)}%
+              </span>
+            : "—"
+        }
+      />
+      <Inline
+        label={`觀察 ${watchlistTotal} 檔`}
+        value={
+          watchlistTotal > 0
+            ? <span>
+                <span className="text-rose-400">{watchlistUps}</span>
+                {" / "}
+                <span className="text-emerald-400">{watchlistDowns}</span>
+              </span>
+            : "—"
+        }
+      />
+      <Inline
+        label="策略命中"
+        value={
+          <span className="text-teal-300">{strategyHits} 檔</span>
+        }
+      />
     </div>
   );
 }
@@ -1420,6 +1477,28 @@ function ScanPanel() {
 
       {/* 📊 今日策略摘要 banner */}
       {data && <StrategySummaryBanner data={data} />}
+
+      {/* 分類顯示 */}
+      {data && Object.entries(STRATEGY_CATEGORIES).map(([catKey, cat]) => {
+        const inCat = cat.strategies.filter(k => data.strategies[k]);
+        if (inCat.length === 0) return null;
+        const catHits = inCat.reduce((s, k) => s + (data.strategies[k]?.length ?? 0), 0);
+        return (
+          <div key={catKey} className="space-y-2">
+            <div className="flex items-center gap-2 mt-3 pt-2">
+              <span className="text-base">{cat.emoji}</span>
+              <h3 className="text-sm font-extrabold text-st-fg">{cat.label}</h3>
+              <span className="text-[10px] text-st-muted">· {cat.desc}</span>
+              <span className="ml-auto text-[10px] text-teal-300 font-bold tabular-nums">
+                {catHits} 檔
+              </span>
+            </div>
+            {inCat.map(key => (
+              <StrategyCollapsible key={key} strategyKey={key} hits={data.strategies[key]} />
+            ))}
+          </div>
+        );
+      })}
       {isLoading && (
         <>
           <div className="shimmer h-16 rounded-st" />
@@ -1427,12 +1506,30 @@ function ScanPanel() {
           <div className="shimmer h-16 rounded-st" />
         </>
       )}
-      {data && Object.entries(data.strategies).map(([key, hits]) => (
-        <StrategyCollapsible key={key} strategyKey={key} hits={hits} />
-      ))}
     </div>
   );
 }
+
+const STRATEGY_CATEGORIES: Record<string, { emoji: string; label: string; desc: string; strategies: string[] }> = {
+  fundamental: {
+    emoji: "💰",
+    label: "基本面",
+    desc: "看公司營運實力",
+    strategies: ["rev_yoy"],
+  },
+  chip: {
+    emoji: "📊",
+    label: "籌碼面",
+    desc: "看誰在買誰在賣",
+    strategies: ["low_retail", "high_retail", "ab_consensus", "govbank_reverse"],
+  },
+  vol_price: {
+    emoji: "📈",
+    label: "量價",
+    desc: "看 K 線與成交量訊號",
+    strategies: ["quiet_limitdown", "quiet_limitup"],
+  },
+};
 
 const STRATEGY_META: Record<string, { icon: string; name: string; alpha: string; frame: string; color: string }> = {
   rev_yoy: { icon: "💰", name: "月營收 YoY 高成長", alpha: "+5.10%", frame: "60d", color: "#5eead4" },
