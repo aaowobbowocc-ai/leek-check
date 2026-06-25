@@ -5,14 +5,14 @@ import { Providers } from "@/components/providers";
 
 const notoTC = Noto_Sans_TC({
   subsets: ["latin"],
-  weight: ["400", "500", "700", "900"],
+  weight: ["300", "400", "500", "700"],
   variable: "--font-tc",
   display: "swap",
 });
 
 const inter = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["300", "400", "500", "600", "700"],
   variable: "--font-en",
   display: "swap",
 });

@@ -82,7 +82,13 @@ html, body {
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
   font-feature-settings: "ss01", "cv11";  /* Inter alt 1 */
+  font-weight: 400;  /* 預設細一點 */
 }
+
+/* 全域字重降一檔(原 800 太重)*/
+.font-extrabold { font-weight: 600 !important; }  /* 800 → 600 semi */
+.font-bold      { font-weight: 500 !important; }  /* 700 → 500 medium */
+.font-semibold  { font-weight: 500 !important; }  /* 600 → 500 */
 
 /* Tabular nums priority — 數字等寬 */
 .tabular-nums,

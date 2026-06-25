@@ -120,7 +120,7 @@ export function MainLayout() {
                 {isActive && (
                   <motion.div
                     layoutId="active-tab-pill"
-                    className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
+                    className="absolute -top-px left-1/2 -translate-x-1/2 w-6 h-[3px] rounded-b-full"
                     style={{
                       background: "var(--accent)",
                       boxShadow: "0 0 10px var(--accent-glow)",
@@ -1746,23 +1746,39 @@ function StrategyCollapsible({
   });
   const wlList = isGuestMode ? guestList : (cloudWl.data ?? []);
   const inWatch = (tk: string) => wlList.some(x => x.ticker === tk);
-  const addToWatch = async (tk: string) => {
-    if (inWatch(tk)) {
-      toast(`⭐ ${tk} 已在觀察清單`, "warn");
-      return;
-    }
-    if (isGuestMode) {
-      addGuest({ ticker: tk, type: "twse" });
-      toast(`⭐ ${tk} 已加入觀察清單`, "ok");
-    } else if (userId) {
-      try {
-        const { addCloudTicker } = await import("@/lib/watchlist");
-        await addCloudTicker({ ticker: tk, type: "twse", position: wlList.length }, userId);
-        cloudWl.refetch();
+  const removeGuestItem = useSession((s) => s.removeGuestItem);
+  const toggleWatch = async (tk: string) => {
+    const exists = inWatch(tk);
+    if (exists) {
+      // 移除
+      if (isGuestMode) {
+        removeGuestItem(tk, "twse");
+        toast(`⭐ ${tk} 已從觀察清單移除`, "ok");
+      } else if (userId) {
+        try {
+          const { removeCloudTicker } = await import("@/lib/watchlist");
+          await removeCloudTicker(tk, "twse");
+          cloudWl.refetch();
+          toast(`⭐ ${tk} 已從觀察清單移除`, "ok");
+        } catch (e) { toast(`移除失敗:${(e as Error).message}`, "error"); }
+      }
+    } else {
+      // 加入
+      if (isGuestMode) {
+        addGuest({ ticker: tk, type: "twse" });
         toast(`⭐ ${tk} 已加入觀察清單`, "ok");
-      } catch (e) { toast(`加入失敗:${(e as Error).message}`, "error"); }
+      } else if (userId) {
+        try {
+          const { addCloudTicker } = await import("@/lib/watchlist");
+          await addCloudTicker({ ticker: tk, type: "twse", position: wlList.length }, userId);
+          cloudWl.refetch();
+          toast(`⭐ ${tk} 已加入觀察清單`, "ok");
+        } catch (e) { toast(`加入失敗:${(e as Error).message}`, "error"); }
+      }
     }
   };
+  // 舊名兼容
+  const addToWatch = toggleWatch;
 
   // 展開時 batch fetch quotes 顯示漲跌
   const tks = hits.map(h => h.ticker);
@@ -1875,11 +1891,10 @@ function StrategyCollapsible({
                       </div>
                     </button>
 
-                    {/* ⭐ 加入觀察按鈕 */}
+                    {/* ⭐ 加入/移除觀察 */}
                     <button
                       onClick={(e) => { e.stopPropagation(); addToWatch(h.ticker); }}
-                      disabled={inWl}
-                      title={inWl ? "已在觀察清單" : "加入觀察清單"}
+                      title={inWl ? "已在觀察清單(點移除)" : "加入觀察清單"}
                       className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-sm active:scale-90"
                       style={{
                         background: inWl

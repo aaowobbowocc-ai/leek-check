@@ -26,12 +26,15 @@ type Props = {
   /** 晨報精選 toggle */
   isPicked?: boolean;
   onPin?: () => void;
+  /** 加入觀察 toggle(熱門股 / 排行榜用)*/
+  isInWatch?: boolean;
+  onAddWatch?: () => void;
   defaultExpanded?: boolean;
 };
 
 export function StockRow({
   ticker, name, industry, quote, hasHolding, holding, onOpen, onEdit,
-  isPicked, onPin, defaultExpanded = false,
+  isPicked, onPin, isInWatch, onAddWatch, defaultExpanded = false,
 }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { light } = cardTier(ticker, industry);
@@ -176,6 +179,25 @@ export function StockRow({
                     sub={`${chgArrow(holding.pnlPct ?? 0)} ${(holding.pnlPct ?? 0).toFixed(2)}%`}
                   />
                 </div>
+              )}
+
+              {/* ⭐ 加入觀察按鈕(熱門股 / 排行榜用)*/}
+              {onAddWatch && (
+                <button
+                  onClick={onAddWatch}
+                  className="w-full mb-1.5 rounded-st py-2 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all border"
+                  style={{
+                    background: isInWatch
+                      ? "linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), color-mix(in srgb, var(--accent-deep) 8%, transparent))"
+                      : "linear-gradient(180deg, #1c2028, #11141a)",
+                    borderColor: isInWatch
+                      ? "color-mix(in srgb, var(--accent) 50%, transparent)"
+                      : "#2a3340",
+                    color: isInWatch ? "var(--accent)" : "#94a3b8",
+                  }}
+                >
+                  {isInWatch ? "★ 已在觀察清單(點移除)" : "☆ 加入觀察清單"}
+                </button>
               )}
 
               {/* Action buttons */}
