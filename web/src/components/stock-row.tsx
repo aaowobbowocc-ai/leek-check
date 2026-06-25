@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Stethoscope, Settings as SettingsIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Stethoscope, Settings as SettingsIcon, Loader2 } from "lucide-react";
 import { StockPill } from "@/components/stock-pill";
-import { cardTier, chgColor, chgArrow } from "@/lib/tier";
+import { cardTier, chgArrow } from "@/lib/tier";
 import { formatNumber } from "@/lib/utils";
-import type { Quote } from "@/lib/api";
+import { api, type Quote } from "@/lib/api";
 
 type Props = {
   ticker: string;
@@ -14,33 +15,31 @@ type Props = {
   industry: string;
   quote?: Quote;
   hasHolding?: boolean;
-  /** 持股資訊(展開時顯示)*/
   holding?: {
     shares: number;
     cost_per_share: number;
     pnl?: number;
     pnlPct?: number;
   };
-  /** 點「翻開健檢」按鈕 */
   onOpen?: () => void;
-  /** 點「編輯持股」按鈕 — 沒傳就不顯示 */
   onEdit?: () => void;
-  /** 預設展開 */
   defaultExpanded?: boolean;
 };
 
-/**
- * 3 層 disclosure UX:
- * Level 1 = 膠囊行(StockPill)— 預設只顯示這個
- * Level 2 = 點開後 brief panel(產業 / 開高低 / 持股 / 兩個 action 按鈕)
- * Level 3 = 點 brief panel 的 [翻開健檢] → /ticker/{tk}
- */
 export function StockRow({
   ticker, name, industry, quote, hasHolding, holding, onOpen, onEdit,
   defaultExpanded = false,
 }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { light } = cardTier(ticker, industry);
+
+  // Lazy load health-check 只在展開時 fetch
+  const { data: hc, isLoading: hcLoading } = useQuery({
+    queryKey: ["health-check", ticker],
+    queryFn: () => api.getHealthCheck(ticker),
+    enabled: expanded,
+    staleTime: 5 * 60_000,  // 5 min cache
+  });
 
   return (
     <div className="space-y-1">
@@ -64,7 +63,7 @@ export function StockRow({
             className="overflow-hidden"
           >
             <div
-              className="rounded-st p-3 space-y-2"
+              className="rounded-st p-3 space-y-3"
               style={{
                 background: "#16181d",
                 border: "1px solid #2f343d",
@@ -75,19 +74,84 @@ export function StockRow({
                 ].join(", "),
               }}
             >
-              {/* 產業 + 收盤日期 */}
+              {/* 第 1 列:產業 + 日期 */}
               <div className="flex items-center justify-between text-[10px] text-st-muted">
                 <span>📂 {industry || "—"}</span>
                 {quote && <span className="tabular-nums">{quote.asof}</span>}
               </div>
 
-              {/* 開高低 + 量 */}
+              {/* 第 2 列:OHLCV 4 cells */}
               {quote && (
                 <div className="grid grid-cols-4 gap-1 text-[10px]">
                   <Mini label="開" value={formatNumber(quote.open, 1)} />
                   <Mini label="高" value={formatNumber(quote.high, 1)} tint="up" />
                   <Mini label="低" value={formatNumber(quote.low, 1)} tint="down" />
                   <Mini label="量" value={fmtVol(quote.volume)} />
+                </div>
+              )}
+
+              {/* 迷你股價走勢圖(20 日)*/}
+              {hc && hc.sparkline.length > 0 && (
+                <MiniChart data={hc.sparkline} />
+              )}
+
+              {/* 第 3 列:健檢分數 + 4 維度迷你 bar */}
+              {hcLoading && (
+                <div className="flex items-center gap-2 text-[10px] text-st-muted">
+                  <Loader2 className="w-3 h-3 animate-spin" /> 健檢中⋯
+                </div>
+              )}
+              {hc && (
+                <HealthMiniRow hc={hc} />
+              )}
+
+              {/* 第 4 列:技術 + 基本面 key metrics */}
+              {hc && hc.tech && (
+                <div className="grid grid-cols-4 gap-1 text-[10px]">
+                  <Mini
+                    label="距 MA20"
+                    value={`${(((hc.tech.price / hc.tech.ma20) - 1) * 100).toFixed(1)}%`}
+                    tint={hc.tech.price >= hc.tech.ma20 ? "up" : "down"}
+                  />
+                  <Mini
+                    label="距 MA60"
+                    value={`${(((hc.tech.price / hc.tech.ma60) - 1) * 100).toFixed(1)}%`}
+                    tint={hc.tech.price >= hc.tech.ma60 ? "up" : "down"}
+                  />
+                  <Mini
+                    label="RSI"
+                    value={hc.tech.rsi.toFixed(0)}
+                    tint={hc.tech.rsi > 70 ? "up" : hc.tech.rsi < 30 ? "down" : undefined}
+                    sub={hc.tech.rsi > 70 ? "超買" : hc.tech.rsi < 30 ? "超賣" : "中性"}
+                  />
+                  <Mini
+                    label="KD"
+                    value={`${hc.tech.k.toFixed(0)}/${hc.tech.d.toFixed(0)}`}
+                    sub={hc.tech.k > hc.tech.d ? "↑金叉" : "↓死叉"}
+                  />
+                </div>
+              )}
+
+              {/* 第 5 列:基本面 + 法人(如有)*/}
+              {hc && (hc.funda?.per != null || hc.funda?.rev_yoy != null || hc.chip) && (
+                <div className="grid grid-cols-3 gap-1 text-[10px]">
+                  {hc.funda?.per != null && (
+                    <Mini label="本益比" value={hc.funda.per.toFixed(1)} />
+                  )}
+                  {hc.funda?.rev_yoy != null && (
+                    <Mini
+                      label="月營收 YoY"
+                      value={`${hc.funda.rev_yoy >= 0 ? "+" : ""}${hc.funda.rev_yoy.toFixed(1)}%`}
+                      tint={hc.funda.rev_yoy >= 0 ? "up" : "down"}
+                    />
+                  )}
+                  {hc.chip && (
+                    <Mini
+                      label="外資 20d"
+                      value={`${hc.chip.foreign_20d >= 0 ? "+" : ""}${(hc.chip.foreign_20d / 1000).toFixed(1)}K`}
+                      tint={hc.chip.foreign_20d > 0 ? "up" : hc.chip.foreign_20d < 0 ? "down" : undefined}
+                    />
+                  )}
                 </div>
               )}
 
@@ -113,21 +177,45 @@ export function StockRow({
 
               {/* Action buttons */}
               <div className="flex gap-1.5 pt-1">
-                <button
+                {/* 主按鈕:翻開健檢 — 金屬 teal 漸層 + glow + 箭頭 */}
+                <motion.button
                   onClick={onOpen}
-                  className="flex-1 rounded-st py-2 text-xs font-semibold text-teal-300 transition-colors flex items-center justify-center gap-1.5 active:scale-95"
+                  whileTap={{ scale: 0.96 }}
+                  className="flex-1 relative overflow-hidden rounded-st py-2.5 px-3 text-sm font-bold text-ink-950 flex items-center justify-center gap-2 group"
                   style={{
-                    background: "linear-gradient(180deg, #1c2028, #11141a)",
-                    border: "1px solid #2a3340",
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+                    background: [
+                      // 對角反光帶
+                      "linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.25) 50%, transparent 65%)",
+                      // 主色 teal 漸層
+                      "linear-gradient(180deg, #5eead4 0%, #14b8a6 60%, #0d9488 100%)",
+                    ].join(", "),
+                    border: "1px solid #99f6e4",
+                    boxShadow: [
+                      "0 4px 14px rgba(20, 184, 166, 0.35)",     // 外發光
+                      "inset 0 1px 0 rgba(255, 255, 255, 0.4)",   // 頂高光
+                      "inset 0 -1px 0 rgba(0, 0, 0, 0.2)",        // 底深陰
+                      "0 0 24px rgba(94, 234, 212, 0.25)",        // ambient glow
+                    ].join(", "),
+                    color: "#0f1218",
                   }}
                 >
-                  <Stethoscope className="w-3.5 h-3.5" /> 翻開健檢
-                </button>
+                  <Stethoscope className="w-4 h-4" strokeWidth={2.5} />
+                  <span className="tracking-wide">翻開完整健檢</span>
+                  <motion.span
+                    className="text-base"
+                    animate={{ x: [0, 3, 0] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                  >
+                    →
+                  </motion.span>
+                </motion.button>
+
+                {/* 副按鈕:編輯 */}
                 {onEdit && (
-                  <button
+                  <motion.button
                     onClick={onEdit}
-                    className="rounded-st px-3 text-xs font-semibold text-st-muted transition-colors flex items-center justify-center gap-1.5 active:scale-95"
+                    whileTap={{ scale: 0.96 }}
+                    className="rounded-st px-3 text-xs font-semibold text-st-muted flex items-center justify-center gap-1.5"
                     style={{
                       background: "linear-gradient(180deg, #1c2028, #11141a)",
                       border: "1px solid #2a3340",
@@ -135,13 +223,113 @@ export function StockRow({
                     }}
                   >
                     <SettingsIcon className="w-3.5 h-3.5" /> 編輯
-                  </button>
+                  </motion.button>
                 )}
               </div>
             </div>
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function MiniChart({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const W = 300, H = 44;
+  const points = data
+    .map((v, i) => `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * (H - 4) - 2}`)
+    .join(" ");
+  const first = data[0];
+  const last = data[data.length - 1];
+  const up = last >= first;
+  const stroke = up ? "#ef4444" : "#10b981";
+  const fill = up ? "rgba(239,68,68,0.18)" : "rgba(16,185,129,0.18)";
+  const chg = ((last / first - 1) * 100);
+
+  return (
+    <div
+      className="rounded p-2"
+      style={{ background: "#0f1218", border: "1px solid #2f343d" }}
+    >
+      <div className="flex items-center justify-between mb-1 text-[10px]">
+        <span className="text-st-muted font-bold tracking-wider">📈 20 日走勢</span>
+        <span
+          className="tabular-nums font-bold"
+          style={{ color: stroke }}
+        >
+          {up ? "▲" : "▼"} {Math.abs(chg).toFixed(2)}%
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-10" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id={`mini-${stroke}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={fill} />
+            <stop offset="100%" stopColor="transparent" />
+          </linearGradient>
+        </defs>
+        <polygon
+          points={`0,${H} ${points} ${W},${H}`}
+          fill={`url(#mini-${stroke})`}
+        />
+        <polyline
+          points={points}
+          stroke={stroke}
+          strokeWidth={1.5}
+          fill="none"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
+function HealthMiniRow({ hc }: { hc: NonNullable<ReturnType<typeof useQuery<import("@/lib/api").HealthCheck>>["data"]> }) {
+  const composite = hc.health.composite;
+  const color = composite >= 70 ? "#5eead4" : composite >= 50 ? "#fbbf24" : "#f43f5e";
+  const verdict = composite >= 70 ? "健康" : composite >= 50 ? "亞健康" : "韭菜病";
+  const dims = [
+    { label: "技", val: hc.health.scores.technical.score },
+    { label: "籌", val: hc.health.scores.chip.score },
+    { label: "本", val: hc.health.scores.fundamental.score },
+    { label: "聞", val: hc.health.scores.news.score },
+  ];
+  return (
+    <div
+      className="rounded p-2 flex items-center gap-3"
+      style={{ background: "#0f1218", border: "1px solid #2f343d" }}
+    >
+      {/* Mini composite */}
+      <div className="text-center flex-shrink-0">
+        <div className="text-[9px] text-st-muted font-bold tracking-wider">健檢</div>
+        <div className="tabular-nums font-extrabold" style={{ fontSize: "1.4rem", color, lineHeight: 1 }}>
+          {composite}
+        </div>
+        <div className="text-[9px] font-bold" style={{ color }}>{verdict}</div>
+      </div>
+      {/* 4 dim mini bars */}
+      <div className="flex-1 space-y-1">
+        {dims.map((d) => {
+          const dColor = d.val >= 70 ? "#5eead4" : d.val >= 50 ? "#fbbf24" : "#f43f5e";
+          return (
+            <div key={d.label} className="flex items-center gap-1.5">
+              <span className="text-[9px] text-st-muted w-3">{d.label}</span>
+              <div className="flex-1 h-1 bg-ink-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{ width: `${Math.max(2, d.val)}%`, background: dColor }}
+                />
+              </div>
+              <span className="tabular-nums text-[10px] font-bold w-6 text-right" style={{ color: dColor }}>
+                {d.val}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
