@@ -849,15 +849,21 @@ function SectionCard({
 }: { emoji: string; title: string; sub?: string; badge?: string; children: React.ReactNode }) {
   return (
     <div
-      className="rounded-st p-4"
+      className="rounded-st p-4 relative"
       style={{
         background: [
           "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.05), transparent 35%)",
           "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
         ].join(", "),
-        border: "1px solid #3a4150",
+        // 4 邊 accent 半透明線 + 左 3px 加重 + neon ring
+        border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)",
         borderLeft: "3px solid var(--accent)",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4), 0 0 12px var(--accent-glow)",
+        boxShadow: [
+          "inset 0 1px 0 rgba(255,255,255,0.08)",
+          "inset 0 -1px 0 rgba(0,0,0,0.4)",
+          "0 0 12px var(--accent-glow)",
+          "0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent)",
+        ].join(", "),
       }}
     >
       <div className="flex items-center gap-2 mb-3">

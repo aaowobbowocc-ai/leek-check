@@ -323,41 +323,66 @@ function HealthMiniRow({ hc }: { hc: NonNullable<ReturnType<typeof useQuery<impo
   const composite = hc.health.composite;
   const color = composite >= 70 ? "#5eead4" : composite >= 50 ? "#fbbf24" : "#f43f5e";
   const verdict = composite >= 70 ? "健康" : composite >= 50 ? "亞健康" : "韭菜病";
+
+  // 完整 4 維度 + 權重 + 第一條 bullet 解讀
   const dims = [
-    { label: "技", val: hc.health.scores.technical.score },
-    { label: "籌", val: hc.health.scores.chip.score },
-    { label: "本", val: hc.health.scores.fundamental.score },
-    { label: "聞", val: hc.health.scores.news.score },
+    { key: "tech", label: "技術面", weight: 40, val: hc.health.scores.technical.score, hint: hc.health.scores.technical.notes[0] ?? "—" },
+    { key: "chip", label: "籌碼面", weight: 30, val: hc.health.scores.chip.score, hint: hc.health.scores.chip.notes[0] ?? "—" },
+    { key: "funda", label: "基本面", weight: 20, val: hc.health.scores.fundamental.score, hint: hc.health.scores.fundamental.notes[0] ?? "—" },
+    { key: "news", label: "新聞面", weight: 10, val: hc.health.scores.news.score, hint: hc.health.scores.news.notes[0] ?? "—" },
   ];
+
   return (
     <div
-      className="rounded p-2 flex items-center gap-3"
+      className="rounded p-2.5 space-y-2"
       style={{ background: "#0f1218", border: "1px solid #2f343d" }}
     >
-      {/* Mini composite */}
-      <div className="text-center flex-shrink-0">
-        <div className="text-[9px] text-st-muted font-bold tracking-wider">健檢</div>
-        <div className="tabular-nums font-extrabold" style={{ fontSize: "1.4rem", color, lineHeight: 1 }}>
-          {composite}
+      {/* 上半:總分 + verdict */}
+      <div className="flex items-center gap-3">
+        <div className="text-center flex-shrink-0 px-1">
+          <div className="text-[9px] text-st-muted font-bold tracking-wider">健檢</div>
+          <div className="tabular-nums font-extrabold" style={{ fontSize: "1.7rem", color, lineHeight: 1 }}>
+            {composite}
+          </div>
+          <div className="text-[10px] font-bold mt-0.5" style={{ color }}>{verdict}</div>
         </div>
-        <div className="text-[9px] font-bold" style={{ color }}>{verdict}</div>
+        <div className="flex-1 text-[10px] text-st-muted leading-snug border-l border-st-border pl-3">
+          {composite >= 70
+            ? "✓ 4 面綜合判讀體質健康,可關注進場時機"
+            : composite >= 50
+            ? "⚠️ 體質普通,部分維度需注意"
+            : "🚨 體質偏弱,留意風險(韭菜病警示)"}
+        </div>
       </div>
-      {/* 4 dim mini bars */}
-      <div className="flex-1 space-y-1">
+
+      {/* 下半:4 維度 — 名稱 + 權重 + 分數 + 第 1 條 bullet */}
+      <div className="space-y-1.5 pt-2 border-t border-st-border">
         {dims.map((d) => {
           const dColor = d.val >= 70 ? "#5eead4" : d.val >= 50 ? "#fbbf24" : "#f43f5e";
           return (
-            <div key={d.label} className="flex items-center gap-1.5">
-              <span className="text-[9px] text-st-muted w-3">{d.label}</span>
-              <div className="flex-1 h-1 bg-ink-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${Math.max(2, d.val)}%`, background: dColor }}
-                />
+            <div key={d.key} className="space-y-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] font-bold text-st-soft w-12 flex-shrink-0">
+                  {d.label}
+                </span>
+                <span className="text-[8px] text-st-muted w-7 flex-shrink-0">
+                  ({d.weight}%)
+                </span>
+                <div className="flex-1 h-1 bg-ink-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{ width: `${Math.max(2, d.val)}%`, background: dColor }}
+                  />
+                </div>
+                <span className="tabular-nums text-[11px] font-extrabold w-7 text-right flex-shrink-0" style={{ color: dColor }}>
+                  {d.val}
+                </span>
               </div>
-              <span className="tabular-nums text-[10px] font-bold w-6 text-right" style={{ color: dColor }}>
-                {d.val}
-              </span>
+              {d.hint && d.hint !== "—" && (
+                <div className="text-[9px] text-st-muted pl-[5.25rem] truncate">
+                  {d.hint}
+                </div>
+              )}
             </div>
           );
         })}
