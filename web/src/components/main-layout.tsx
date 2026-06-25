@@ -565,8 +565,8 @@ function MarketDashboardCard() {
         </div>
       </SectionCard>
 
-      {/* ════════ Group 2: 🤖 AI 判讀(同類聚合)════════ */}
-      <GroupHeader emoji="🤖" label="AI 判讀" sub="Gemini 用你選的語氣 × 時間框架" />
+      {/* ════════ Group 2: 🤖 智能整理(同類聚合)════════ */}
+      <GroupHeader emoji="🤖" label="智能整理" sub="用你選的語氣 × 時間框架" />
       <AiMarketInsightCard dashboard={data} />
       <AiNewsSentimentCard />
 
@@ -970,7 +970,7 @@ function AiMarketInsightCard({ dashboard }: { dashboard: import("@/lib/api").Mar
   };
 
   return (
-    <SectionCard emoji="🤖" title="智能國際情勢" badge="PRO" sub="AI 判讀國際 → 台股">
+    <SectionCard emoji="🤖" title="智能國際整理" badge="PRO" sub="整理國際 → 對台股影響">
       <div className="grid grid-cols-2 gap-2 mb-3">
         <StyleSelector value={style} onChange={setStyle} />
         <TimeframeSelector value={tf} onChange={setTf} />
@@ -985,7 +985,7 @@ function AiMarketInsightCard({ dashboard }: { dashboard: import("@/lib/api").Mar
           boxShadow: "0 4px 14px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.3)",
         }}
       >
-        ✨ {loading ? "Gemini 分析中⋯" : aiText ? "🔄 重新分析" : "產出 AI 判讀"}
+        ✨ {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "產出整理報告"}
       </button>
       {aiText && (
         <motion.div
@@ -1061,7 +1061,7 @@ function AiNewsSentimentCard() {
   };
 
   return (
-    <SectionCard emoji="🤖" title="智能新聞情緒" badge="PRO" sub="AI 解讀今日大盤新聞">
+    <SectionCard emoji="🤖" title="智能新聞整理" badge="PRO" sub="自動整理今日大盤新聞情緒">
       <div className="grid grid-cols-2 gap-2 mb-3">
         <StyleSelector value={style} onChange={setStyle} />
         <TimeframeSelector value={tf} onChange={setTf} />
@@ -1076,7 +1076,7 @@ function AiNewsSentimentCard() {
           boxShadow: "0 4px 14px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.3)",
         }}
       >
-        ✨ {loading ? "分析中⋯" : aiText ? "🔄 重新分析" : `產出新聞情緒(${news?.length ?? 0} 條)`}
+        ✨ {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : `整理新聞情緒(${news?.length ?? 0} 條)`}
       </button>
       {aiText && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
@@ -1478,24 +1478,50 @@ function ScanPanel() {
       {/* 📊 今日策略摘要 banner */}
       {data && <StrategySummaryBanner data={data} />}
 
-      {/* 分類顯示 */}
-      {data && Object.entries(STRATEGY_CATEGORIES).map(([catKey, cat]) => {
-        const inCat = cat.strategies.filter(k => data.strategies[k]);
-        if (inCat.length === 0) return null;
-        const catHits = inCat.reduce((s, k) => s + (data.strategies[k]?.length ?? 0), 0);
+      {/* 正向 / 反向 大分類 */}
+      {data && Object.entries(STRATEGY_DIRECTIONS).map(([dirKey, dir]) => {
+        const dirHits = dir.groups.reduce((s, g) =>
+          s + g.strategies.reduce((ss, k) => ss + (data.strategies[k]?.length ?? 0), 0), 0);
         return (
-          <div key={catKey} className="space-y-2">
-            <div className="flex items-center gap-2 mt-3 pt-2">
-              <span className="text-base">{cat.emoji}</span>
-              <h3 className="text-sm font-extrabold text-st-fg">{cat.label}</h3>
-              <span className="text-[10px] text-st-muted">· {cat.desc}</span>
-              <span className="ml-auto text-[10px] text-teal-300 font-bold tabular-nums">
-                {catHits} 檔
+          <div key={dirKey} className="space-y-2">
+            {/* 大分類 header(正向 / 反向)*/}
+            <div
+              className="rounded-st px-3 py-2.5 flex items-center gap-2 mt-3"
+              style={{
+                background: `linear-gradient(90deg, ${dir.tint}15, transparent)`,
+                border: `1px solid ${dir.tint}40`,
+                borderLeft: `4px solid ${dir.tint}`,
+              }}
+            >
+              <span className="text-xl">{dir.emoji}</span>
+              <div className="flex-1">
+                <div className="font-extrabold text-st-fg text-sm" style={{ color: dir.tint }}>
+                  {dir.label}
+                </div>
+                <div className="text-[10px] text-st-muted">{dir.desc}</div>
+              </div>
+              <span className="text-xs font-bold tabular-nums" style={{ color: dir.tint }}>
+                {dirHits} 檔
               </span>
             </div>
-            {inCat.map(key => (
-              <StrategyCollapsible key={key} strategyKey={key} hits={data.strategies[key]} />
-            ))}
+
+            {/* 子分類(基本/籌碼/量價)*/}
+            {dir.groups.map((grp, gi) => {
+              const inGrp = grp.strategies.filter(k => data.strategies[k]);
+              if (inGrp.length === 0) return null;
+              return (
+                <div key={`${dirKey}-${gi}`} className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 px-1 mt-2">
+                    <span className="text-sm">{grp.emoji}</span>
+                    <h4 className="text-xs font-bold text-st-soft">{grp.label}</h4>
+                    <span className="text-[10px] text-st-muted">· {grp.desc}</span>
+                  </div>
+                  {inGrp.map(key => (
+                    <StrategyCollapsible key={key} strategyKey={key} hits={data.strategies[key]} />
+                  ))}
+                </div>
+              );
+            })}
           </div>
         );
       })}
@@ -1510,24 +1536,35 @@ function ScanPanel() {
   );
 }
 
-const STRATEGY_CATEGORIES: Record<string, { emoji: string; label: string; desc: string; strategies: string[] }> = {
-  fundamental: {
-    emoji: "💰",
-    label: "基本面",
-    desc: "看公司營運實力",
-    strategies: ["rev_yoy"],
+type StratGroup = { emoji: string; label: string; desc: string; tint: string; strategies: string[] };
+
+/** 第一層:正向 vs 反向;第二層:基本/籌碼/量價 */
+const STRATEGY_DIRECTIONS: Record<string, {
+  emoji: string;
+  label: string;
+  desc: string;
+  tint: string;
+  groups: StratGroup[];
+}> = {
+  long: {
+    emoji: "🟢",
+    label: "正向訊號",
+    desc: "可考慮買進(memory 真 alpha 驗證)",
+    tint: "#5eead4",
+    groups: [
+      { emoji: "💰", label: "基本面", desc: "看公司營運實力", tint: "#5eead4", strategies: ["rev_yoy"] },
+      { emoji: "📊", label: "籌碼面", desc: "看誰在買", tint: "#5eead4", strategies: ["low_retail", "ab_consensus"] },
+      { emoji: "📈", label: "量價", desc: "看 K 線與成交量", tint: "#5eead4", strategies: ["limitdown_bounce", "limitup_quiet"] },
+    ],
   },
-  chip: {
-    emoji: "📊",
-    label: "籌碼面",
-    desc: "看誰在買誰在賣",
-    strategies: ["low_retail", "high_retail", "ab_consensus", "govbank_reverse"],
-  },
-  vol_price: {
-    emoji: "📈",
-    label: "量價",
-    desc: "看 K 線與成交量訊號",
-    strategies: ["quiet_limitdown", "quiet_limitup"],
+  short: {
+    emoji: "🔴",
+    label: "反向訊號",
+    desc: "避開或減碼(memory 真 alpha 反向)",
+    tint: "#f43f5e",
+    groups: [
+      { emoji: "📊", label: "籌碼異常", desc: "韭菜聚集 / 政府護盤後弱", tint: "#f43f5e", strategies: ["high_retail", "govbank_reverse"] },
+    ],
   },
 };
 
@@ -1535,8 +1572,8 @@ const STRATEGY_META: Record<string, { icon: string; name: string; alpha: string;
   rev_yoy: { icon: "💰", name: "月營收 YoY 高成長", alpha: "+5.10%", frame: "60d", color: "#5eead4" },
   low_retail: { icon: "👻", name: "散戶比例極端低位", alpha: "+11.3pp", frame: "20d", color: "#5eead4" },
   high_retail: { icon: "⚠️", name: "散戶比例極端高位", alpha: "Avoid", frame: "—", color: "#fbbf24" },
-  quiet_limitdown: { icon: "📉", name: "量縮跌停反彈", alpha: "+4.27%", frame: "5d", color: "#5eead4" },
-  quiet_limitup: { icon: "📈", name: "量縮漲停", alpha: "+4.83%", frame: "20d", color: "#5eead4" },
+  limitdown_bounce: { icon: "📉", name: "量縮跌停反彈", alpha: "+4.27%", frame: "5d", color: "#5eead4" },
+  limitup_quiet: { icon: "📈", name: "量縮漲停", alpha: "+4.83%", frame: "20d", color: "#5eead4" },
   ab_consensus: { icon: "🤝", name: "AB 雙重共識", alpha: "+8.78%", frame: "60d", color: "#5eead4" },
   govbank_reverse: { icon: "🏦", name: "政府行庫反向", alpha: "+1.62pp", frame: "60d", color: "#5eead4" },
 };
@@ -1609,7 +1646,7 @@ function StrategyCollapsible({
             className="overflow-hidden"
           >
             <div className="px-3 pb-3 pt-1 space-y-1 border-t border-st-border">
-              {hits.slice(0, 8).map((h) => (
+              {hits.map((h) => (
                 <button
                   key={h.ticker}
                   onClick={() => router.push(`/ticker/${h.ticker}`)}
@@ -1627,11 +1664,9 @@ function StrategyCollapsible({
                   )}
                 </button>
               ))}
-              {hits.length > 8 && (
-                <div className="text-[10px] text-st-muted text-center pt-1">
-                  還有 {hits.length - 8} 檔
-                </div>
-              )}
+              <div className="text-[10px] text-st-muted text-center pt-1">
+                共 {hits.length} 檔
+              </div>
             </div>
           </motion.div>
         )}
@@ -1725,7 +1760,7 @@ function MePanel() {
         <MenuItem
           icon="💎"
           title="升級 PRO"
-          desc="晨報精選 5 檔 + 觀察清單一鍵巡禮 + 無限 AI 解讀"
+          desc="晨報精選 5 檔 + 觀察清單一鍵巡禮 + 無限智能整理"
           badge="WIP"
         />
         <MenuItem

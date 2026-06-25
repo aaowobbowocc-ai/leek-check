@@ -329,7 +329,7 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
 
   return (
     <StCard>
-      <StHeader emoji="🤖" title="AI 智能解讀" sub="Gemini 用白話幫你寫健檢報告" />
+      <StHeader emoji="🤖" title="智能整理" sub="用白話幫你寫健檢報告" />
 
       {/* style + timeframe selectors */}
       <div className="grid grid-cols-2 gap-2 mb-3">
@@ -391,7 +391,7 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
         }}
       >
         <Sparkles className="w-4 h-4" />
-        {loading ? "Gemini 思考中⋯" : aiText ? "🔄 重新分析" : "✨ 產出 AI 健檢報告"}
+        {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "✨ 產出健檢報告"}
       </motion.button>
 
       {error && (
