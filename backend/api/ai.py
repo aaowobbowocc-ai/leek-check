@@ -93,20 +93,109 @@ def build_prompt(p: ExplainIn) -> str:
 
 @router.post("/ai/explain", response_model=ExplainOut)
 def ai_explain(payload: ExplainIn):
+    return _gemini_run(build_prompt(payload), max_tokens=600)
+
+
+# ────── 智能國際情勢 ──────
+class MarketInsightIn(BaseModel):
+    taiex_price: float
+    taiex_change_pct: float
+    taiex_ma200_dist: float | None = None
+    taiex_temperature: str = ""
+    vix: float | None = None
+    intl: dict = {}              # {sp500: {price, change_pct}, nasdaq: ..., ...}
+    institutional: dict = {}     # {foreign_20d, invtrust_20d, dealer_20d}
+    style: str = "neutral"
+    timeframe: str = "mid"
+
+
+@router.post("/ai/market-insight", response_model=ExplainOut)
+def market_insight(p: MarketInsightIn):
+    style = PROMPT_STYLES.get(p.style, PROMPT_STYLES["neutral"])
+    tf = TIMEFRAMES.get(p.timeframe, TIMEFRAMES["mid"])
+    intl_lines = []
+    for k, v in p.intl.items():
+        if not v:
+            continue
+        intl_lines.append(f"  • {k}: {v.get('price','?')} ({v.get('change_pct',0):+.2f}%)")
+    inst = p.institutional or {}
+    prompt = f"""你是「韭菜健檢」的客觀分析助理 — 解讀國際市場對台股的影響。
+
+【加權指數】{p.taiex_price:.0f} ({p.taiex_change_pct:+.2f}%) · {p.taiex_temperature} · 距 MA200 {p.taiex_ma200_dist:+.1f}% if p.taiex_ma200_dist else '?'
+
+【VIX 恐慌】{p.vix:.1f if p.vix else '?'}
+
+【國際市場】
+{chr(10).join(intl_lines) if intl_lines else '(無資料)'}
+
+【三大法人 20 日】
+  • 外資: {inst.get('foreign_20d', 0):,} 張
+  • 投信: {inst.get('invtrust_20d', 0):,} 張
+  • 自營: {inst.get('dealer_20d', 0):,} 張
+
+請{style},{tf}
+
+格式:
+1. 🌍 國際情勢判讀(2-3 句)
+2. 📊 法人佈局解讀(2 句)
+3. 🇹🇼 對台股影響(2-3 句,中性,不報明牌)
+4. ⚠️ 風險警示(1-2 句)
+
+規則:
+- 純客觀數據判讀,不給買賣建議
+- 直接從第 1 點開始
+- markdown 粗體強調重點
+"""
+    return _gemini_run(prompt, max_tokens=500)
+
+
+# ────── 智能新聞情緒 ──────
+class NewsSentimentIn(BaseModel):
+    news_titles: list[str]      # 10 條左右
+    style: str = "neutral"
+    timeframe: str = "mid"
+
+
+@router.post("/ai/news-sentiment", response_model=ExplainOut)
+def news_sentiment(p: NewsSentimentIn):
+    style = PROMPT_STYLES.get(p.style, PROMPT_STYLES["neutral"])
+    tf = TIMEFRAMES.get(p.timeframe, TIMEFRAMES["mid"])
+    titles = "\n".join(f"  • {t}" for t in p.news_titles[:15])
+    prompt = f"""你是「韭菜健檢」的新聞分析助理 — 解讀今日台股新聞情緒。
+
+【今日台股 / 大盤新聞】
+{titles}
+
+請{style},{tf}
+
+格式:
+1. 📊 整體新聞情緒(正面 / 中性 / 負面 + 1-2 句理由)
+2. 🔥 熱點主題(列 2-3 個族群或事件)
+3. 🚨 風險訊號(如有警訊提一句,沒有就跳過)
+4. 🎯 對盤勢影響(2 句中性判讀)
+
+規則:
+- 純客觀,不給買賣建議
+- 直接從第 1 點開始
+- markdown 粗體強調重點
+"""
+    return _gemini_run(prompt, max_tokens=400)
+
+
+def _gemini_run(prompt: str, max_tokens: int = 600):
     if not GEMINI_KEY:
         raise HTTPException(status_code=503, detail="AI service not configured")
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_KEY)
         model = genai.GenerativeModel("gemini-flash-latest")
-        prompt = build_prompt(payload)
         resp = model.generate_content(
             prompt,
             generation_config={
                 "temperature": 0.3,
-                "max_output_tokens": 600,
+                "max_output_tokens": max_tokens,
             },
         )
-        return ExplainOut(text=resp.text or "(AI 沒回應)", model="gemini-2.0-flash")
+        return ExplainOut(text=resp.text or "(AI 沒回應)", model="gemini-flash-latest")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI 失敗: {e}")

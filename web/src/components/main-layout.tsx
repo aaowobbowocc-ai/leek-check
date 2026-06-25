@@ -544,19 +544,17 @@ function MarketDashboardCard() {
         </div>
       </SectionCard>
 
-      {/* AI placeholder */}
-      <SectionCard emoji="🤖" title="智能國際情勢" badge="PRO">
-        <p className="text-xs text-st-muted leading-relaxed">
-          ✨ 開發中 — AI 會根據今日國際資產表現,
-          用 3 種時間框架 × 3 種語氣寫一段對台股的影響判讀。
-        </p>
-      </SectionCard>
+      {/* 🌍 智能國際情勢 (AI) */}
+      <AiMarketInsightCard dashboard={data} />
 
-      <SectionCard emoji="🤖" title="智能新聞情緒" badge="PRO">
-        <p className="text-xs text-st-muted leading-relaxed">
-          ✨ 開發中 — AI 解讀今日 Google News 對台股的潛在影響。
-        </p>
-      </SectionCard>
+      {/* 🗞️ 世界大事 */}
+      <WorldNewsCard />
+
+      {/* 🤖 智能新聞情緒 (AI) */}
+      <AiNewsSentimentCard />
+
+      {/* 📰 大盤新聞 */}
+      <MarketNewsCard />
 
       {/* Disclaimer */}
       <div className="text-[10px] text-st-muted leading-relaxed px-1 pt-2">
@@ -733,6 +731,219 @@ function IntlTile({ idx, emoji }: { idx: import("@/lib/api").MarketIndex; emoji:
 function SkelTile() {
   return (
     <div className="rounded p-2 shimmer" style={{ height: 56, border: "1px solid #2f343d" }} />
+  );
+}
+
+/* ════════ AI 智能國際情勢 ════════ */
+function AiMarketInsightCard({ dashboard }: { dashboard: import("@/lib/api").MarketDashboard }) {
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [style, setStyle] = useState<"neutral" | "pro" | "casual">("neutral");
+  const [tf, setTf] = useState<"short" | "mid" | "long">("mid");
+
+  const run = async () => {
+    setLoading(true);
+    try {
+      const intlObj: Record<string, { price: number; change_pct: number }> = {};
+      (["sp500", "nasdaq", "sox", "dxy", "oil", "gold", "btc"] as const).forEach(k => {
+        const x = dashboard[k];
+        if (x) intlObj[k] = { price: x.price, change_pct: x.change_pct };
+      });
+      const res = await api.aiMarketInsight({
+        taiex_price: dashboard.taiex?.price ?? 0,
+        taiex_change_pct: dashboard.taiex?.change_pct ?? 0,
+        taiex_ma200_dist: dashboard.taiex?.ma200_dist_pct,
+        taiex_temperature: dashboard.taiex?.temperature ?? "",
+        vix: dashboard.vix?.price,
+        intl: intlObj,
+        institutional: dashboard.institutional ?? {},
+        style, timeframe: tf,
+      });
+      setAiText(res.text);
+    } catch (e) { setAiText(`⚠️ ${(e as Error).message}`); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <SectionCard emoji="🤖" title="智能國際情勢" badge="PRO" sub="AI 判讀國際 → 台股">
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <StyleSelector value={style} onChange={setStyle} />
+        <TimeframeSelector value={tf} onChange={setTf} />
+      </div>
+      <button
+        onClick={run}
+        disabled={loading}
+        className="w-full py-2.5 rounded-st text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+        style={{
+          background: "linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%)",
+          color: "#fff",
+          boxShadow: "0 4px 14px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.3)",
+        }}
+      >
+        ✨ {loading ? "Gemini 分析中⋯" : aiText ? "🔄 重新分析" : "產出 AI 判讀"}
+      </button>
+      {aiText && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-3 rounded p-3 text-xs text-st-soft whitespace-pre-wrap leading-relaxed"
+          style={{ background: "#0f1218", border: "1px solid #2f343d", borderLeft: "3px solid #a78bfa" }}
+        >
+          {aiText}
+        </motion.div>
+      )}
+    </SectionCard>
+  );
+}
+
+/* ════════ 世界大事 ════════ */
+function WorldNewsCard() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["news-world"],
+    queryFn: () => api.getWorldNews(),
+    staleTime: 30 * 60_000,
+  });
+  return (
+    <SectionCard emoji="🗞️" title="世界大事" sub="篩選對台股有影響的國際新聞">
+      {isLoading && <div className="shimmer rounded h-24" />}
+      {data?.map((cat) => (
+        <div key={cat.key} className="mb-3 last:mb-0">
+          <div className="text-xs font-bold text-st-fg mb-1.5">{cat.label}</div>
+          <div className="space-y-1">
+            {cat.items.map((it, i) => (
+              <a
+                key={i}
+                href={it.link}
+                target="_blank"
+                rel="noreferrer"
+                className="block rounded p-2 hover:bg-white/[0.03] text-xs"
+                style={{ background: "#0f1218", border: "1px solid #2f343d" }}
+              >
+                <div className="text-st-soft leading-snug">{it.title}</div>
+                <div className="text-[10px] text-st-muted mt-1">{it.source}</div>
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
+    </SectionCard>
+  );
+}
+
+/* ════════ AI 新聞情緒 ════════ */
+function AiNewsSentimentCard() {
+  const { data: news } = useQuery({
+    queryKey: ["news-market"],
+    queryFn: () => api.getMarketNews(15),
+    staleTime: 30 * 60_000,
+  });
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [style, setStyle] = useState<"neutral" | "pro" | "casual">("neutral");
+  const [tf, setTf] = useState<"short" | "mid" | "long">("short");
+
+  const run = async () => {
+    if (!news?.length) return;
+    setLoading(true);
+    try {
+      const res = await api.aiNewsSentiment({
+        news_titles: news.map(n => n.title),
+        style, timeframe: tf,
+      });
+      setAiText(res.text);
+    } catch (e) { setAiText(`⚠️ ${(e as Error).message}`); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <SectionCard emoji="🤖" title="智能新聞情緒" badge="PRO" sub="AI 解讀今日大盤新聞">
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <StyleSelector value={style} onChange={setStyle} />
+        <TimeframeSelector value={tf} onChange={setTf} />
+      </div>
+      <button
+        onClick={run}
+        disabled={loading || !news?.length}
+        className="w-full py-2.5 rounded-st text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+        style={{
+          background: "linear-gradient(180deg, #a78bfa 0%, #7c3aed 100%)",
+          color: "#fff",
+          boxShadow: "0 4px 14px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.3)",
+        }}
+      >
+        ✨ {loading ? "分析中⋯" : aiText ? "🔄 重新分析" : `產出新聞情緒(${news?.length ?? 0} 條)`}
+      </button>
+      {aiText && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className="mt-3 rounded p-3 text-xs text-st-soft whitespace-pre-wrap leading-relaxed"
+          style={{ background: "#0f1218", border: "1px solid #2f343d", borderLeft: "3px solid #a78bfa" }}>
+          {aiText}
+        </motion.div>
+      )}
+    </SectionCard>
+  );
+}
+
+/* ════════ 大盤新聞 Google News ════════ */
+function MarketNewsCard() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["news-market-10"],
+    queryFn: () => api.getMarketNews(10),
+    staleTime: 30 * 60_000,
+  });
+  return (
+    <SectionCard emoji="📰" title="大盤新聞" sub="Google News · 30 分快取">
+      {isLoading && <div className="shimmer rounded h-32" />}
+      {data && data.length > 0 && (
+        <div className="space-y-1">
+          {data.map((it, i) => (
+            <a key={i} href={it.link} target="_blank" rel="noreferrer"
+                className="block rounded p-2 hover:bg-white/[0.03] text-xs"
+                style={{ background: "#0f1218", border: "1px solid #2f343d" }}>
+              <div className="text-st-soft leading-snug">{it.title}</div>
+              <div className="text-[10px] text-st-muted mt-1">📰 {it.source}</div>
+            </a>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+/* ════════ Selectors ════════ */
+function StyleSelector({ value, onChange }: { value: string; onChange: (v: "neutral" | "pro" | "casual") => void }) {
+  return (
+    <div>
+      <div className="text-[10px] text-st-muted mb-1">語氣</div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as "neutral" | "pro" | "casual")}
+        className="w-full text-xs rounded-st px-2 py-1.5"
+        style={{ background: "#16181d", border: "1px solid #2f343d", color: "#fff" }}
+      >
+        <option value="neutral">中立白話</option>
+        <option value="pro">嚴肅專業</option>
+        <option value="casual">輕鬆口語</option>
+      </select>
+    </div>
+  );
+}
+
+function TimeframeSelector({ value, onChange }: { value: string; onChange: (v: "short" | "mid" | "long") => void }) {
+  return (
+    <div>
+      <div className="text-[10px] text-st-muted mb-1">時間框架</div>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as "short" | "mid" | "long")}
+        className="w-full text-xs rounded-st px-2 py-1.5"
+        style={{ background: "#16181d", border: "1px solid #2f343d", color: "#fff" }}
+      >
+        <option value="short">短期 (1-4 週)</option>
+        <option value="mid">中期 (1-3 月)</option>
+        <option value="long">長期 (6-12 月)</option>
+      </select>
+    </div>
   );
 }
 

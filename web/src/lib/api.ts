@@ -190,4 +190,23 @@ export const api = {
   getMarketDashboard: () => get<MarketDashboard>("/api/market/dashboard"),
   getRanking: (by: "up" | "down" | "volume", limit = 20) =>
     get<RankOut>(`/api/ranking?by=${by}&limit=${limit}`),
+  getWorldNews: () => get<NewsCategory[]>("/api/news/world"),
+  getMarketNews: (limit = 10) => get<NewsItem[]>(`/api/news/market?limit=${limit}`),
+  aiMarketInsight: (body: Record<string, unknown>) =>
+    post<{ text: string; model: string }>("/api/ai/market-insight", body),
+  aiNewsSentiment: (body: { news_titles: string[]; style?: string; timeframe?: string }) =>
+    post<{ text: string; model: string }>("/api/ai/news-sentiment", body),
 };
+
+export interface NewsItem {
+  title: string;
+  source: string;
+  link: string;
+  published: string;
+}
+
+export interface NewsCategory {
+  key: string;
+  label: string;
+  items: NewsItem[];
+}

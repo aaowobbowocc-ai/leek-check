@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import quote, health_check, strategy, ai, market, ranking
+from backend.api import quote, health_check, strategy, ai, market, ranking, news
 from backend.lib.ticker_map import load_ticker_map
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -71,3 +71,4 @@ app.include_router(strategy.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(market.router, prefix="/api")
 app.include_router(ranking.router, prefix="/api")
+app.include_router(news.router, prefix="/api")
