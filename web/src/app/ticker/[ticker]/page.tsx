@@ -20,6 +20,7 @@ export default function TickerPage() {
     queryKey: ["health-check", ticker],
     queryFn: () => api.getHealthCheck(ticker),
     enabled: !!ticker,
+    staleTime: 5 * 60_000,
   });
 
   if (isLoading) {
@@ -218,6 +219,9 @@ function HealthCheckView({ data, onBack }: { data: HealthCheck; onBack: () => vo
           </div>
         </StCard>
 
+        {/* 📰 個股新聞 + 🤖 智能新聞整理 */}
+        <TickerNewsCard ticker={ticker} name={name} />
+
         {/* AI prompt (streamlit expander 翻成 card) */}
         <AiPromptCard data={data} verdict={verdict} />
 
@@ -400,6 +404,115 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
         >
           {aiText}
         </motion.div>
+      )}
+    </StCard>
+  );
+}
+
+function TickerNewsCard({ ticker, name }: { ticker: string; name: string }) {
+  const { data: news, isLoading } = useQuery({
+    queryKey: ["news-ticker", ticker, name],
+    queryFn: () => api.getTickerNews(ticker, name),
+    staleTime: 30 * 60_000,
+  });
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [style, setStyle] = useState<"neutral" | "pro" | "casual">("neutral");
+  const [tf, setTf] = useState<"short" | "mid" | "long">("short");
+
+  const runAi = async () => {
+    if (!news?.length) return;
+    setLoading(true);
+    try {
+      const res = await api.aiNewsSentiment({
+        news_titles: news.map(n => n.title),
+        style, timeframe: tf,
+      });
+      setAiText(res.text);
+    } catch (e) {
+      setAiText(`⚠️ ${(e as Error).message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <StCard>
+      <StHeader emoji="📰" title="個股新聞 + 智能整理" sub={`${ticker} ${name} · Google News 30 分快取`} />
+
+      {/* 選 + AI 按鈕 */}
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <div className="text-[10px] text-st-muted mb-1">語氣</div>
+          <select
+            value={style}
+            onChange={(e) => setStyle(e.target.value as typeof style)}
+            className="w-full text-xs rounded-st px-2 py-1.5"
+            style={{ background: "#16181d", border: "1px solid #2f343d", color: "#fff" }}
+          >
+            <option value="neutral">中立白話</option>
+            <option value="pro">嚴肅專業</option>
+            <option value="casual">輕鬆口語</option>
+          </select>
+        </div>
+        <div>
+          <div className="text-[10px] text-st-muted mb-1">時間框架</div>
+          <select
+            value={tf}
+            onChange={(e) => setTf(e.target.value as typeof tf)}
+            className="w-full text-xs rounded-st px-2 py-1.5"
+            style={{ background: "#16181d", border: "1px solid #2f343d", color: "#fff" }}
+          >
+            <option value="short">短期 (1-4 週)</option>
+            <option value="mid">中期 (1-3 月)</option>
+            <option value="long">長期 (6-12 月)</option>
+          </select>
+        </div>
+      </div>
+
+      <button
+        onClick={runAi}
+        disabled={loading || !news?.length}
+        className="btn-smart w-full mb-3"
+      >
+        ✨ <span className="relative z-10">
+          {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : `查看新聞情緒(${news?.length ?? 0} 條)`}
+        </span>
+      </button>
+
+      {aiText && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+          className="rounded p-3 text-xs text-st-soft whitespace-pre-wrap leading-relaxed mb-3"
+          style={{ background: "#0f1218", border: "1px solid #2f343d", borderLeft: "3px solid var(--accent)" }}
+        >
+          {aiText}
+        </motion.div>
+      )}
+
+      {/* 新聞列 */}
+      {isLoading && <div className="shimmer rounded h-24" />}
+      {news && news.length === 0 && (
+        <div className="text-xs text-st-muted text-center py-4">
+          目前沒抓到 {ticker} 的新聞
+        </div>
+      )}
+      {news && news.length > 0 && (
+        <div className="space-y-1.5">
+          {news.slice(0, 8).map((n, i) => (
+            <a
+              key={i}
+              href={n.link}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded p-2.5 hover:bg-white/[0.03]"
+              style={{ background: "#0f1218", border: "1px solid #2f343d" }}
+            >
+              <div className="text-xs text-st-soft leading-snug">{n.title}</div>
+              <div className="text-[10px] text-st-muted mt-1">📰 {n.source}</div>
+            </a>
+          ))}
+        </div>
       )}
     </StCard>
   );

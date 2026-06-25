@@ -194,6 +194,8 @@ export const api = {
     get<RankOut>(`/api/ranking?by=${by}&limit=${limit}`),
   getWorldNews: () => get<NewsCategory[]>("/api/news/world"),
   getMarketNews: (limit = 10) => get<NewsItem[]>(`/api/news/market?limit=${limit}`),
+  getTickerNews: (ticker: string, name = "") =>
+    get<NewsItem[]>(`/api/news/ticker/${ticker}?name=${encodeURIComponent(name)}`),
   aiMarketInsight: (body: Record<string, unknown>) =>
     post<{ text: string; model: string }>("/api/ai/market-insight", body),
   aiNewsSentiment: (body: { news_titles: string[]; style?: string; timeframe?: string }) =>
