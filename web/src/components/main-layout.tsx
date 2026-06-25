@@ -1289,85 +1289,142 @@ function SearchPanel() {
 }
 
 function ScanPanel() {
-  const router = useRouter();
   const { data, isLoading } = useQuery({
     queryKey: ["strategy-results"],
     queryFn: () => api.getStrategyResults(),
     staleTime: 60_000,
   });
 
-  const STRATEGY_META: Record<string, { icon: string; name: string; alpha: string; frame: string }> = {
-    rev_yoy: { icon: "💰", name: "月營收 YoY 高成長", alpha: "+5.10%", frame: "60d" },
-    low_retail: { icon: "👻", name: "散戶比例極端低位", alpha: "+11.3pp", frame: "20d" },
-    high_retail: { icon: "⚠️", name: "散戶比例極端高位", alpha: "Avoid", frame: "—" },
-    quiet_limitdown: { icon: "📉", name: "量縮跌停反彈", alpha: "+4.27%", frame: "5d" },
-    quiet_limitup: { icon: "📈", name: "量縮漲停", alpha: "+4.83%", frame: "20d" },
-    ab_consensus: { icon: "🤝", name: "AB 雙重共識", alpha: "+8.78%", frame: "60d" },
-    govbank_reverse: { icon: "🏦", name: "政府行庫反向", alpha: "+1.62pp", frame: "60d" },
-  };
-
   return (
-    <div className="space-y-4 pb-4">
+    <div className="space-y-3 pb-4">
       <div>
-        <h2 className="text-2xl font-extrabold text-white">📡 策略掃描</h2>
-        <p className="text-slate-400 text-xs mt-1">
+        <h2 className="text-2xl font-extrabold text-st-fg">📡 策略掃描</h2>
+        <p className="text-st-muted text-xs mt-1">
           {data
             ? `${data.fresh ? "✓ 資料新鮮" : "⚠️ 資料過期"} · 更新於 ${new Date(data.updated_at).toLocaleString("zh-TW", { hour: "2-digit", minute: "2-digit", month: "2-digit", day: "2-digit" })}`
             : "讀取中⋯"}
+          {data && ` · 共 ${Object.values(data.strategies).reduce((s, a) => s + a.length, 0)} 檔命中`}
         </p>
       </div>
-      {isLoading && <div className="text-sm text-slate-500">載入中⋯</div>}
-      {data && Object.entries(data.strategies).map(([key, hits]) => {
-        const meta = STRATEGY_META[key] ?? { icon: "📊", name: key, alpha: "—", frame: "—" };
-        return (
-          <div key={key} className="bg-ink-900/60 border border-ink-700 rounded-2xl p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="text-3xl">{meta.icon}</div>
-                <div>
-                  <div className="font-bold text-white">{meta.name}</div>
-                  <div className="text-xs text-brand-300">
-                    alpha {meta.alpha} · {meta.frame}
-                  </div>
-                </div>
-              </div>
-              <span className="text-xs bg-brand-500/15 text-brand-300 font-bold px-2 py-1 rounded">
-                {hits.length} 命中
-              </span>
-            </div>
-            {hits.length > 0 ? (
-              <div className="space-y-1.5">
-                {hits.slice(0, 5).map((h) => (
-                  <button
-                    key={h.ticker}
-                    onClick={() => router.push(`/ticker/${h.ticker}`)}
-                    className="w-full text-left text-sm bg-ink-800/50 hover:bg-ink-700/80 rounded-lg px-3 py-2 flex items-center justify-between active:scale-[0.98]"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-brand-300 font-mono text-xs">{h.ticker}</span>
-                      <span className="font-bold text-white truncate">{h.name}</span>
-                    </div>
-                    {h.metric != null && (
-                      <span className="text-xs text-emerald-400 font-bold flex-shrink-0">
-                        {h.metric.toFixed(2)}
-                      </span>
-                    )}
-                  </button>
-                ))}
-                {hits.length > 5 && (
-                  <div className="text-xs text-slate-500 text-center pt-1">
-                    還有 {hits.length - 5} 檔 — 即將支援「看全部」
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-sm text-slate-500 text-center py-3">
-                今日沒有命中
-              </div>
-            )}
+      {isLoading && (
+        <>
+          <div className="shimmer h-16 rounded-st" />
+          <div className="shimmer h-16 rounded-st" />
+          <div className="shimmer h-16 rounded-st" />
+        </>
+      )}
+      {data && Object.entries(data.strategies).map(([key, hits]) => (
+        <StrategyCollapsible key={key} strategyKey={key} hits={hits} />
+      ))}
+    </div>
+  );
+}
+
+const STRATEGY_META: Record<string, { icon: string; name: string; alpha: string; frame: string; color: string }> = {
+  rev_yoy: { icon: "💰", name: "月營收 YoY 高成長", alpha: "+5.10%", frame: "60d", color: "#5eead4" },
+  low_retail: { icon: "👻", name: "散戶比例極端低位", alpha: "+11.3pp", frame: "20d", color: "#5eead4" },
+  high_retail: { icon: "⚠️", name: "散戶比例極端高位", alpha: "Avoid", frame: "—", color: "#fbbf24" },
+  quiet_limitdown: { icon: "📉", name: "量縮跌停反彈", alpha: "+4.27%", frame: "5d", color: "#5eead4" },
+  quiet_limitup: { icon: "📈", name: "量縮漲停", alpha: "+4.83%", frame: "20d", color: "#5eead4" },
+  ab_consensus: { icon: "🤝", name: "AB 雙重共識", alpha: "+8.78%", frame: "60d", color: "#5eead4" },
+  govbank_reverse: { icon: "🏦", name: "政府行庫反向", alpha: "+1.62pp", frame: "60d", color: "#5eead4" },
+};
+
+function StrategyCollapsible({
+  strategyKey, hits,
+}: { strategyKey: string; hits: import("@/lib/api").StrategyHit[] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const meta = STRATEGY_META[strategyKey] ?? { icon: "📊", name: strategyKey, alpha: "—", frame: "—", color: "#94a3b8" };
+  const hasHits = hits.length > 0;
+
+  return (
+    <div
+      className="rounded-st overflow-hidden"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.05), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        borderLeft: `3px solid ${hasHits ? meta.color : "#475569"}`,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      {/* Header — 一行 pill 樣式 */}
+      <button
+        onClick={() => hasHits && setOpen(!open)}
+        disabled={!hasHits}
+        className="w-full px-3 py-3 flex items-center gap-3 active:scale-[0.99] transition-transform disabled:opacity-70"
+      >
+        <span className="text-2xl flex-shrink-0">{meta.icon}</span>
+        <div className="flex-1 min-w-0 text-left">
+          <div className="font-extrabold text-st-fg text-sm truncate">{meta.name}</div>
+          <div className="text-[10px] tabular-nums" style={{ color: meta.color }}>
+            alpha {meta.alpha} · {meta.frame}
           </div>
-        );
-      })}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span
+            className="text-[10px] font-bold tabular-nums px-2 py-1 rounded"
+            style={{
+              background: hasHits ? `${meta.color}20` : "#1e293b",
+              color: hasHits ? meta.color : "#64748b",
+              border: `1px solid ${hasHits ? meta.color + "60" : "#334155"}`,
+            }}
+          >
+            {hasHits ? `${hits.length} 檔` : "0"}
+          </span>
+          {hasHits && (
+            <motion.span
+              animate={{ rotate: open ? 180 : 0 }}
+              transition={{ duration: 0.2 }}
+              className="text-st-muted text-sm"
+            >
+              ▼
+            </motion.span>
+          )}
+        </div>
+      </button>
+
+      {/* Body — 展開時的命中列 */}
+      <AnimatePresence initial={false}>
+        {open && hasHits && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div className="px-3 pb-3 pt-1 space-y-1 border-t border-st-border">
+              {hits.slice(0, 8).map((h) => (
+                <button
+                  key={h.ticker}
+                  onClick={() => router.push(`/ticker/${h.ticker}`)}
+                  className="w-full text-left rounded flex items-center justify-between px-2.5 py-2 hover:bg-white/[0.03] active:scale-[0.98]"
+                  style={{ background: "#0f1218", border: "1px solid #2a3340" }}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="tabular-nums text-xs font-bold" style={{ color: meta.color }}>{h.ticker}</span>
+                    <span className="text-xs text-st-soft truncate">{h.name}</span>
+                  </div>
+                  {h.metric != null && (
+                    <span className="text-[10px] tabular-nums font-bold flex-shrink-0" style={{ color: meta.color }}>
+                      {h.metric.toFixed(2)}
+                    </span>
+                  )}
+                </button>
+              ))}
+              {hits.length > 8 && (
+                <div className="text-[10px] text-st-muted text-center pt-1">
+                  還有 {hits.length - 8} 檔
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
