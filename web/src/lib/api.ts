@@ -120,6 +120,22 @@ async function post<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+export interface MarketIndex {
+  symbol: string;
+  name: string;
+  price: number;
+  change_pct: number;
+  asof: string;
+}
+export interface MarketDashboard {
+  taiex: MarketIndex | null;
+  vix: MarketIndex | null;
+  sp500: MarketIndex | null;
+  nasdaq: MarketIndex | null;
+  dxj: MarketIndex | null;
+  nikkei: MarketIndex | null;
+}
+
 export const api = {
   searchTickers: (q: string) => get<TickerInfo[]>(`/api/search?q=${encodeURIComponent(q)}`),
   getQuote: (tk: string) => get<Quote>(`/api/quote/${tk}`),
@@ -127,4 +143,5 @@ export const api = {
   getHealthCheck: (tk: string) => get<HealthCheck>(`/api/health-check/${tk}`),
   getStrategyResults: () => get<StrategyResults>("/api/strategy/results"),
   aiExplain: (body: AiExplainIn) => post<{ text: string; model: string }>("/api/ai/explain", body),
+  getMarketDashboard: () => get<MarketDashboard>("/api/market/dashboard"),
 };

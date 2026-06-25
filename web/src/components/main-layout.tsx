@@ -306,12 +306,77 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
         </div>
       )}
 
-      {/* 大盤狀態 placeholder */}
-      <PlaceholderCard
-        title="🌡️ 大盤狀態"
-        desc="TAIEX / VIX / 集中度 / 法人動向 — 整合中"
-        badge="WIP"
-      />
+      {/* 🌡️ 大盤狀態 — real data */}
+      <MarketDashboardCard />
+    </div>
+  );
+}
+
+function MarketDashboardCard() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["market-dashboard"],
+    queryFn: () => api.getMarketDashboard(),
+    staleTime: 5 * 60_000,
+  });
+  const items: Array<{ key: "taiex" | "vix" | "sp500" | "nasdaq" | "nikkei" | "dxj"; emoji: string }> = [
+    { key: "taiex", emoji: "🇹🇼" },
+    { key: "vix", emoji: "😱" },
+    { key: "sp500", emoji: "🇺🇸" },
+    { key: "nasdaq", emoji: "💻" },
+    { key: "nikkei", emoji: "🇯🇵" },
+    { key: "dxj", emoji: "💴" },
+  ];
+  return (
+    <div
+      className="rounded-st p-4"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.06), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        borderLeft: "3px solid #60a5fa",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-2xl">🌡️</span>
+        <div>
+          <div className="text-xs text-blue-400 font-bold tracking-wider">大盤狀態</div>
+          <div className="font-extrabold text-st-fg text-sm">全球指數即時</div>
+        </div>
+      </div>
+      {isLoading && <div className="text-xs text-st-muted">載入中⋯</div>}
+      {data && (
+        <div className="grid grid-cols-2 gap-2">
+          {items.map(({ key, emoji }) => {
+            const idx = data[key];
+            if (!idx) return null;
+            const up = idx.change_pct >= 0;
+            const c = up ? "#ef4444" : "#10b981";
+            return (
+              <div
+                key={key}
+                className="rounded p-2"
+                style={{ background: "#0f1218", border: "1px solid #2f343d" }}
+              >
+                <div className="flex items-center gap-1.5 text-[10px] text-st-muted mb-1">
+                  <span>{emoji}</span>
+                  <span className="font-bold truncate">{idx.name}</span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <div className="tabular-nums font-extrabold text-st-fg" style={{ fontSize: "0.95rem" }}>
+                    {idx.price.toFixed(idx.price > 100 ? 0 : 2)}
+                  </div>
+                  <div className="tabular-nums font-bold text-[10px]" style={{ color: c }}>
+                    {up ? "▲" : "▼"} {Math.abs(idx.change_pct).toFixed(2)}%
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -571,20 +636,32 @@ function MePanel() {
   const clearGuest = useSession((s) => s.clearGuest);
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
+  const [sub, setSub] = useState<"home" | "global" | "selfcheck">("home");
 
-  useState(() => {
+  useEffect(() => {
     const sb = createClient();
     sb.auth.getUser().then(({ data }) => setEmail(data.user?.email ?? null));
-  });
+  }, []);
+
+  if (sub === "global") return <GlobalMarketsPanel onBack={() => setSub("home")} />;
+  if (sub === "selfcheck") return <SelfCheckPanel onBack={() => setSub("home")} />;
 
   return (
     <div className="space-y-4 pb-4">
-      <h2 className="text-2xl font-extrabold text-white">👤 我的</h2>
+      <h2 className="text-2xl font-extrabold text-st-fg">👤 我的</h2>
+
       {isGuest ? (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5">
+        <div
+          className="rounded-st p-5"
+          style={{
+            background: "#16181d",
+            border: "1px solid rgba(251, 191, 36, 0.3)",
+            borderLeft: "3px solid #fbbf24",
+          }}
+        >
           <div className="flex items-center gap-2 mb-2">
-            <Ghost className="w-5 h-5 text-amber-400" />
-            <h3 className="font-bold text-white">訪客模式</h3>
+            <Ghost className="w-5 h-5 text-amber-300" />
+            <h3 className="font-bold text-st-fg">訪客模式</h3>
           </div>
           <p className="text-sm text-amber-200 mb-4">
             資料只存裝置,清快取就消失。註冊即可永久雲端同步。
@@ -599,23 +676,53 @@ function MePanel() {
           </Button>
         </div>
       ) : (
-        <div className="bg-ink-900/60 border border-ink-700 rounded-2xl p-5">
-          <div className="text-xs text-slate-400 font-bold tracking-widest">
-            已登入
-          </div>
-          <div className="text-white font-bold mt-1">{email ?? "—"}</div>
+        <div
+          className="rounded-st p-5"
+          style={{
+            background: "#16181d",
+            border: "1px solid #2f343d",
+            borderLeft: "3px solid #5eead4",
+          }}
+        >
+          <div className="text-xs text-st-muted font-bold tracking-widest">已登入</div>
+          <div className="text-st-fg font-bold mt-1 break-all">{email ?? "—"}</div>
         </div>
       )}
-      <PlaceholderCard
-        title="🔔 通知設定"
-        desc="集中度警示、晨報推播"
-        badge="WIP"
-      />
-      <PlaceholderCard
-        title="💎 升級 PRO"
-        desc="解鎖晨報精選 5 檔 + 觀察清單一鍵巡禮"
-        badge="WIP"
-      />
+
+      {/* Sub-menu links */}
+      <div className="space-y-2">
+        <MenuItem
+          icon="🌍"
+          title="多市場"
+          desc="台美日韓印越黃金 — 全球 ETF 配置"
+          onClick={() => setSub("global")}
+        />
+        <MenuItem
+          icon="🥬"
+          title="韭菜病自檢"
+          desc="8 題快速問卷,看你的韭菜病等級"
+          onClick={() => setSub("selfcheck")}
+        />
+        <MenuItem
+          icon="🔔"
+          title="通知設定"
+          desc="集中度警示、晨報推播"
+          badge="WIP"
+        />
+        <MenuItem
+          icon="💎"
+          title="升級 PRO"
+          desc="晨報精選 5 檔 + 觀察清單一鍵巡禮 + 無限 AI 解讀"
+          badge="WIP"
+        />
+        <MenuItem
+          icon="📋"
+          title="關於 / 隱私"
+          desc="不報明牌承諾 + 資料來源 + 帳號刪除"
+          onClick={() => window.open("https://aaowobbowocc-ai.github.io/leek-check/privacy.html", "_blank")}
+        />
+      </div>
+
       {!isGuest && (
         <Button
           variant="ghost"
@@ -629,6 +736,206 @@ function MePanel() {
         >
           <LogOut className="w-4 h-4" /> 登出
         </Button>
+      )}
+    </div>
+  );
+}
+
+function MenuItem({ icon, title, desc, badge, onClick }: {
+  icon: string; title: string; desc: string; badge?: string; onClick?: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={!onClick && !badge}
+      className="w-full text-left rounded-st p-3.5 flex items-center gap-3 active:scale-[0.98] transition-transform disabled:opacity-60"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.06), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), inset 0 -1px 0 rgba(0,0,0,0.3)",
+      }}
+    >
+      <span className="text-2xl flex-shrink-0">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-st-fg">{title}</span>
+          {badge && (
+            <span className="text-[9px] font-bold tracking-wider text-amber-300 bg-amber-500/15 px-1.5 py-0.5 rounded">{badge}</span>
+          )}
+        </div>
+        <div className="text-xs text-st-muted mt-0.5">{desc}</div>
+      </div>
+      {onClick && <span className="text-st-muted">→</span>}
+    </button>
+  );
+}
+
+/* ────── 多市場 panel ────── */
+const GLOBAL_MARKETS = [
+  { region: "🇹🇼 台灣", desc: "0050 大盤 + 主流 ETF", tickers: ["0050", "0056", "00878", "00692"] },
+  { region: "🇺🇸 美國", desc: "S&P 500 / NASDAQ", tickers: ["SPY", "QQQ", "VTI", "VOO"] },
+  { region: "🇯🇵 日本", desc: "日股(避免日圓貶值)", tickers: ["DXJ", "EWJ", "HEWJ"] },
+  { region: "🇰🇷 韓國", desc: "memory 漏網最大 alpha", tickers: ["EWY", "FLKR"] },
+  { region: "🇮🇳 印度", desc: "新興市場核心", tickers: ["INDA", "EPI"] },
+  { region: "🇻🇳 越南", desc: "替代中國工廠", tickers: ["VNM"] },
+  { region: "🪙 黃金 / 商品", desc: "抗通膨", tickers: ["GLD", "DBA"] },
+];
+
+function GlobalMarketsPanel({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="space-y-4 pb-4">
+      <button onClick={onBack} className="text-teal-300 text-sm flex items-center gap-2">
+        <span>←</span> 回 我的
+      </button>
+      <h2 className="text-2xl font-extrabold text-st-fg">🌍 多市場配置</h2>
+      <p className="text-st-muted text-xs">
+        記得分散全球 7 區塊 · 別把雞蛋全放台股
+      </p>
+      <div className="space-y-3">
+        {GLOBAL_MARKETS.map((m, i) => (
+          <motion.div
+            key={m.region}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.05 }}
+            className="rounded-st p-4"
+            style={{
+              background: [
+                "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.06), transparent 35%)",
+                "linear-gradient(180deg, #1c2028 0%, #16181d 100%)",
+              ].join(", "),
+              border: "1px solid #3a4150",
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+            }}
+          >
+            <div className="font-extrabold text-st-fg text-lg">{m.region}</div>
+            <div className="text-xs text-st-muted mb-2">{m.desc}</div>
+            <div className="flex flex-wrap gap-1.5">
+              {m.tickers.map((tk) => (
+                <a
+                  key={tk}
+                  href={`/ticker/${tk}`}
+                  className="text-xs font-mono font-bold text-teal-300 bg-teal-500/10 hover:bg-teal-500/20 px-2 py-1 rounded border border-teal-500/30 transition-colors"
+                >
+                  {tk}
+                </a>
+              ))}
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ────── 自檢 panel ────── */
+const SELF_CHECK_QUESTIONS = [
+  { q: "你會看 PTT/Dcard 推薦的股票就買嗎?", w: 15 },
+  { q: "進場前會看公司財報跟月營收嗎?", w: -10 },
+  { q: "你有沒有 all-in 過某一檔股票?", w: 20 },
+  { q: "聽到「飆股」「主力」「內線」會心動嗎?", w: 12 },
+  { q: "套牢時你會「攤平」拉低成本嗎?", w: 18 },
+  { q: "持股有設停損點嗎?", w: -12 },
+  { q: "你會看 K 線型態判斷進場嗎?", w: 5 },
+  { q: "你的投資組合有 ≥ 3 種資產類別嗎?", w: -15 },
+];
+
+function SelfCheckPanel({ onBack }: { onBack: () => void }) {
+  const [answers, setAnswers] = useState<Record<number, boolean>>({});
+  const [showResult, setShowResult] = useState(false);
+
+  const score = Object.entries(answers).reduce((s, [i, yes]) => {
+    return s + (yes ? SELF_CHECK_QUESTIONS[Number(i)].w : 0);
+  }, 50);
+
+  const verdict = score >= 80
+    ? { label: "重度韭菜病", color: "#f43f5e", desc: "高風險!過度仰賴消息面 + 缺乏紀律,建議從 0050 DCA 開始重建" }
+    : score >= 60
+    ? { label: "中度韭菜病", color: "#fbbf24", desc: "有改善空間,試著加強財報分析 + 設停損 + 多元配置" }
+    : score >= 40
+    ? { label: "輕度症狀", color: "#fbbf24", desc: "基本面有概念,但要避免追高與情緒進場" }
+    : { label: "免疫!", color: "#5eead4", desc: "你有紀律 + 分析能力,持續保持風險管理" };
+
+  return (
+    <div className="space-y-4 pb-4">
+      <button onClick={onBack} className="text-teal-300 text-sm flex items-center gap-2">
+        <span>←</span> 回 我的
+      </button>
+      <h2 className="text-2xl font-extrabold text-st-fg">🥬 韭菜病自檢</h2>
+      <p className="text-st-muted text-xs">8 題快速問卷,測你的投資紀律</p>
+
+      {!showResult && (
+        <div className="space-y-2">
+          {SELF_CHECK_QUESTIONS.map((q, i) => (
+            <div
+              key={i}
+              className="rounded-st p-3"
+              style={{ background: "#16181d", border: "1px solid #2f343d" }}
+            >
+              <div className="text-sm text-st-fg font-bold mb-2">
+                <span className="text-teal-300 mr-2">Q{i + 1}.</span>
+                {q.q}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setAnswers({ ...answers, [i]: true })}
+                  className={`flex-1 py-2 rounded text-xs font-bold ${answers[i] === true ? "bg-rose-500/30 border border-rose-400 text-rose-200" : "bg-ink-900 border border-st-border text-st-muted"}`}
+                >
+                  是
+                </button>
+                <button
+                  onClick={() => setAnswers({ ...answers, [i]: false })}
+                  className={`flex-1 py-2 rounded text-xs font-bold ${answers[i] === false ? "bg-teal-500/30 border border-teal-400 text-teal-200" : "bg-ink-900 border border-st-border text-st-muted"}`}
+                >
+                  否
+                </button>
+              </div>
+            </div>
+          ))}
+          <Button
+            variant="primary"
+            size="lg"
+            className="w-full mt-4"
+            disabled={Object.keys(answers).length < SELF_CHECK_QUESTIONS.length}
+            onClick={() => setShowResult(true)}
+          >
+            {Object.keys(answers).length < SELF_CHECK_QUESTIONS.length
+              ? `剩 ${SELF_CHECK_QUESTIONS.length - Object.keys(answers).length} 題`
+              : "🩺 看結果"}
+          </Button>
+        </div>
+      )}
+
+      {showResult && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="rounded-st p-5 text-center"
+          style={{
+            background: "#16181d",
+            border: `2px solid ${verdict.color}`,
+            boxShadow: `0 0 32px ${verdict.color}40`,
+          }}
+        >
+          <div className="text-[10px] text-st-muted tracking-widest font-bold mb-1">韭菜病指數</div>
+          <div className="tabular-nums" style={{ fontSize: "4rem", color: verdict.color, fontWeight: 800, lineHeight: 1 }}>
+            {Math.max(0, Math.min(100, score))}
+          </div>
+          <div className="text-xs text-st-muted mb-2">/ 100</div>
+          <div className="text-xl font-extrabold mt-2" style={{ color: verdict.color }}>
+            {verdict.label}
+          </div>
+          <p className="text-sm text-st-soft mt-3 leading-relaxed">{verdict.desc}</p>
+          <button
+            onClick={() => { setAnswers({}); setShowResult(false); }}
+            className="mt-5 text-xs text-teal-300 font-bold"
+          >
+            🔄 重新測一次
+          </button>
+        </motion.div>
       )}
     </div>
   );
