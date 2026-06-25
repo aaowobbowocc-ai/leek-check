@@ -196,7 +196,10 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
         animate={{ opacity: 1, y: 0 }}
         className="rounded-st p-5 hero-halo"
         style={{
-          background: "linear-gradient(135deg, #0f766e 0%, #0a1a1f 50%, #16181d 100%)",
+          background: [
+              "radial-gradient(circle at 15% 18%, var(--accent-soft), transparent 50%)",
+              "linear-gradient(135deg, var(--accent-deep) 0%, #0a1a1f 50%, #16181d 100%)",
+            ].join(", "),
           border: "1px solid #2f343d",
           boxShadow: [
             "inset 0 1px 0 rgba(255,255,255,0.1)",
@@ -886,7 +889,10 @@ function TaiexHeroCard({ taiex }: { taiex: import("@/lib/api").TaiexFull }) {
     <div
       className="rounded-st p-4 hero-halo"
       style={{
-        background: "linear-gradient(135deg, #0f766e 0%, #0a1a1f 50%, #16181d 100%)",
+        background: [
+              "radial-gradient(circle at 15% 18%, var(--accent-soft), transparent 50%)",
+              "linear-gradient(135deg, var(--accent-deep) 0%, #0a1a1f 50%, #16181d 100%)",
+            ].join(", "),
         border: "1px solid #2f343d",
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 0 24px rgba(20,184,166,0.12)",
       }}
@@ -2201,7 +2207,10 @@ function AboutPanel({ onBack }: { onBack: () => void }) {
       <div
         className="rounded-st p-5 hero-halo"
         style={{
-          background: "linear-gradient(135deg, #0f766e 0%, #0a1a1f 50%, #16181d 100%)",
+          background: [
+              "radial-gradient(circle at 15% 18%, var(--accent-soft), transparent 50%)",
+              "linear-gradient(135deg, var(--accent-deep) 0%, #0a1a1f 50%, #16181d 100%)",
+            ].join(", "),
           border: "1px solid #2f343d",
           boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 0 24px rgba(20,184,166,0.12)",
         }}

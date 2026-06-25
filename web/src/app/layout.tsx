@@ -1,6 +1,21 @@
 import "./globals.css";
 import type { Metadata, Viewport } from "next";
+import { Noto_Sans_TC, Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
+
+const notoTC = Noto_Sans_TC({
+  subsets: ["latin"],
+  weight: ["400", "500", "700", "900"],
+  variable: "--font-tc",
+  display: "swap",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-en",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "韭菜健檢 — Leek Check",
@@ -20,7 +35,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-Hant" className="dark">
+    <html lang="zh-Hant" className={`dark ${inter.variable} ${notoTC.variable}`}>
       <body className="antialiased">
         <Providers>{children}</Providers>
       </body>
