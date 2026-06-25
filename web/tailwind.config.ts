@@ -18,6 +18,12 @@ const config: Config = {
           muted:  "#94a3b8",
           soft:   "#cbd5e1",
         },
+        // ── Accent(跟 data-accent 動態變)──
+        accent: {
+          DEFAULT: "var(--accent)",
+          mid:     "var(--accent-mid)",
+          deep:    "var(--accent-deep)",
+        },
         // ── brand 別名(= teal,讓既有 brand-* class 不失效)──
         brand: {
           200: "#99f6e4", 300: "#5eead4", 400: "#2dd4bf",

@@ -138,7 +138,7 @@ button, [role="button"] {
   inset: -40px;
   background: radial-gradient(
     circle at 50% 30%,
-    rgba(94, 234, 212, 0.18) 0%,
+    var(--accent-glow) 0%,
     transparent 55%
   );
   filter: blur(20px);
@@ -155,14 +155,14 @@ button, [role="button"] {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #5eead4;
+  background: var(--accent);
 }
 .live-dot::before {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: #5eead4;
+  background: var(--accent);
   animation: live-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 @keyframes live-ping {
@@ -235,15 +235,15 @@ button, [role="button"] {
   font-weight: 700;
   font-size: 0.875rem;
   cursor: pointer;
-  color: #e0e7ff;
-  border: 1px solid rgba(167, 139, 250, 0.5);
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
   background:
     linear-gradient(135deg,
-      rgba(167, 139, 250, 0.18) 0%,
-      rgba(124, 58, 237, 0.10) 50%,
-      rgba(91, 33, 182, 0.08) 100%);
+      color-mix(in srgb, var(--accent) 18%, transparent) 0%,
+      color-mix(in srgb, var(--accent-mid) 10%, transparent) 50%,
+      color-mix(in srgb, var(--accent-deep) 8%, transparent) 100%);
   box-shadow:
-    0 0 24px rgba(167, 139, 250, 0.2),
+    0 0 24px var(--accent-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.12),
     inset 0 -1px 0 rgba(0, 0, 0, 0.3);
   transition: all 0.2s ease;
@@ -269,10 +269,10 @@ button, [role="button"] {
   50% { background-position: -100% 0; }
 }
 .btn-smart:hover {
-  border-color: rgba(196, 181, 253, 0.7);
+  border-color: color-mix(in srgb, var(--accent) 80%, transparent);
   color: #fff;
   box-shadow:
-    0 0 32px rgba(167, 139, 250, 0.35),
+    0 0 32px var(--accent-glow),
     inset 0 1px 0 rgba(255, 255, 255, 0.15),
     inset 0 -1px 0 rgba(0, 0, 0, 0.3);
 }

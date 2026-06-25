@@ -44,7 +44,13 @@ export function MainLayout() {
           <div className="flex items-center gap-2">
             <span className="text-xl">🩺</span>
             <span className="font-extrabold text-white">韭菜健檢</span>
-            <span className="text-[10px] text-brand-300 font-bold tracking-widest bg-brand-500/10 px-1.5 py-0.5 rounded">
+            <span
+              className="text-[10px] font-bold tracking-widest px-1.5 py-0.5 rounded"
+              style={{
+                color: "var(--accent)",
+                background: "var(--accent-soft)",
+              }}
+            >
               BETA
             </span>
           </div>
@@ -98,20 +104,26 @@ export function MainLayout() {
                   transition={{ type: "spring", stiffness: 400, damping: 20 }}
                 >
                   <Icon
-                    className={`w-5 h-5 transition-colors ${isActive ? "text-brand-400" : "text-slate-500"}`}
+                    className="w-5 h-5 transition-colors"
                     strokeWidth={isActive ? 2.5 : 2}
                     fill={isActive && (id === "watch") ? "currentColor" : "none"}
+                    style={{ color: isActive ? "var(--accent)" : "#64748b" }}
                   />
                 </motion.div>
                 <span
-                  className={`text-[10px] font-semibold transition-colors ${isActive ? "text-brand-300" : "text-slate-500"}`}
+                  className="text-[10px] font-semibold transition-colors"
+                  style={{ color: isActive ? "var(--accent)" : "#64748b" }}
                 >
                   {label}
                 </span>
                 {isActive && (
                   <motion.div
                     layoutId="active-tab-pill"
-                    className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-brand-400 rounded-full shadow-[0_0_10px_rgba(94,234,212,0.6)]"
+                    className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full"
+                    style={{
+                      background: "var(--accent)",
+                      boxShadow: "0 0 10px var(--accent-glow)",
+                    }}
                   />
                 )}
               </button>
@@ -823,7 +835,7 @@ function GroupHeader({ emoji, label, sub }: { emoji: string; label: string; sub?
       </div>
       <div
         className="flex-1 h-px ml-2"
-        style={{ background: "linear-gradient(90deg, #3a4150, transparent)" }}
+        style={{ background: "linear-gradient(90deg, var(--accent), transparent)" }}
       />
     </div>
   );
@@ -841,7 +853,8 @@ function SectionCard({
           "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
         ].join(", "),
         border: "1px solid #3a4150",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+        borderLeft: "3px solid var(--accent)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4), 0 0 12px var(--accent-glow)",
       }}
     >
       <div className="flex items-center gap-2 mb-3">
