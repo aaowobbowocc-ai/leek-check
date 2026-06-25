@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { Stethoscope, Settings as SettingsIcon, Loader2, Pin, PinOff } from "lucide-react";
+import { Stethoscope, Settings as SettingsIcon, Loader2 } from "lucide-react";
 import { StockPill } from "@/components/stock-pill";
 import { cardTier, chgArrow } from "@/lib/tier";
 import { formatNumber } from "@/lib/utils";
@@ -218,18 +218,20 @@ export function StockRow({
                   <motion.button
                     onClick={onPin}
                     whileTap={{ scale: 0.9 }}
-                    className="rounded-st px-2.5 flex items-center justify-center"
+                    className="rounded-st px-2.5 py-2 flex items-center justify-center text-base"
                     style={{
                       background: isPicked
-                        ? "linear-gradient(180deg, #fbbf24, #d97706)"
+                        ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 40%, transparent), color-mix(in srgb, var(--accent-deep) 30%, transparent))"
                         : "linear-gradient(180deg, #1c2028, #11141a)",
-                      border: `1px solid ${isPicked ? "#fcd34d" : "#2a3340"}`,
-                      color: isPicked ? "#16181d" : "#94a3b8",
-                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -1px 0 rgba(0,0,0,0.3)",
+                      border: `1px solid ${isPicked ? "var(--accent)" : "#2a3340"}`,
+                      filter: isPicked ? "none" : "grayscale(1) opacity(0.5)",
+                      boxShadow: isPicked
+                        ? "0 0 12px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.15)"
+                        : "inset 0 1px 0 rgba(255,255,255,0.06)",
                     }}
-                    title={isPicked ? "取消晨報精選" : "加入晨報精選 (最多 5 檔)"}
+                    title={isPicked ? "已加入晨報精選 (點再次移除)" : "加入晨報精選 (最多 5 檔)"}
                   >
-                    {isPicked ? <Pin className="w-4 h-4" fill="currentColor" /> : <PinOff className="w-4 h-4" />}
+                    📰
                   </motion.button>
                 )}
                 {onEdit && (

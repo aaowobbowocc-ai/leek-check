@@ -1726,6 +1726,38 @@ function StrategyCollapsible({
   const meta = STRATEGY_META[strategyKey] ?? { icon: "📊", name: strategyKey, alpha: "—", frame: "—", color: "#94a3b8" };
   const hasHits = hits.length > 0;
 
+  // 觀察清單 + 晨報精選 state(加入觀察 + pin 用)
+  const isGuestMode = useSession((s) => s.isGuest);
+  const guestList = useSession((s) => s.guestWatchlist);
+  const addGuest = useSession((s) => s.addGuestItem);
+  const picks = useSession((s) => s.briefingPicks);
+  const togglePick = useSession((s) => s.togglePick);
+  const [userId, setUserId] = useState<string | null>(null);
+  useEffect(() => {
+    if (isGuestMode) return;
+    createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, [isGuestMode]);
+  const cloudWl = useQuery({
+    queryKey: ["watchlist-cloud", userId],
+    queryFn: () => import("@/lib/watchlist").then(m => m.loadCloudWatchlist()),
+    enabled: !isGuestMode && !!userId,
+    staleTime: 30_000,
+  });
+  const wlList = isGuestMode ? guestList : (cloudWl.data ?? []);
+  const inWatch = (tk: string) => wlList.some(x => x.ticker === tk);
+  const addToWatch = async (tk: string) => {
+    if (inWatch(tk)) return;
+    if (isGuestMode) {
+      addGuest({ ticker: tk, type: "twse" });
+    } else if (userId) {
+      try {
+        const { addCloudTicker } = await import("@/lib/watchlist");
+        await addCloudTicker({ ticker: tk, type: "twse", position: wlList.length }, userId);
+        cloudWl.refetch();
+      } catch (e) { alert("加入失敗:" + (e as Error).message); }
+    }
+  };
+
   // 展開時 batch fetch quotes 顯示漲跌
   const tks = hits.map(h => h.ticker);
   const { data: quotes } = useQuery({
@@ -1799,39 +1831,79 @@ function StrategyCollapsible({
               {hits.map((h) => {
                 const q = qMap.get(h.ticker);
                 const c = q ? chgColor(q.change_pct) : "#94a3b8";
+                const inWl = inWatch(h.ticker);
+                const isPicked = picks.includes(h.ticker);
+                const canPin = picks.length < 5 || isPicked;
                 return (
-                  <button
+                  <div
                     key={h.ticker}
-                    onClick={() => router.push(`/ticker/${h.ticker}`)}
-                    className="w-full text-left rounded flex items-center justify-between gap-2 px-2.5 py-2 hover:bg-white/[0.03] active:scale-[0.98]"
+                    className="rounded flex items-center gap-1.5 px-2.5 py-2"
                     style={{ background: "#0f1218", border: "1px solid #2a3340" }}
                   >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="tabular-nums text-xs font-bold flex-shrink-0" style={{ color: meta.color }}>{h.ticker}</span>
-                      <span className="text-xs text-st-soft truncate">{h.name}</span>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0 text-right">
-                      {/* 當日漲跌 */}
-                      {q && (
-                        <div className="tabular-nums text-[10px] font-bold" style={{ color: c }}>
-                          {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(2)}%
-                        </div>
-                      )}
-                      {/* 策略指標 */}
-                      {h.metric != null && (
-                        <div
-                          className="text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded"
-                          style={{
-                            color: meta.color,
-                            background: `${meta.color}15`,
-                            border: `1px solid ${meta.color}30`,
-                          }}
-                        >
-                          {h.metric.toFixed(1)}
-                        </div>
-                      )}
-                    </div>
-                  </button>
+                    <button
+                      onClick={() => router.push(`/ticker/${h.ticker}`)}
+                      className="flex items-center justify-between gap-2 flex-1 min-w-0 text-left active:scale-[0.98]"
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span className="tabular-nums text-xs font-bold flex-shrink-0" style={{ color: meta.color }}>{h.ticker}</span>
+                        <span className="text-xs text-st-soft truncate">{h.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0 text-right">
+                        {q && (
+                          <div className="tabular-nums text-[10px] font-bold" style={{ color: c }}>
+                            {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(2)}%
+                          </div>
+                        )}
+                        {h.metric != null && (
+                          <div
+                            className="text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded"
+                            style={{
+                              color: meta.color,
+                              background: `${meta.color}15`,
+                              border: `1px solid ${meta.color}30`,
+                            }}
+                          >
+                            {h.metric.toFixed(1)}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+
+                    {/* ⭐ 加入觀察按鈕 */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); addToWatch(h.ticker); }}
+                      disabled={inWl}
+                      title={inWl ? "已在觀察清單" : "加入觀察清單"}
+                      className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-sm active:scale-90"
+                      style={{
+                        background: inWl
+                          ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 35%, transparent), color-mix(in srgb, var(--accent-deep) 25%, transparent))"
+                          : "linear-gradient(180deg, #1c2028, #11141a)",
+                        border: `1px solid ${inWl ? "color-mix(in srgb, var(--accent) 50%, transparent)" : "#2a3340"}`,
+                        color: inWl ? "var(--accent)" : "#64748b",
+                        filter: inWl ? "none" : "opacity(0.7)",
+                      }}
+                    >
+                      {inWl ? "★" : "☆"}
+                    </button>
+
+                    {/* 📰 加入晨報 */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (canPin) togglePick(h.ticker); }}
+                      disabled={!canPin}
+                      title={isPicked ? "已在晨報精選" : canPin ? "加入晨報精選 (最多 5 檔)" : "晨報精選已滿 5/5"}
+                      className="flex-shrink-0 w-7 h-7 rounded flex items-center justify-center text-base active:scale-90 disabled:opacity-30"
+                      style={{
+                        background: isPicked
+                          ? "linear-gradient(180deg, color-mix(in srgb, var(--accent) 35%, transparent), color-mix(in srgb, var(--accent-deep) 25%, transparent))"
+                          : "linear-gradient(180deg, #1c2028, #11141a)",
+                        border: `1px solid ${isPicked ? "color-mix(in srgb, var(--accent) 50%, transparent)" : "#2a3340"}`,
+                        filter: isPicked ? "none" : "grayscale(1) opacity(0.5)",
+                      }}
+                    >
+                      📰
+                    </button>
+                  </div>
                 );
               })}
               <div className="text-[10px] text-st-muted text-center pt-1">
