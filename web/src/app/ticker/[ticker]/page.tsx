@@ -377,7 +377,7 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
       >
         <Sparkles className="w-4 h-4" />
         <span className="relative z-10">
-          {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "產出健檢報告"}
+          {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "查看健檢報告"}
         </span>
       </button>
 

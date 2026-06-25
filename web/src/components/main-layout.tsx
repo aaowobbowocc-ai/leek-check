@@ -980,7 +980,7 @@ function AiMarketInsightCard({ dashboard }: { dashboard: import("@/lib/api").Mar
         disabled={loading}
         className="btn-smart w-full"
       >
-        ✨ <span className="relative z-10">{loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "產出整理報告"}</span>
+        ✨ <span className="relative z-10">{loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "查看整理報告"}</span>
       </button>
       {aiText && (
         <motion.div
@@ -1066,7 +1066,7 @@ function AiNewsSentimentCard() {
         disabled={loading || !news?.length}
         className="btn-smart w-full"
       >
-        ✨ <span className="relative z-10">{loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : `整理新聞情緒(${news?.length ?? 0} 條)`}</span>
+        ✨ <span className="relative z-10">{loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : `查看新聞情緒(${news?.length ?? 0} 條)`}</span>
       </button>
       {aiText && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
