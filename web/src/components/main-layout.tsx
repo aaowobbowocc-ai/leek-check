@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Sunrise, Star, Search, Radio, User, Ghost, LogOut, Flame, X,
+  Sunrise, Star, Search, Radio, User, Ghost, LogOut, Flame, X, Wallet,
 } from "lucide-react";
 import { useSession } from "@/lib/store";
 import { Button } from "@/components/ui/button";
@@ -12,15 +12,17 @@ import { Input } from "@/components/ui/input";
 import { useRouter } from "next/navigation";
 import { api, type Quote } from "@/lib/api";
 import { WatchPanel } from "@/components/watch-panel";
+import { BookPanel } from "@/components/book-panel";
 import { StockRow } from "@/components/stock-row";
 import { createClient } from "@/lib/supabase/client";
 import { HOT_STOCK_CATEGORIES, ALL_HOT_TICKERS } from "@/lib/tier";
 
-type Tab = "brief" | "watch" | "search" | "scan" | "me";
+type Tab = "brief" | "watch" | "book" | "search" | "scan" | "me";
 
 const TABS: { id: Tab; icon: typeof Star; label: string }[] = [
   { id: "brief", icon: Sunrise, label: "晨報" },
   { id: "watch", icon: Star, label: "觀察" },
+  { id: "book", icon: Wallet, label: "記帳" },
   { id: "search", icon: Search, label: "搜尋" },
   { id: "scan", icon: Radio, label: "策略" },
   { id: "me", icon: User, label: "我的" },
@@ -66,8 +68,9 @@ export function MainLayout() {
             exit={{ opacity: 0, x: -6 }}
             transition={{ duration: 0.18 }}
           >
-            {active === "brief" && <BriefPanel />}
+            {active === "brief" && <BriefPanel onNav={setActive} />}
             {active === "watch" && <WatchPanel />}
+            {active === "book" && <BookPanel />}
             {active === "search" && <SearchPanel />}
             {active === "scan" && <ScanPanel />}
             {active === "me" && <MePanel />}
@@ -119,38 +122,220 @@ export function MainLayout() {
   );
 }
 
-function BriefPanel() {
+function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
+  const router = useRouter();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "🌅 早安" : hour < 18 ? "☀️ 午安" : "🌙 晚安";
+  const isGuest = useSession((s) => s.isGuest);
+  const guestList = useSession((s) => s.guestWatchlist);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isGuest) return;
+    createClient().auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
+  }, [isGuest]);
+
+  const wlQ = useQuery({
+    queryKey: ["watchlist-cloud", userId],
+    queryFn: () => import("@/lib/watchlist").then(m => m.loadCloudWatchlist()),
+    enabled: !isGuest && !!userId,
+    staleTime: 60_000,
+  });
+  const wlList = isGuest ? guestList : (wlQ.data ?? []);
+  const wlTickers = wlList.map(x => x.ticker);
+
+  // 觀察清單批次 quote
+  const wlQuotesQ = useQuery({
+    queryKey: ["wl-quotes", wlTickers.join(",")],
+    queryFn: () => wlTickers.length ? api.getQuotesBatch(wlTickers) : Promise.resolve([]),
+    enabled: wlTickers.length > 0,
+    staleTime: 60_000,
+  });
+  const wlQuotes = wlQuotesQ.data ?? [];
+
+  // 策略結果
+  const stratQ = useQuery({
+    queryKey: ["strategy-results"],
+    queryFn: () => api.getStrategyResults(),
+    staleTime: 5 * 60_000,
+  });
+  const totalHits = stratQ.data
+    ? Object.values(stratQ.data.strategies).reduce((s, arr) => s + arr.length, 0)
+    : 0;
+
+  // 觀察清單漲跌摘要
+  const wlSummary = useMemo(() => {
+    if (wlQuotes.length === 0) return null;
+    const ups = wlQuotes.filter(q => q.change_pct > 0).length;
+    const downs = wlQuotes.filter(q => q.change_pct < 0).length;
+    const top = [...wlQuotes].sort((a, b) => b.change_pct - a.change_pct).slice(0, 3);
+    const bot = [...wlQuotes].sort((a, b) => a.change_pct - b.change_pct).slice(0, 3);
+    return { ups, downs, top, bot, total: wlQuotes.length };
+  }, [wlQuotes]);
+
   return (
-    <div className="space-y-4">
-      <div className="bg-gradient-to-br from-brand-700/40 to-ink-900 border border-ink-700 rounded-2xl p-5">
-        <div className="text-xs tracking-widest text-brand-300 font-bold">
-          {new Date().toLocaleDateString("zh-TW", { dateStyle: "long" })}
+    <div className="space-y-4 pb-4">
+      {/* Hero 問候 */}
+      <motion.div
+        initial={{ opacity: 0, y: -6 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-st p-5 hero-halo"
+        style={{
+          background: "linear-gradient(135deg, #0f766e 0%, #0a1a1f 50%, #16181d 100%)",
+          border: "1px solid #2f343d",
+          boxShadow: [
+            "inset 0 1px 0 rgba(255,255,255,0.1)",
+            "inset 0 -1px 0 rgba(0,0,0,0.4)",
+            "0 0 32px rgba(20,184,166,0.12)",
+          ].join(", "),
+        }}
+      >
+        <div className="text-[10px] tracking-[0.25em] text-teal-300 font-bold">
+          {new Date().toLocaleDateString("zh-TW", { dateStyle: "long" })} · {["週日","週一","週二","週三","週四","週五","週六"][new Date().getDay()]}
         </div>
-        <h2 className="text-2xl font-extrabold text-white mt-1">
+        <h2 className="text-2xl font-extrabold text-st-fg mt-1.5 leading-tight">
           {greeting},今日市場健檢
         </h2>
-        <p className="text-brand-200 text-sm mt-2">
+        <p className="text-teal-200 text-xs mt-2">
           開盤前 5 分鐘看一眼 · 盤後分析,不適合盤中即時下單
         </p>
-      </div>
-      <PlaceholderCard
-        title="📡 [Paper] 策略訊號"
-        desc="從 1958 檔台股掃出今日命中,即將整合"
-        badge="WIP"
-      />
-      <PlaceholderCard
-        title="🩺 觀察清單巡禮"
-        desc="一鍵掃描所有持股 4 面健檢分數,即將整合"
-        badge="WIP"
-      />
+      </motion.div>
+
+      {/* 策略命中今日 */}
+      {stratQ.data && totalHits > 0 && (
+        <motion.button
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          onClick={() => onNav("scan")}
+          whileTap={{ scale: 0.98 }}
+          className="w-full rounded-st p-4 text-left"
+          style={{
+            background: [
+              "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.08), transparent 35%)",
+              "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+            ].join(", "),
+            border: "1px solid #3a4150",
+            borderLeft: "3px solid #5eead4",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+          }}
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">📡</span>
+              <div>
+                <div className="text-xs text-teal-300 font-bold tracking-wider">[Paper] 策略訊號</div>
+                <div className="font-extrabold text-st-fg mt-0.5">
+                  今日 <span className="text-teal-300 tabular-nums text-lg">{totalHits}</span> 檔命中 7 種真 alpha 策略
+                </div>
+              </div>
+            </div>
+            <span className="text-teal-300">→</span>
+          </div>
+        </motion.button>
+      )}
+
+      {/* 觀察清單巡禮 */}
+      {wlSummary && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="rounded-st p-4"
+          style={{
+            background: [
+              "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.06), transparent 35%)",
+              "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+            ].join(", "),
+            border: "1px solid #3a4150",
+            borderLeft: "3px solid #fbbf24",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+          }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">⭐</span>
+              <div>
+                <div className="text-xs text-amber-300 font-bold tracking-wider">觀察清單巡禮</div>
+                <div className="font-extrabold text-st-fg text-sm">
+                  共 {wlSummary.total} 檔 · <span className="text-red-400 tabular-nums">{wlSummary.ups}</span> 漲 / <span className="text-emerald-400 tabular-nums">{wlSummary.downs}</span> 跌
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => onNav("watch")}
+              className="text-teal-300 text-xs font-bold"
+            >
+              全部 →
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {/* 漲多 top 3 */}
+            <div>
+              <div className="text-[10px] text-st-muted font-bold mb-1 flex items-center gap-1">
+                <TrendingUpIcon className="w-3 h-3 text-red-400" /> 漲多 TOP 3
+              </div>
+              <div className="space-y-1">
+                {wlSummary.top.map((q: import("@/lib/api").Quote) => (
+                  <MiniQuoteRow key={q.ticker} q={q} onClick={() => router.push(`/ticker/${q.ticker}`)} />
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-st-muted font-bold mb-1 flex items-center gap-1">
+                <TrendingDownIcon className="w-3 h-3 text-emerald-400" /> 跌多 TOP 3
+              </div>
+              <div className="space-y-1">
+                {wlSummary.bot.map((q) => (
+                  <MiniQuoteRow key={q.ticker} q={q} onClick={() => router.push(`/ticker/${q.ticker}`)} />
+                ))}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {!wlSummary && (
+        <div
+          className="rounded-st p-5 text-center"
+          style={{ background: "#16181d", border: "1px dashed #2f343d" }}
+        >
+          <div className="text-3xl mb-2">⭐</div>
+          <p className="text-sm text-st-muted">
+            還沒有觀察清單。<button onClick={() => onNav("search")} className="text-teal-300 font-bold underline">去搜尋股票</button>加入第一檔。
+          </p>
+        </div>
+      )}
+
+      {/* 大盤狀態 placeholder */}
       <PlaceholderCard
         title="🌡️ 大盤狀態"
-        desc="TAIEX / VIX / 集中度 / 法人動向"
+        desc="TAIEX / VIX / 集中度 / 法人動向 — 整合中"
         badge="WIP"
       />
     </div>
+  );
+}
+
+function TrendingUpIcon({ className }: { className: string }) {
+  return <svg viewBox="0 0 16 16" className={className} fill="currentColor"><path d="M3 11l4-4 3 3 5-5v3h2V3h-5v2h3l-5 5-3-3-5 5z"/></svg>;
+}
+function TrendingDownIcon({ className }: { className: string }) {
+  return <svg viewBox="0 0 16 16" className={className} fill="currentColor"><path d="M3 5l4 4 3-3 5 5v-3h2v6h-5v-2h3L9 6l-3 3-5-5z"/></svg>;
+}
+
+function MiniQuoteRow({ q, onClick }: { q: import("@/lib/api").Quote; onClick: () => void }) {
+  const up = q.change_pct >= 0;
+  const c = up ? "#ef4444" : "#10b981";
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left flex items-center justify-between gap-1 rounded px-1.5 py-1 hover:bg-white/[0.02] active:scale-[0.97]"
+    >
+      <span className="text-[10px] text-st-soft truncate flex-1 min-w-0">{q.ticker}</span>
+      <span className="tabular-nums text-[10px] font-bold flex-shrink-0" style={{ color: c }}>
+        {up ? "▲" : "▼"} {Math.abs(q.change_pct).toFixed(1)}%
+      </span>
+    </button>
   );
 }
 

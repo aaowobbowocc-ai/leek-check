@@ -92,10 +92,39 @@ async function get<T>(path: string): Promise<T> {
   return res.json();
 }
 
+export interface AiExplainIn {
+  ticker: string;
+  name: string;
+  industry: string;
+  price: number;
+  change_pct: number;
+  composite: number;
+  verdict: string;
+  tech: Record<string, unknown> | null;
+  chip: Record<string, unknown> | null;
+  funda: Record<string, unknown> | null;
+  style?: "neutral" | "pro" | "casual";
+  timeframe?: "short" | "mid" | "long";
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`API ${path} → ${res.status} ${txt}`);
+  }
+  return res.json();
+}
+
 export const api = {
   searchTickers: (q: string) => get<TickerInfo[]>(`/api/search?q=${encodeURIComponent(q)}`),
   getQuote: (tk: string) => get<Quote>(`/api/quote/${tk}`),
   getQuotesBatch: (tks: string[]) => get<Quote[]>(`/api/quote/batch?tickers=${tks.join(",")}`),
   getHealthCheck: (tk: string) => get<HealthCheck>(`/api/health-check/${tk}`),
   getStrategyResults: () => get<StrategyResults>("/api/strategy/results"),
+  aiExplain: (body: AiExplainIn) => post<{ text: string; model: string }>("/api/ai/explain", body),
 };

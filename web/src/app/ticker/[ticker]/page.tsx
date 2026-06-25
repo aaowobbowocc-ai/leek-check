@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { ArrowLeft, Stethoscope, Copy, Check } from "lucide-react";
+import { ArrowLeft, Stethoscope, Sparkles } from "lucide-react";
 import { api, type HealthCheck } from "@/lib/api";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { ScoreRing } from "@/components/ui/score-ring";
@@ -278,26 +278,126 @@ function Sparkline({ data, up }: { data: number[]; up: boolean }) {
 }
 
 function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string }) {
-  const [copied, setCopied] = useState(false);
-  const { ticker, name, industry, quote, health } = data;
-  const prompt = buildPrompt(ticker, name, industry, quote, health, verdict);
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [style, setStyle] = useState<"neutral" | "pro" | "casual">("neutral");
+  const [timeframe, setTimeframe] = useState<"short" | "mid" | "long">("mid");
 
-  const copy = async () => {
-    await navigator.clipboard.writeText(prompt);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const runAi = async () => {
+    setLoading(true);
+    setError(null);
+    setAiText(null);
+    try {
+      const res = await api.aiExplain({
+        ticker: data.ticker,
+        name: data.name,
+        industry: data.industry,
+        price: data.quote.price,
+        change_pct: data.quote.change_pct,
+        composite: data.health.composite,
+        verdict,
+        tech: data.tech as unknown as Record<string, unknown>,
+        chip: data.chip as unknown as Record<string, unknown>,
+        funda: data.funda as unknown as Record<string, unknown>,
+        style,
+        timeframe,
+      });
+      setAiText(res.text);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <StCard>
-      <StHeader emoji="🤖" title="想看白話解讀?" sub="複製這份資料貼給 Claude / ChatGPT / Gemini" />
-      <button
-        onClick={copy}
-        className="w-full flex items-center justify-center gap-2 bg-teal-300/10 hover:bg-teal-300/20 active:scale-[0.98] border border-teal-300/40 text-teal-300 font-semibold text-sm rounded-st py-3 transition"
+      <StHeader emoji="🤖" title="AI 智能解讀" sub="Gemini 用白話幫你寫健檢報告" />
+
+      {/* style + timeframe selectors */}
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <div>
+          <div className="text-[10px] text-st-muted mb-1">語氣</div>
+          <select
+            value={style}
+            onChange={(e) => setStyle(e.target.value as typeof style)}
+            className="w-full text-xs rounded-st px-2 py-1.5"
+            style={{
+              background: "#16181d",
+              border: "1px solid #2f343d",
+              color: "#fff",
+            }}
+          >
+            <option value="neutral">中立白話</option>
+            <option value="pro">嚴肅專業</option>
+            <option value="casual">輕鬆口語</option>
+          </select>
+        </div>
+        <div>
+          <div className="text-[10px] text-st-muted mb-1">時間框架</div>
+          <select
+            value={timeframe}
+            onChange={(e) => setTimeframe(e.target.value as typeof timeframe)}
+            className="w-full text-xs rounded-st px-2 py-1.5"
+            style={{
+              background: "#16181d",
+              border: "1px solid #2f343d",
+              color: "#fff",
+            }}
+          >
+            <option value="short">短期 (1-4 週)</option>
+            <option value="mid">中期 (1-3 月)</option>
+            <option value="long">長期 (6-12 月)</option>
+          </select>
+        </div>
+      </div>
+
+      {/* CTA button */}
+      <motion.button
+        onClick={runAi}
+        disabled={loading}
+        whileTap={{ scale: 0.96 }}
+        className="w-full relative overflow-hidden rounded-st py-3 px-3 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-60"
+        style={{
+          background: [
+            "linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.25) 50%, transparent 65%)",
+            "linear-gradient(180deg, #a78bfa 0%, #7c3aed 60%, #5b21b6 100%)",
+          ].join(", "),
+          border: "1px solid #c4b5fd",
+          boxShadow: [
+            "0 4px 14px rgba(124, 58, 237, 0.4)",
+            "inset 0 1px 0 rgba(255, 255, 255, 0.4)",
+            "inset 0 -1px 0 rgba(0, 0, 0, 0.2)",
+            "0 0 24px rgba(167, 139, 250, 0.3)",
+          ].join(", "),
+          color: "#fff",
+        }}
       >
-        {copied ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
-        {copied ? "已複製,貼給 AI 對話" : "📋 複製健檢 prompt"}
-      </button>
+        <Sparkles className="w-4 h-4" />
+        {loading ? "Gemini 思考中⋯" : aiText ? "🔄 重新分析" : "✨ 產出 AI 健檢報告"}
+      </motion.button>
+
+      {error && (
+        <div className="mt-3 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/30 rounded p-2">
+          ⚠️ {error}
+        </div>
+      )}
+
+      {aiText && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-3 rounded-st p-3 text-sm text-st-soft whitespace-pre-wrap leading-relaxed"
+          style={{
+            background: "#0f1218",
+            border: "1px solid #2f343d",
+            borderLeft: "3px solid #a78bfa",
+          }}
+        >
+          {aiText}
+        </motion.div>
+      )}
     </StCard>
   );
 }
@@ -332,42 +432,3 @@ function HealthSkeleton({ ticker }: { ticker: string }) {
   );
 }
 
-function buildPrompt(
-  tk: string, name: string, industry: string,
-  quote: { price: number; change_pct: number; asof: string },
-  health: HealthCheck["health"], verdict: string
-): string {
-  const dim = (k: keyof typeof health.scores, label: string) => {
-    const s = health.scores[k];
-    return `${label} ${s.score}/100\n${s.notes.map((n) => `  • ${n}`).join("\n")}`;
-  };
-  return `請幫我做韭菜健檢:
-
-【標的】${tk} ${name || ""} (${industry || "—"})
-【目前報價】NT$ ${quote.price.toFixed(2)} (${quote.change_pct >= 0 ? "+" : ""}${quote.change_pct.toFixed(2)}%) · 收盤 ${quote.asof}
-
-${dim("technical", "【技術面】")}
-
-${dim("chip", "【籌碼面】")}
-
-${dim("fundamental", "【基本面】")}
-
-${dim("news", "【新聞面】")}
-
-【健檢分數】${health.composite}/100 (${verdict})
-  • 技術 ${health.scores.technical.score}/100
-  • 籌碼 ${health.scores.chip.score}/100
-  • 基本 ${health.scores.fundamental.score}/100
-  • 新聞 ${health.scores.news.score}/100
-
-請用「韭菜健檢」風格幫我:
-1. 🩺 技術面健檢 (白話 2-3 句)
-2. 🩺 籌碼面健檢 (白話 2-3 句)
-3. 🩺 基本面健檢 (白話 2-3 句)
-4. 🚨 綜合判斷 + 韭菜病風險警示
-
-規則:
-- 不報明牌、不給買賣建議、純客觀判讀
-- 直接從第 1 點開始,不要開場白、不要結尾贅述
-`;
-}
