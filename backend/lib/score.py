@@ -91,7 +91,7 @@ def calc_fundamental_score(funda: dict | None) -> tuple[int, list[str]]:
         elif per > 40:
             s -= 10
             notes.append(f"⚠️ 本益比 {per:.1f} 倍偏高")
-    yoy = funda.get("rev_yoy", 0)
+    yoy = funda.get("rev_yoy") or 0
     if yoy > 20:
         s += 10
         notes.append(f"✓ 月營收 YoY +{yoy:.1f}% 強成長")
@@ -101,7 +101,7 @@ def calc_fundamental_score(funda: dict | None) -> tuple[int, list[str]]:
     elif yoy < -10:
         s -= 10
         notes.append(f"⚠️ 月營收 YoY {yoy:.1f}% 衰退")
-    yld = funda.get("yield", 0)
+    yld = funda.get("yield") or 0
     if yld > 4:
         s += 5
         notes.append(f"✓ 殖利率 {yld:.1f}%")

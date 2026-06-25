@@ -21,15 +21,31 @@ export interface TickerInfo {
   type: string;
 }
 
+export interface OhlcvBar {
+  date: string;
+  open: number; high: number; low: number; close: number;
+  volume: number;
+  ma20: number; ma60: number;
+}
+
+export interface RevHistory {
+  month: string;
+  rev_yi: number;
+  yoy: number;
+}
+
 export interface HealthCheck {
   ticker: string;
   name: string;
   industry: string;
-  quote: { price: number; change_pct: number; asof: string };
+  quote: {
+    price: number; prev_close: number; change_pct: number; asof: string;
+    open: number; high: number; low: number; volume: number;
+  };
   health: {
     composite: number;
     verdict: string;
-    color: "green" | "teal" | "amber" | "red";
+    color: "green" | "teal" | "amber" | "rose";
     scores: {
       technical: { score: number; notes: string[] };
       chip: { score: number; notes: string[] };
@@ -37,6 +53,18 @@ export interface HealthCheck {
       news: { score: number; notes: string[] };
     };
   };
+  tech: {
+    price: number; ma5: number; ma20: number; ma60: number; ma200: number;
+    rsi: number; k: number; d: number;
+  } | null;
+  chip: {
+    foreign_20d: number; invtrust_20d: number; dealer_20d: number;
+  } | null;
+  funda: {
+    per?: number; pbr?: number; yield?: number; rev_yoy?: number;
+    rev_history?: RevHistory[];
+  };
+  ohlcv_60d: OhlcvBar[];
   sparkline: number[];
   has_full_data: boolean;
 }

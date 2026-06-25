@@ -1,4 +1,4 @@
-"""4 面健檢 API endpoint."""
+"""4 面健檢 API endpoint — 含 OHLCV + 技術指標 + 法人 + 月營收."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,10 +15,12 @@ router = APIRouter(tags=["health"])
 
 ROOT = Path(__file__).resolve().parents[2]
 OHLCV_CACHE = ROOT / "data" / "cache" / "ohlcv"
+FINMIND_INST = ROOT / "data" / "cache" / "finmind" / "institutional"
+FINMIND_REV = ROOT / "data" / "cache" / "finmind" / "revenue"
+FINMIND_PER = ROOT / "data" / "cache" / "finmind" / "extras"
 
 
 def _load_local_ohlcv(ticker: str, days: int = 250) -> pd.DataFrame | None:
-    """嘗試本地 cache,失敗回 None(API 之後 fallback yfinance)."""
     p = OHLCV_CACHE / f"{ticker}.parquet"
     if not p.exists():
         return None
@@ -30,40 +32,129 @@ def _load_local_ohlcv(ticker: str, days: int = 250) -> pd.DataFrame | None:
         return None
 
 
-def _calc_tech_indicators(df: pd.DataFrame) -> dict | None:
-    """從 OHLCV df 算 MA / KD / RSI / 布林."""
+def _yf_ohlcv_fallback(ticker: str, days: int = 250) -> pd.DataFrame | None:
+    try:
+        import yfinance as yf
+        period = "1y" if days <= 250 else "2y"
+        for suffix in (".TW", ".TWO"):
+            t = yf.Ticker(f"{ticker}{suffix}")
+            h = t.history(period=period, auto_adjust=False)
+            if h.empty:
+                continue
+            df = pd.DataFrame({
+                "date": pd.to_datetime(h.index).tz_localize(None),
+                "open": h["Open"].astype(float),
+                "high": h["High"].astype(float),
+                "low": h["Low"].astype(float),
+                "close": h["Close"].astype(float),
+                "volume": h["Volume"].astype(float),
+            }).reset_index(drop=True)
+            return df.tail(days).reset_index(drop=True)
+    except Exception:
+        pass
+    return None
+
+
+def _calc_tech(df: pd.DataFrame | None) -> dict | None:
     if df is None or len(df) < 60:
         return None
     df = df.copy()
-    # MA
     df["ma5"] = df["close"].rolling(5).mean()
     df["ma20"] = df["close"].rolling(20).mean()
     df["ma60"] = df["close"].rolling(60).mean()
-    # KD (9)
+    df["ma200"] = df["close"].rolling(200).mean()
     n = 9
     low_n = df["low"].rolling(n).min()
     high_n = df["high"].rolling(n).max()
-    rsv = (df["close"] - low_n) / (high_n - low_n) * 100
-    rsv = rsv.fillna(50)
+    rsv = ((df["close"] - low_n) / (high_n - low_n) * 100).fillna(50)
     df["k"] = rsv.ewm(alpha=1/3, adjust=False).mean()
     df["d"] = df["k"].ewm(alpha=1/3, adjust=False).mean()
-    # RSI (14)
     delta = df["close"].diff()
     gain = delta.where(delta > 0, 0).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
     rs = gain / loss
     df["rsi"] = 100 - (100 / (1 + rs))
-
     last = df.iloc[-1]
+
+    def num(x, default=0):
+        return float(x) if pd.notna(x) else default
+
     return {
-        "price": float(last["close"]),
-        "ma5": float(last["ma5"]) if pd.notna(last["ma5"]) else 0.0,
-        "ma20": float(last["ma20"]) if pd.notna(last["ma20"]) else 0.0,
-        "ma60": float(last["ma60"]) if pd.notna(last["ma60"]) else 0.0,
-        "k": float(last["k"]) if pd.notna(last["k"]) else 50.0,
-        "d": float(last["d"]) if pd.notna(last["d"]) else 50.0,
-        "rsi": float(last["rsi"]) if pd.notna(last["rsi"]) else 50.0,
+        "price": num(last["close"]),
+        "ma5": num(last["ma5"]),
+        "ma20": num(last["ma20"]),
+        "ma60": num(last["ma60"]),
+        "ma200": num(last["ma200"]),
+        "rsi": num(last["rsi"], 50),
+        "k": num(last["k"], 50),
+        "d": num(last["d"], 50),
     }
+
+
+def _load_chip(ticker: str) -> dict | None:
+    """讀本地 FinMind 法人 cache."""
+    p = FINMIND_INST / f"{ticker}.parquet"
+    if not p.exists():
+        return None
+    try:
+        df = pd.read_parquet(p)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date").tail(120)
+        df["net"] = df["buy"] - df["sell"]
+        # 取最後 20 個交易日
+        last_dates = df["date"].unique()[-20:]
+        sub = df[df["date"].isin(last_dates)]
+        agg = sub.groupby("name")["net"].sum() / 1000  # → 張
+        return {
+            "foreign_20d": int(agg.get("Foreign_Investor", 0)),
+            "invtrust_20d": int(agg.get("Investment_Trust", 0)),
+            "dealer_20d": int(agg.get("Dealer_self", 0)),
+        }
+    except Exception:
+        return None
+
+
+def _load_funda(ticker: str) -> dict:
+    """讀月營收 + PER cache."""
+    out: dict = {}
+    # PER / PBR / yield
+    per_p = FINMIND_PER / f"{ticker}_per.parquet"
+    if per_p.exists():
+        try:
+            df = pd.read_parquet(per_p)
+            df["date"] = pd.to_datetime(df["date"])
+            latest = df.sort_values("date").iloc[-1]
+            for k, dst in (("PER", "per"), ("PBR", "pbr"),
+                            ("dividend_yield", "yield")):
+                v = latest.get(k)
+                if pd.notna(v):
+                    out[dst] = float(v)
+        except Exception:
+            pass
+    # 月營收 YoY
+    rev_p = FINMIND_REV / f"{ticker}.parquet"
+    if rev_p.exists():
+        try:
+            df = pd.read_parquet(rev_p)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date")
+            df["yoy"] = df["revenue"].pct_change(12) * 100
+            latest_yoy = df["yoy"].iloc[-1]
+            if pd.notna(latest_yoy):
+                out["rev_yoy"] = float(latest_yoy)
+            # history 12 期 for chart
+            tail12 = df.tail(12)
+            out["rev_history"] = [
+                {
+                    "month": d.strftime("%Y/%m"),
+                    "rev_yi": float(r) / 100_000_000 if pd.notna(r) else 0,
+                    "yoy": float(y) if pd.notna(y) else 0,
+                }
+                for d, r, y in zip(tail12["date"], tail12["revenue"], tail12["yoy"])
+            ]
+        except Exception:
+            pass
+    return out
 
 
 class HealthCheckOut(BaseModel):
@@ -72,7 +163,11 @@ class HealthCheckOut(BaseModel):
     industry: str
     quote: dict
     health: dict
-    sparkline: list[float]  # close 20d
+    tech: dict | None         # MA5/20/60/200 + RSI + K + D
+    chip: dict | None         # 外資/投信/自營 20d net
+    funda: dict               # PER/PBR/yield/rev_yoy + rev_history[]
+    ohlcv_60d: list[dict]     # 過去 60 日 [{date, close, ma20, ma60}]
+    sparkline: list[float]    # 20 日 close (legacy)
     has_full_data: bool
 
 
@@ -83,42 +178,40 @@ def health_check(ticker: str):
     if not quote:
         raise HTTPException(status_code=404, detail=f"ticker {ticker} not found")
 
-    # 試本地 cache,沒就用 yfinance 即時抓
-    ohlcv = _load_local_ohlcv(ticker, days=120)
+    ohlcv = _load_local_ohlcv(ticker, days=250)
     has_full = ohlcv is not None
-
     if not has_full:
-        # fallback: 用 yfinance 抓 3 個月
-        try:
-            import yfinance as yf
-            for suffix in (".TW", ".TWO"):
-                t = yf.Ticker(f"{ticker}{suffix}")
-                h = t.history(period="6mo", auto_adjust=False)
-                if not h.empty:
-                    ohlcv = pd.DataFrame({
-                        "date": pd.to_datetime(h.index).tz_localize(None),
-                        "open": h["Open"].astype(float),
-                        "high": h["High"].astype(float),
-                        "low": h["Low"].astype(float),
-                        "close": h["Close"].astype(float),
-                        "volume": h["Volume"].astype(float),
-                    }).reset_index(drop=True)
-                    break
-        except Exception as e:
-            print(f"[health_check] yfinance fallback failed: {e}")
+        ohlcv = _yf_ohlcv_fallback(ticker, days=250)
 
-    tech = _calc_tech_indicators(ohlcv) if ohlcv is not None else None
-    # 籌碼面 / 基本面 / 新聞 — placeholder,之後接 FinMind 整合
-    chip = None
-    funda = None
-    news = None
+    tech = _calc_tech(ohlcv) if ohlcv is not None else None
+    chip = _load_chip(ticker)
+    funda = _load_funda(ticker)
+    health = calc_composite_health(
+        tech, chip,
+        # 把 funda 簡化成 score 需要的格式
+        {k: funda.get(k) for k in ("per", "pbr", "yield", "rev_yoy")} if funda else None,
+        None,
+    )
 
-    health = calc_composite_health(tech, chip, funda, news)
+    # 60 日 OHLCV + MA(供前端 chart)
+    ohlcv_60d: list[dict] = []
+    if ohlcv is not None:
+        df_chart = ohlcv.tail(60).copy()
+        df_chart["ma20"] = ohlcv["close"].rolling(20).mean().tail(60)
+        df_chart["ma60"] = ohlcv["close"].rolling(60).mean().tail(60)
+        for _, r in df_chart.iterrows():
+            ohlcv_60d.append({
+                "date": r["date"].strftime("%Y-%m-%d"),
+                "open": float(r["open"]),
+                "high": float(r["high"]),
+                "low": float(r["low"]),
+                "close": float(r["close"]),
+                "volume": int(r["volume"]) if pd.notna(r["volume"]) else 0,
+                "ma20": float(r["ma20"]) if pd.notna(r["ma20"]) else 0,
+                "ma60": float(r["ma60"]) if pd.notna(r["ma60"]) else 0,
+            })
 
-    # sparkline 20 日收盤
-    spark = []
-    if ohlcv is not None and len(ohlcv) > 0:
-        spark = ohlcv["close"].tail(20).tolist()
+    spark = [float(c) for c in ohlcv["close"].tail(20)] if ohlcv is not None else []
 
     return HealthCheckOut(
         ticker=ticker,
@@ -126,10 +219,19 @@ def health_check(ticker: str):
         industry=info["industry"],
         quote={
             "price": quote["price"],
+            "prev_close": quote["prev_close"],
             "change_pct": quote["change_pct"],
             "asof": quote["asof"],
+            "open": quote["open"],
+            "high": quote["high"],
+            "low": quote["low"],
+            "volume": quote["volume"],
         },
         health=health,
+        tech=tech,
+        chip=chip,
+        funda=funda,
+        ohlcv_60d=ohlcv_60d,
         sparkline=spark,
         has_full_data=has_full,
     )

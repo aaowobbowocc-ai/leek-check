@@ -9,6 +9,7 @@ import { api, type HealthCheck } from "@/lib/api";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { ScoreRing } from "@/components/ui/score-ring";
 import { StCard, StHeader, StCaption } from "@/components/ui/st-card";
+import { PriceChart, RevenueBarChart, ChipStackedBar, TechGrid, FundaGrid } from "@/components/charts";
 
 export default function TickerPage() {
   const params = useParams<{ ticker: string }>();
@@ -136,14 +137,68 @@ function HealthCheckView({ data, onBack }: { data: HealthCheck; onBack: () => vo
           </StCaption>
         </StCard>
 
-        {/* 4 維度詳細解讀(streamlit 用 ### 列) */}
+        {/* 📈 60 日股價圖 + MA(主圖)*/}
+        {data.ohlcv_60d.length > 0 && (
+          <StCard>
+            <StHeader emoji="📈" title="60 日股價趨勢" />
+            <PriceChart bars={data.ohlcv_60d} />
+          </StCard>
+        )}
+
+        {/* 📋 技術面數值 grid */}
+        {data.tech && (
+          <StCard>
+            <StHeader emoji="📋" title="技術指標" sub="均線多空 + KD + RSI" />
+            <TechGrid tech={data.tech} />
+            <div className="mt-3 space-y-1.5 pt-3 border-t border-st-border">
+              {sub.technical.notes.map((n, i) => (
+                <div key={i} className="text-xs text-st-soft">{n}</div>
+              ))}
+            </div>
+          </StCard>
+        )}
+
+        {/* 📊 法人籌碼 */}
+        {data.chip && (
+          <StCard>
+            <StHeader emoji="📊" title="法人籌碼 20 日" sub="外資 / 投信 / 自營商 net buy" />
+            <ChipStackedBar
+              foreign={data.chip.foreign_20d}
+              invtrust={data.chip.invtrust_20d}
+              dealer={data.chip.dealer_20d}
+            />
+            <div className="mt-3 space-y-1.5 pt-3 border-t border-st-border">
+              {sub.chip.notes.map((n, i) => (
+                <div key={i} className="text-xs text-st-soft">{n}</div>
+              ))}
+            </div>
+          </StCard>
+        )}
+
+        {/* 💰 基本面 + 月營收圖 */}
         <StCard>
-          <StHeader emoji="📋" title="4 面詳細分析" />
-          <div className="space-y-4">
-            <DimSection emoji="📈" label="技術面" weight="40%" score={sub.technical.score} notes={sub.technical.notes} />
-            <DimSection emoji="📊" label="籌碼面" weight="30%" score={sub.chip.score} notes={sub.chip.notes} />
-            <DimSection emoji="💰" label="基本面" weight="20%" score={sub.fundamental.score} notes={sub.fundamental.notes} />
-            <DimSection emoji="📰" label="新聞面" weight="10%" score={sub.news.score} notes={sub.news.notes} />
+          <StHeader emoji="💰" title="基本面" sub="估值 + 月營收成長" />
+          <FundaGrid funda={data.funda} />
+          {data.funda.rev_history && data.funda.rev_history.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-st-border">
+              <div className="text-[10px] text-st-muted mb-2">📊 月營收 YoY 12 期</div>
+              <RevenueBarChart data={data.funda.rev_history} />
+            </div>
+          )}
+          <div className="mt-3 space-y-1.5 pt-3 border-t border-st-border">
+            {sub.fundamental.notes.map((n, i) => (
+              <div key={i} className="text-xs text-st-soft">{n}</div>
+            ))}
+          </div>
+        </StCard>
+
+        {/* 📰 新聞面(暫 placeholder)*/}
+        <StCard>
+          <StHeader emoji="📰" title="新聞面" sub="近期新聞 + 市場情緒" />
+          <div className="space-y-1.5">
+            {sub.news.notes.map((n, i) => (
+              <div key={i} className="text-xs text-st-soft">{n}</div>
+            ))}
           </div>
         </StCard>
 
