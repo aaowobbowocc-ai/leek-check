@@ -157,11 +157,12 @@ export function BookPanel() {
               "radial-gradient(circle at 15% 18%, var(--accent-soft), transparent 50%)",
               "linear-gradient(135deg, var(--accent-deep) 0%, #0a1a1f 50%, #16181d 100%)",
             ].join(", "),
-            border: "1px solid #2f343d",
+            border: "1px solid color-mix(in srgb, var(--accent) 45%, transparent)",
             boxShadow: [
               "inset 0 1px 0 rgba(255,255,255,0.1)",
               "inset 0 -1px 0 rgba(0,0,0,0.4)",
-              "0 0 24px rgba(20,184,166,0.12)",
+              "0 0 24px var(--accent-glow)",
+              "0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent)",
             ].join(", "),
           }}
         >
