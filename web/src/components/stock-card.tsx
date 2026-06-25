@@ -46,14 +46,22 @@ export function StockCard({
       style={
         isLegendary
           ? {
-              boxShadow:
-                "0 4px 14px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08), 0 0 24px rgba(252, 211, 77, 0.15)",
+              boxShadow: [
+                "0 4px 14px rgba(0,0,0,0.4)",
+                "inset 0 1px 0 rgba(255,255,255,0.18)",
+                "inset 0 -1px 0 rgba(0,0,0,0.4)",
+                "0 0 24px rgba(252, 211, 77, 0.15)",
+              ].join(", "),
             }
           : {
               background: `linear-gradient(155deg, ${dark} 0%, #1a1d24 50%, #16181d 100%)`,
-              border: `2px solid ${light}`,
-              boxShadow:
-                "0 4px 14px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.08)",
+              border: `1px solid ${light}`,
+              boxShadow: [
+                "0 4px 14px rgba(0,0,0,0.45)",
+                "inset 0 1px 0 rgba(255,255,255,0.15)",
+                "inset 0 -1px 0 rgba(0,0,0,0.5)",
+                "inset 0 0 0 1px rgba(255,255,255,0.04)",
+              ].join(", "),
             }
       }
     >

@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useRouter } from "next/navigation";
 import { api, type Quote } from "@/lib/api";
 import { WatchPanel } from "@/components/watch-panel";
-import { StockCard } from "@/components/stock-card";
+import { StockRow } from "@/components/stock-row";
 import { createClient } from "@/lib/supabase/client";
 import { HOT_STOCK_CATEGORIES, ALL_HOT_TICKERS } from "@/lib/tier";
 
@@ -216,13 +216,13 @@ function SearchPanel() {
           )}
           <div className="space-y-1.5">
             {(results ?? []).slice(0, 20).map((r) => (
-              <StockCard
+              <StockRow
                 key={r.ticker}
                 ticker={r.ticker}
                 name={r.name}
                 industry={r.industry}
                 quote={hotQuoteMap[r.ticker]}
-                onClick={() => router.push(`/ticker/${r.ticker}`)}
+                onOpen={() => router.push(`/ticker/${r.ticker}`)}
               />
             ))}
             {!searchFetching && results?.length === 0 && (
@@ -268,18 +268,18 @@ function SearchPanel() {
                     return (
                       <div
                         key={tk}
-                        className="shimmer rounded-st h-[78px]"
+                        className="shimmer rounded-st h-[52px]"
                       />
                     );
                   }
                   return (
-                    <StockCard
+                    <StockRow
                       key={tk}
                       ticker={tk}
                       name={q?.name ?? ""}
                       industry={q?.industry ?? ""}
                       quote={q}
-                      onClick={() => router.push(`/ticker/${tk}`)}
+                      onOpen={() => router.push(`/ticker/${tk}`)}
                     />
                   );
                 })}

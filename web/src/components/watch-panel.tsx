@@ -8,9 +8,8 @@ import {
   Plus, Star, AlertTriangle, Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StockCard } from "@/components/stock-card";
+import { StockRow } from "@/components/stock-row";
 import { api, type Quote } from "@/lib/api";
-import { chgColor, chgArrow } from "@/lib/tier";
 import {
   loadCloudWatchlist, addCloudTicker, removeCloudTicker, updateCloudHolding,
   type WatchlistItem,
@@ -195,7 +194,7 @@ export function WatchPanel() {
         </motion.div>
       )}
 
-      {/* Cards */}
+      {/* Pills with expandable brief */}
       <AnimatePresence mode="popLayout">
         {list.map((item) => {
           const q = quoteMap.get(item.ticker);
@@ -215,55 +214,26 @@ export function WatchPanel() {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="space-y-1.5"
             >
-              {/* Streamlit-style tier card */}
-              <StockCard
+              <StockRow
                 ticker={item.ticker}
                 name={q?.name ?? ""}
                 industry={q?.industry ?? "—"}
                 quote={q}
-                onClick={() => router.push(`/ticker/${item.ticker}`)}
+                hasHolding={hasHolding}
+                holding={
+                  hasHolding && q
+                    ? {
+                        shares: item.shares!,
+                        cost_per_share: item.cost_per_share!,
+                        pnl,
+                        pnlPct,
+                      }
+                    : undefined
+                }
+                onOpen={() => router.push(`/ticker/${item.ticker}`)}
+                onEdit={() => setEditing(item)}
               />
-
-              {/* 持股損益 row (if has holding) */}
-              {hasHolding && q && (
-                <div
-                  className="rounded-st p-3 grid grid-cols-3 gap-2 text-xs"
-                  style={{
-                    background: "#16181d",
-                    border: "1px solid #2f343d",
-                    borderLeft: `3px solid ${chgColor(pnl >= 0 ? 1 : -1)}`,
-                  }}
-                >
-                  <Cell label="股數" value={`${item.shares!.toLocaleString()}`} />
-                  <Cell label="成本" value={formatNumber(item.cost_per_share!)} />
-                  <Cell
-                    label="損益"
-                    value={`${pnl >= 0 ? "+" : ""}${formatNumber(pnl, 0)}`}
-                    tint={pnl >= 0 ? "up" : "down"}
-                    sub={`${chgArrow(pnlPct)} ${formatPct(pnlPct)}`}
-                  />
-                </div>
-              )}
-
-              {/* Action bar (4 面健檢 / 編輯) */}
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => router.push(`/ticker/${item.ticker}`)}
-                  className="flex-1 rounded-st py-2 text-xs font-semibold text-teal-300 hover:bg-teal-300/10 transition-colors flex items-center justify-center gap-1.5"
-                  style={{ background: "#16181d", border: "1px solid #2f343d" }}
-                >
-                  🩺 翻開健檢
-                </button>
-                <button
-                  onClick={() => setEditing(item)}
-                  className="flex-1 rounded-st py-2 text-xs font-semibold text-st-muted hover:text-st-soft transition-colors flex items-center justify-center gap-1.5"
-                  style={{ background: "#16181d", border: "1px solid #2f343d" }}
-                >
-                  ⚙️ 編輯持股
-                </button>
-              </div>
             </motion.div>
           );
         })}
