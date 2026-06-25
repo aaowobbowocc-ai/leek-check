@@ -1407,6 +1407,54 @@ function SearchPanel() {
   const router = useRouter();
   const isSearching = q.trim().length >= 1;
 
+  // 觀察清單 state(熱門股加入用)
+  const isGuestMode = useSession((s) => s.isGuest);
+  const guestList = useSession((s) => s.guestWatchlist);
+  const addGuest = useSession((s) => s.addGuestItem);
+  const removeGuest = useSession((s) => s.removeGuestItem);
+  const [searchUserId, setSearchUserId] = useState<string | null>(null);
+  useEffect(() => {
+    if (isGuestMode) return;
+    createClient().auth.getUser().then(({ data }) => setSearchUserId(data.user?.id ?? null));
+  }, [isGuestMode]);
+  const wlCloud = useQuery({
+    queryKey: ["watchlist-cloud", searchUserId],
+    queryFn: () => import("@/lib/watchlist").then(m => m.loadCloudWatchlist()),
+    enabled: !isGuestMode && !!searchUserId,
+    staleTime: 30_000,
+  });
+  const wl = isGuestMode ? guestList : (wlCloud.data ?? []);
+  const isInWl = (tk: string) => wl.some(x => x.ticker === tk);
+  const toggleWl = async (tk: string) => {
+    if (isInWl(tk)) {
+      if (isGuestMode) {
+        removeGuest(tk, "twse");
+        toast(`⭐ ${tk} 已從觀察清單移除`, "ok");
+      } else if (searchUserId) {
+        try {
+          const { removeCloudTicker } = await import("@/lib/watchlist");
+          await removeCloudTicker(tk, "twse");
+          wlCloud.refetch();
+          toast(`⭐ ${tk} 已從觀察清單移除`, "ok");
+        } catch (e) { toast(`移除失敗:${(e as Error).message}`, "error"); }
+      }
+    } else {
+      if (isGuestMode) {
+        addGuest({ ticker: tk, type: "twse" });
+        toast(`⭐ ${tk} 已加入觀察清單`, "ok");
+      } else if (searchUserId) {
+        try {
+          const { addCloudTicker } = await import("@/lib/watchlist");
+          await addCloudTicker({ ticker: tk, type: "twse", position: wl.length }, searchUserId);
+          wlCloud.refetch();
+          toast(`⭐ ${tk} 已加入觀察清單`, "ok");
+        } catch (e) { toast(`加入失敗:${(e as Error).message}`, "error"); }
+      }
+    }
+  };
+  const picks = useSession((s) => s.briefingPicks);
+  const togglePick = useSession((s) => s.togglePick);
+
   // 排行榜 fetch (依 mode)
   const rankBy = mode === "up" ? "up" : mode === "down" ? "down" : mode === "health" ? "health" : "volume";
   const { data: rankData, isLoading: rankLoading } = useQuery({
@@ -1483,6 +1531,10 @@ function SearchPanel() {
                 industry={r.industry}
                 quote={hotQuoteMap[r.ticker]}
                 onOpen={() => router.push(`/ticker/${r.ticker}`)}
+                isInWatch={isInWl(r.ticker)}
+                onAddWatch={() => toggleWl(r.ticker)}
+                isPicked={picks.includes(r.ticker)}
+                onPin={() => togglePick(r.ticker)}
               />
             ))}
             {!searchFetching && results?.length === 0 && (
@@ -1580,6 +1632,10 @@ function SearchPanel() {
                       industry={q?.industry ?? ""}
                       quote={q}
                       onOpen={() => router.push(`/ticker/${tk}`)}
+                      isInWatch={isInWl(tk)}
+                      onAddWatch={() => toggleWl(tk)}
+                      isPicked={picks.includes(tk)}
+                      onPin={() => togglePick(tk)}
                     />
                   );
                 })}
