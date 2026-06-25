@@ -129,7 +129,9 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
   const greeting = hour < 12 ? "🌅 早安" : hour < 18 ? "☀️ 午安" : "🌙 晚安";
   const isGuest = useSession((s) => s.isGuest);
   const guestList = useSession((s) => s.guestWatchlist);
+  const picks = useSession((s) => s.briefingPicks);
   const [userId, setUserId] = useState<string | null>(null);
+  const [roundupOpen, setRoundupOpen] = useState(false);
 
   useEffect(() => {
     if (isGuest) return;
@@ -307,10 +309,172 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
         </div>
       )}
 
+      {/* 🌅 晨報精選(如有 picks)*/}
+      {picks.length > 0 && (
+        <BriefPicksCard
+          picks={picks}
+          quotes={wlQuotes}
+          onClick={(tk) => router.push(`/ticker/${tk}`)}
+        />
+      )}
+
+      {/* 🩺 一鍵巡禮 */}
+      {wlList.length > 0 && (
+        <HealthRoundupCard
+          tickers={wlTickers}
+          open={roundupOpen}
+          onToggle={() => setRoundupOpen(!roundupOpen)}
+        />
+      )}
+
       {/* 🌡️ 大盤狀態 — real data */}
       <MarketDashboardCard />
     </div>
   );
+}
+
+function BriefPicksCard({ picks, quotes, onClick }: {
+  picks: string[];
+  quotes: import("@/lib/api").Quote[];
+  onClick: (tk: string) => void;
+}) {
+  const qMap = new Map(quotes.map((q) => [q.ticker, q]));
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-st p-4"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.06), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        borderLeft: "3px solid #fbbf24",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-2xl">🌅</span>
+        <div>
+          <div className="text-xs text-amber-300 font-bold tracking-wider">晨報精選</div>
+          <div className="font-extrabold text-st-fg text-sm">
+            鎖定 {picks.length} 檔每日健檢
+          </div>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {picks.map((tk) => {
+          const q = qMap.get(tk);
+          if (!q) return (
+            <div key={tk} className="text-[10px] text-st-muted px-2">{tk} (載入中⋯)</div>
+          );
+          const c = chgColor(q.change_pct);
+          return (
+            <button
+              key={tk}
+              onClick={() => onClick(tk)}
+              className="w-full flex items-center justify-between rounded p-2 hover:bg-white/[0.03] active:scale-[0.98]"
+              style={{ background: "#0f1218", border: "1px solid #2f343d" }}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="tabular-nums text-xs font-bold text-st-fg">{q.ticker}</span>
+                <span className="text-xs text-st-soft truncate">{q.name}</span>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <span className="tabular-nums text-xs font-bold text-st-fg">{q.price.toFixed(2)}</span>
+                <span className="tabular-nums text-[10px] font-bold ml-2" style={{ color: c }}>
+                  {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(2)}%
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
+function HealthRoundupCard({ tickers, open, onToggle }: {
+  tickers: string[]; open: boolean; onToggle: () => void;
+}) {
+  const router = useRouter();
+  const results = useQueries(tickers.slice(0, 10), open);
+  const loadedCount = results.filter((r) => r.data).length;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-st p-4"
+      style={{
+        background: [
+          "radial-gradient(circle at 12% 18%, rgba(255,255,255,0.06), transparent 35%)",
+          "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+        ].join(", "),
+        border: "1px solid #3a4150",
+        borderLeft: "3px solid #5eead4",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
+      }}
+    >
+      <button onClick={onToggle} className="w-full flex items-center gap-2 text-left">
+        <span className="text-2xl">🩺</span>
+        <div className="flex-1">
+          <div className="text-xs text-teal-300 font-bold tracking-wider">一鍵巡禮</div>
+          <div className="font-extrabold text-st-fg text-sm">
+            {open ? `掃描中 ${loadedCount}/${Math.min(tickers.length, 10)}` : `掃描全部 ${tickers.length} 檔 4 面健檢分數`}
+          </div>
+        </div>
+        <span className="text-teal-300">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          {tickers.slice(0, 10).map((tk, i) => {
+            const r = results[i];
+            const hc = r.data;
+            const score = hc?.health.composite;
+            const verdict = score == null ? "—" : score >= 70 ? "健康" : score >= 50 ? "亞健康" : "韭菜病";
+            const c = score == null ? "#94a3b8" : score >= 70 ? "#5eead4" : score >= 50 ? "#fbbf24" : "#f43f5e";
+            return (
+              <button
+                key={tk}
+                onClick={() => router.push(`/ticker/${tk}`)}
+                disabled={!hc}
+                className="rounded p-2.5 text-center active:scale-[0.97]"
+                style={{ background: "#0f1218", border: `1px solid ${c}40`, borderLeft: `3px solid ${c}` }}
+              >
+                <div className="tabular-nums text-xs font-bold text-st-fg">{tk}</div>
+                {score == null ? (
+                  <div className="shimmer h-5 w-12 rounded mx-auto mt-1" />
+                ) : (
+                  <>
+                    <div className="tabular-nums text-lg font-extrabold mt-1" style={{ color: c, lineHeight: 1 }}>
+                      {score}
+                    </div>
+                    <div className="text-[9px] font-bold" style={{ color: c }}>{verdict}</div>
+                  </>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function useQueries(tickers: string[], enabled: boolean) {
+  // Parallel useQuery hooks(simple version — uses TanStack pattern)
+  const arr: ReturnType<typeof useQuery<import("@/lib/api").HealthCheck>>[] = [];
+  for (const tk of tickers) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    arr.push(useQuery({
+      queryKey: ["health-check", tk],
+      queryFn: () => api.getHealthCheck(tk),
+      enabled: enabled && !!tk,
+      staleTime: 5 * 60_000,
+    }));
+  }
+  return arr;
 }
 
 function MarketDashboardCard() {

@@ -11,6 +11,10 @@ type SessionState = {
   setGuest: (v: boolean) => void;
 
   /** 訪客 watchlist(只存 localStorage) */
+  /** 晨報精選 5 檔(跨裝置共享 — 暫存 localStorage,等 PRO 接 DB)*/
+  briefingPicks: string[];
+  togglePick: (ticker: string) => void;
+
   guestWatchlist: WatchlistItem[];
   addGuestItem: (item: WatchlistItem) => void;
   removeGuestItem: (ticker: string, type: string) => void;
@@ -32,6 +36,16 @@ export const useSession = create<SessionState>()(
       setHydrated: () => set({ hasHydrated: true }),
       isGuest: false,
       setGuest: (v) => set({ isGuest: v }),
+
+      briefingPicks: [],
+      togglePick: (ticker) =>
+        set((s) => {
+          if (s.briefingPicks.includes(ticker)) {
+            return { briefingPicks: s.briefingPicks.filter((x) => x !== ticker) };
+          }
+          if (s.briefingPicks.length >= 5) return s;  // 最多 5
+          return { briefingPicks: [...s.briefingPicks, ticker] };
+        }),
 
       guestWatchlist: [],
       addGuestItem: (item) =>

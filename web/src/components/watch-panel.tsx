@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus, Star, AlertTriangle, Wallet,
+  Plus, Star, AlertTriangle, Wallet, Pin, PinOff,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StockRow } from "@/components/stock-row";
@@ -32,6 +32,8 @@ export function WatchPanel() {
   const [userId, setUserId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<WatchlistItem | null>(null);
+  const picks = useSession((s) => s.briefingPicks);
+  const togglePick = useSession((s) => s.togglePick);
 
   // 抓登入者 id
   useEffect(() => {
@@ -137,7 +139,7 @@ export function WatchPanel() {
             <Star className="w-6 h-6 text-amber-300" style={{ fill: "#fbbf24" }} /> 我的觀察清單
           </h2>
           <p className="text-st-muted text-xs mt-1">
-            點卡片進場分析 → 直接展開健檢頁 · {list.length} 檔追蹤中
+            點卡片進場分析 · {list.length} 檔 · 🌅 晨報精選 {picks.length}/5
           </p>
         </div>
         <Button variant="primary" size="sm" onClick={() => setAdding(true)}>
@@ -231,6 +233,8 @@ export function WatchPanel() {
                       }
                     : undefined
                 }
+                isPicked={picks.includes(item.ticker)}
+                onPin={() => togglePick(item.ticker)}
                 onOpen={() => router.push(`/ticker/${item.ticker}`)}
                 onEdit={() => setEditing(item)}
               />

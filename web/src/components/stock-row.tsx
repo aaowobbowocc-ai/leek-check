@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { Stethoscope, Settings as SettingsIcon, Loader2 } from "lucide-react";
+import { Stethoscope, Settings as SettingsIcon, Loader2, Pin, PinOff } from "lucide-react";
 import { StockPill } from "@/components/stock-pill";
 import { cardTier, chgArrow } from "@/lib/tier";
 import { formatNumber } from "@/lib/utils";
@@ -23,12 +23,15 @@ type Props = {
   };
   onOpen?: () => void;
   onEdit?: () => void;
+  /** 晨報精選 toggle */
+  isPicked?: boolean;
+  onPin?: () => void;
   defaultExpanded?: boolean;
 };
 
 export function StockRow({
   ticker, name, industry, quote, hasHolding, holding, onOpen, onEdit,
-  defaultExpanded = false,
+  isPicked, onPin, defaultExpanded = false,
 }: Props) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { light } = cardTier(ticker, industry);
@@ -211,6 +214,24 @@ export function StockRow({
                 </motion.button>
 
                 {/* 副按鈕:編輯 */}
+                {onPin && (
+                  <motion.button
+                    onClick={onPin}
+                    whileTap={{ scale: 0.9 }}
+                    className="rounded-st px-2.5 flex items-center justify-center"
+                    style={{
+                      background: isPicked
+                        ? "linear-gradient(180deg, #fbbf24, #d97706)"
+                        : "linear-gradient(180deg, #1c2028, #11141a)",
+                      border: `1px solid ${isPicked ? "#fcd34d" : "#2a3340"}`,
+                      color: isPicked ? "#16181d" : "#94a3b8",
+                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15), inset 0 -1px 0 rgba(0,0,0,0.3)",
+                    }}
+                    title={isPicked ? "取消晨報精選" : "加入晨報精選 (最多 5 檔)"}
+                  >
+                    {isPicked ? <Pin className="w-4 h-4" fill="currentColor" /> : <PinOff className="w-4 h-4" />}
+                  </motion.button>
+                )}
                 {onEdit && (
                   <motion.button
                     onClick={onEdit}
