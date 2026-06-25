@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { WatchlistItem } from "@/lib/watchlist";
+import { toast } from "@/lib/toast";
 
 type SessionState = {
   hasHydrated: boolean;
@@ -48,9 +49,14 @@ export const useSession = create<SessionState>()(
       togglePick: (ticker) =>
         set((s) => {
           if (s.briefingPicks.includes(ticker)) {
+            queueMicrotask(() => toast(`📰 ${ticker} 已從晨報移除`));
             return { briefingPicks: s.briefingPicks.filter((x) => x !== ticker) };
           }
-          if (s.briefingPicks.length >= 5) return s;  // 最多 5
+          if (s.briefingPicks.length >= 5) {
+            queueMicrotask(() => toast(`⚠️ 晨報精選已滿 5/5,請先移除`, "warn"));
+            return s;
+          }
+          queueMicrotask(() => toast(`📰 ${ticker} 已加入晨報 (${s.briefingPicks.length + 1}/5)`));
           return { briefingPicks: [...s.briefingPicks, ticker] };
         }),
 

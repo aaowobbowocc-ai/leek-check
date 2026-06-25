@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { useSession } from "@/lib/store";
+import { Toaster } from "@/components/ui/toaster";
 
 function AccentApplier() {
   const accent = useSession((s) => s.accentTheme);
@@ -29,6 +30,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={client}>
       <AccentApplier />
       {children}
+      <Toaster />
     </QueryClientProvider>
   );
 }

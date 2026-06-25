@@ -180,32 +180,29 @@ export function StockRow({
 
               {/* Action buttons */}
               <div className="flex gap-1.5 pt-1">
-                {/* 主按鈕:翻開健檢 — 金屬 teal 漸層 + glow + 箭頭 */}
+                {/* 主按鈕:翻開健檢 — frosted glass accent (跟 btn-smart 同風格) */}
                 <motion.button
                   onClick={onOpen}
-                  whileTap={{ scale: 0.96 }}
-                  className="flex-1 relative overflow-hidden rounded-st py-2.5 px-3 text-sm font-bold text-ink-950 flex items-center justify-center gap-2 group"
+                  whileTap={{ scale: 0.97 }}
+                  className="flex-1 relative overflow-hidden rounded-st py-2.5 px-3 text-sm font-bold flex items-center justify-center gap-2 transition-all"
                   style={{
                     background: [
-                      // 對角反光帶
-                      "linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.25) 50%, transparent 65%)",
-                      // 主色 teal 漸層
-                      "linear-gradient(180deg, #5eead4 0%, #14b8a6 60%, #0d9488 100%)",
+                      "linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent) 0%, color-mix(in srgb, var(--accent-mid) 10%, transparent) 50%, color-mix(in srgb, var(--accent-deep) 8%, transparent) 100%)",
                     ].join(", "),
-                    border: "1px solid #99f6e4",
+                    border: "1px solid color-mix(in srgb, var(--accent) 50%, transparent)",
+                    color: "var(--accent)",
                     boxShadow: [
-                      "0 4px 14px rgba(20, 184, 166, 0.35)",     // 外發光
-                      "inset 0 1px 0 rgba(255, 255, 255, 0.4)",   // 頂高光
-                      "inset 0 -1px 0 rgba(0, 0, 0, 0.2)",        // 底深陰
-                      "0 0 24px rgba(94, 234, 212, 0.25)",        // ambient glow
+                      "0 0 20px var(--accent-glow)",
+                      "inset 0 1px 0 rgba(255,255,255,0.1)",
+                      "inset 0 -1px 0 rgba(0,0,0,0.3)",
                     ].join(", "),
-                    color: "#0f1218",
+                    backdropFilter: "blur(8px)",
                   }}
                 >
                   <Stethoscope className="w-4 h-4" strokeWidth={2.5} />
                   <span className="tracking-wide">翻開完整健檢</span>
                   <motion.span
-                    className="text-base"
+                    className="text-base opacity-70"
                     animate={{ x: [0, 3, 0] }}
                     transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
                   >

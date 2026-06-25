@@ -17,6 +17,7 @@ import { BookPanel } from "@/components/book-panel";
 import { StockRow } from "@/components/stock-row";
 import { createClient } from "@/lib/supabase/client";
 import { HOT_STOCK_CATEGORIES, ALL_HOT_TICKERS, chgColor, chgArrow } from "@/lib/tier";
+import { toast } from "@/lib/toast";
 
 type Tab = "brief" | "watch" | "book" | "search" | "scan" | "me";
 
@@ -1746,15 +1747,20 @@ function StrategyCollapsible({
   const wlList = isGuestMode ? guestList : (cloudWl.data ?? []);
   const inWatch = (tk: string) => wlList.some(x => x.ticker === tk);
   const addToWatch = async (tk: string) => {
-    if (inWatch(tk)) return;
+    if (inWatch(tk)) {
+      toast(`⭐ ${tk} 已在觀察清單`, "warn");
+      return;
+    }
     if (isGuestMode) {
       addGuest({ ticker: tk, type: "twse" });
+      toast(`⭐ ${tk} 已加入觀察清單`, "ok");
     } else if (userId) {
       try {
         const { addCloudTicker } = await import("@/lib/watchlist");
         await addCloudTicker({ ticker: tk, type: "twse", position: wlList.length }, userId);
         cloudWl.refetch();
-      } catch (e) { alert("加入失敗:" + (e as Error).message); }
+        toast(`⭐ ${tk} 已加入觀察清單`, "ok");
+      } catch (e) { toast(`加入失敗:${(e as Error).message}`, "error"); }
     }
   };
 

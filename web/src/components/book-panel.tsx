@@ -30,6 +30,7 @@ export function BookPanel() {
   const [adding, setAdding] = useState(false);
   const [pickFromWatch, setPickFromWatch] = useState(false);
   const [newHolding, setNewHolding] = useState<WatchlistItem | null>(null);
+  const [editing, setEditing] = useState<WatchlistItem | null>(null);
 
   useEffect(() => {
     if (isGuest) return;
@@ -289,18 +290,33 @@ export function BookPanel() {
                     </span>
                   </div>
                   </motion.button>
-                  <button
-                    onClick={() => setSelling(it.item)}
-                    className="w-full mt-1.5 rounded-st py-2 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all border"
-                    style={{
-                      background: "linear-gradient(135deg, rgba(244,63,94,0.12), rgba(244,63,94,0.06))",
-                      borderColor: "rgba(244,63,94,0.4)",
-                      color: "#fda4af",
-                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
-                    }}
-                  >
-                    📉 賣出 {it.item.ticker}
-                  </button>
+                  {/* 編輯 + 賣出 雙按鈕 */}
+                  <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                    <button
+                      onClick={() => setEditing(it.item)}
+                      className="rounded-st py-2 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all border"
+                      style={{
+                        background: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent-deep) 6%, transparent))",
+                        borderColor: "color-mix(in srgb, var(--accent) 40%, transparent)",
+                        color: "var(--accent)",
+                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+                      }}
+                    >
+                      ⚙️ 編輯成本
+                    </button>
+                    <button
+                      onClick={() => setSelling(it.item)}
+                      className="rounded-st py-2 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all border"
+                      style={{
+                        background: "linear-gradient(135deg, rgba(244,63,94,0.12), rgba(244,63,94,0.06))",
+                        borderColor: "rgba(244,63,94,0.4)",
+                        color: "#fda4af",
+                        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+                      }}
+                    >
+                      📉 賣出
+                    </button>
+                  </div>
                 </motion.div>
               );
             })}
@@ -361,6 +377,28 @@ export function BookPanel() {
             } catch (e) { alert("儲存失敗:" + (e as Error).message); }
           }
           setNewHolding(null);
+        }}
+      />
+
+      {/* 編輯成本 sheet — 重用 FillHoldingSheet,預填現值 */}
+      <FillHoldingSheet
+        item={editing}
+        currentPrice={editing ? quoteMap.get(editing.ticker)?.price : undefined}
+        open={!!editing}
+        initialShares={editing?.shares ?? undefined}
+        initialCost={editing?.cost_per_share ?? undefined}
+        onClose={() => setEditing(null)}
+        onConfirm={async (shares, cost) => {
+          if (!editing) return;
+          if (isGuest) {
+            updateGuest(editing.ticker, editing.type, shares, cost, editing.entry_date);
+          } else {
+            try {
+              await updateCloudHolding(editing.ticker, editing.type, shares, cost, editing.entry_date);
+              await queryClient.invalidateQueries({ queryKey: ["watchlist-cloud", userId] });
+            } catch (e) { alert("更新失敗:" + (e as Error).message); }
+          }
+          setEditing(null);
         }}
       />
 
@@ -444,21 +482,28 @@ function PickFromWatchSheet({
 
 function FillHoldingSheet({
   item, currentPrice, open, onClose, onConfirm,
+  initialShares, initialCost,
 }: {
   item: WatchlistItem | null;
   currentPrice?: number;
   open: boolean;
   onClose: () => void;
   onConfirm: (shares: number, cost: number) => Promise<void>;
+  initialShares?: number;
+  initialCost?: number;
 }) {
   const [shares, setShares] = useState("");
   const [cost, setCost] = useState("");
   useEffect(() => {
     if (item) {
-      setShares("");
-      setCost(currentPrice ? currentPrice.toFixed(2) : "");
+      setShares(initialShares != null ? String(initialShares) : "");
+      setCost(
+        initialCost != null
+          ? String(initialCost)
+          : currentPrice ? currentPrice.toFixed(2) : ""
+      );
     }
-  }, [item, currentPrice]);
+  }, [item, currentPrice, initialShares, initialCost]);
   if (!item) return null;
 
   const s = Number(shares);

@@ -241,7 +241,6 @@ export function WatchPanel() {
                 isPicked={picks.includes(item.ticker)}
                 onPin={() => togglePick(item.ticker)}
                 onOpen={() => router.push(`/ticker/${item.ticker}`)}
-                onEdit={() => setEditing(item)}
               />
             </motion.div>
           );
