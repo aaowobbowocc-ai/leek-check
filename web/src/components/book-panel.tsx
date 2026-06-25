@@ -69,6 +69,7 @@ export function BookPanel() {
       item: WatchlistItem;
       q: import("@/lib/api").Quote;
       mv: number; cost: number; pnl: number; pnlPct: number;
+      isEtf: boolean;
     }> = [];
     holdings.forEach((it) => {
       const q = quoteMap.get(it.ticker);
@@ -80,12 +81,14 @@ export function BookPanel() {
       const pnlPct = (pnl / cost) * 100;
       totalCost += cost;
       totalMv += mv;
-      items.push({ item: it, q: q!, mv, cost, pnl, pnlPct });
+      const isEtf = it.ticker.startsWith("00") || it.ticker === "0050" || it.ticker === "0056";
+      items.push({ item: it, q: q!, mv, cost, pnl, pnlPct, isEtf });
     });
     const totalPnl = totalMv - totalCost;
     const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
-    // 集中度 (最大 / 總)
-    const maxItem = items.length > 0 ? items.reduce((a, b) => (a.mv > b.mv ? a : b)) : null;
+    // 集中度 — 只算個股(ETF 本身就是分散投資,不算集中度問題)
+    const nonEtfItems = items.filter(x => !x.isEtf);
+    const maxItem = nonEtfItems.length > 0 ? nonEtfItems.reduce((a, b) => (a.mv > b.mv ? a : b)) : null;
     const maxConcPct = totalMv > 0 && maxItem ? (maxItem.mv / totalMv) * 100 : 0;
     // 按市值排序
     items.sort((a, b) => b.mv - a.mv);
@@ -283,11 +286,16 @@ export function BookPanel() {
                   </div>
                   </motion.button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setSelling(it.item); }}
-                    className="absolute top-2 right-2 text-[10px] font-bold text-rose-300 active:scale-95 px-2 py-1 rounded"
-                    style={{ background: "rgba(244,63,94,0.12)", border: "1px solid rgba(244,63,94,0.35)" }}
+                    onClick={() => setSelling(it.item)}
+                    className="w-full mt-1.5 rounded-st py-2 text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all border"
+                    style={{
+                      background: "linear-gradient(135deg, rgba(244,63,94,0.12), rgba(244,63,94,0.06))",
+                      borderColor: "rgba(244,63,94,0.4)",
+                      color: "#fda4af",
+                      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.05)",
+                    }}
                   >
-                    📉 賣出
+                    📉 賣出 {it.item.ticker}
                   </button>
                 </motion.div>
               );

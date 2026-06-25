@@ -79,7 +79,7 @@ export function StockRow({
             >
               {/* 第 1 列:產業 + 日期 */}
               <div className="flex items-center justify-between text-[10px] text-st-muted">
-                <span>📂 {industry || "—"}</span>
+                <span>🏷️ {industry || "—"}</span>
                 {quote && <span className="tabular-nums">{quote.asof}</span>}
               </div>
 

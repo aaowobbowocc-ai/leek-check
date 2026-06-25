@@ -173,6 +173,8 @@ export interface RankItem {
   price: number;
   change_pct: number;
   volume: number;
+  composite?: number | null;
+  verdict?: string | null;
 }
 
 export interface RankOut {
@@ -188,7 +190,7 @@ export const api = {
   getStrategyResults: () => get<StrategyResults>("/api/strategy/results"),
   aiExplain: (body: AiExplainIn) => post<{ text: string; model: string }>("/api/ai/explain", body),
   getMarketDashboard: () => get<MarketDashboard>("/api/market/dashboard"),
-  getRanking: (by: "up" | "down" | "volume", limit = 20) =>
+  getRanking: (by: "up" | "down" | "volume" | "health", limit = 20) =>
     get<RankOut>(`/api/ranking?by=${by}&limit=${limit}`),
   getWorldNews: () => get<NewsCategory[]>("/api/news/world"),
   getMarketNews: (limit = 10) => get<NewsItem[]>(`/api/news/market?limit=${limit}`),

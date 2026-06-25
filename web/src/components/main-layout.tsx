@@ -357,6 +357,46 @@ function BriefPicksCard({ picks, quotes, onClick }: {
   onClick: (tk: string) => void;
 }) {
   const qMap = new Map(quotes.map((q) => [q.ticker, q]));
+  const togglePick = useSession((s) => s.togglePick);
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const runDailyBrief = async () => {
+    if (picks.length === 0) return;
+    setLoading(true);
+    try {
+      // 1. 拉大盤 dashboard
+      const dash = await api.getMarketDashboard();
+      // 2. 並行拉每檔 picks 的 health-check
+      const healths = await Promise.all(picks.map(tk => api.getHealthCheck(tk).catch(() => null)));
+      // 3. 組 prompt
+      const ticker_info = healths.filter(Boolean).map(h => ({
+        ticker: h!.ticker, name: h!.name, industry: h!.industry,
+        price: h!.quote.price, change_pct: h!.quote.change_pct,
+        composite: h!.health.composite, verdict: h!.health.verdict,
+        rev_yoy: h!.funda?.rev_yoy,
+        rsi: h!.tech?.rsi,
+      }));
+      const intl: Record<string, { price: number; change_pct: number }> = {};
+      (["sp500", "nasdaq", "vix", "btc"] as const).forEach(k => {
+        const x = dash[k];
+        if (x) intl[k] = { price: x.price, change_pct: x.change_pct };
+      });
+      const res = await api.aiMarketInsight({
+        taiex_price: dash.taiex?.price ?? 0,
+        taiex_change_pct: dash.taiex?.change_pct ?? 0,
+        taiex_ma200_dist: dash.taiex?.ma200_dist_pct,
+        taiex_temperature: dash.taiex?.temperature ?? "",
+        vix: dash.vix?.price,
+        intl: { ...intl, picks: ticker_info as unknown as Record<string, { price: number; change_pct: number }> },
+        institutional: dash.institutional ?? {},
+        style: "neutral", timeframe: "mid",
+      });
+      setAiText(res.text);
+    } catch (e) { setAiText(`⚠️ ${(e as Error).message}`); }
+    finally { setLoading(false); }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -374,41 +414,73 @@ function BriefPicksCard({ picks, quotes, onClick }: {
     >
       <div className="flex items-center gap-2 mb-3">
         <span className="text-2xl">🌅</span>
-        <div>
+        <div className="flex-1">
           <div className="text-xs text-amber-300 font-bold tracking-wider">晨報精選</div>
           <div className="font-extrabold text-st-fg text-sm">
-            鎖定 {picks.length} 檔每日健檢
+            鎖定 {picks.length}/5 檔每日健檢
           </div>
         </div>
       </div>
       <div className="space-y-1.5">
         {picks.map((tk) => {
           const q = qMap.get(tk);
-          if (!q) return (
-            <div key={tk} className="text-[10px] text-st-muted px-2">{tk} (載入中⋯)</div>
-          );
-          const c = chgColor(q.change_pct);
+          const c = q ? chgColor(q.change_pct) : "#94a3b8";
           return (
-            <button
+            <div
               key={tk}
-              onClick={() => onClick(tk)}
-              className="w-full flex items-center justify-between rounded p-2 hover:bg-white/[0.03] active:scale-[0.98]"
+              className="flex items-center gap-2 rounded p-2"
               style={{ background: "#0f1218", border: "1px solid #2f343d" }}
             >
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="tabular-nums text-xs font-bold text-st-fg">{q.ticker}</span>
-                <span className="text-xs text-st-soft truncate">{q.name}</span>
-              </div>
-              <div className="text-right flex-shrink-0">
-                <span className="tabular-nums text-xs font-bold text-st-fg">{q.price.toFixed(2)}</span>
-                <span className="tabular-nums text-[10px] font-bold ml-2" style={{ color: c }}>
-                  {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(2)}%
+              <button
+                onClick={() => onClick(tk)}
+                className="flex items-center gap-2 flex-1 min-w-0 text-left active:scale-[0.98]"
+              >
+                <span className="tabular-nums text-xs font-bold text-st-fg flex-shrink-0">{tk}</span>
+                <span className="text-xs text-st-soft truncate">{q?.name ?? "—"}</span>
+                <span className="ml-auto text-right flex-shrink-0">
+                  {q ? (
+                    <>
+                      <span className="tabular-nums text-xs font-bold text-st-fg">{q.price.toFixed(2)}</span>
+                      <span className="tabular-nums text-[10px] font-bold ml-2" style={{ color: c }}>
+                        {chgArrow(q.change_pct)} {Math.abs(q.change_pct).toFixed(2)}%
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-st-muted">載入中⋯</span>
+                  )}
                 </span>
-              </div>
-            </button>
+              </button>
+              {/* ❌ 移除按鈕 */}
+              <button
+                onClick={() => togglePick(tk)}
+                className="w-7 h-7 rounded flex items-center justify-center text-st-muted hover:bg-rose-500/15 hover:text-rose-300 active:scale-90 transition-colors text-xs"
+                title="從晨報精選移除"
+              >
+                ✕
+              </button>
+            </div>
           );
         })}
       </div>
+
+      {/* 🤖 每日整理 (智能整理) */}
+      <button
+        onClick={runDailyBrief}
+        disabled={loading || picks.length === 0}
+        className="btn-smart w-full mt-3"
+      >
+        ✨ <span className="relative z-10">{loading ? "整理中⋯" : aiText ? "🔄 重新整理" : "查看今日晨報整理"}</span>
+      </button>
+      {aiText && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mt-3 rounded p-3 text-xs text-st-soft whitespace-pre-wrap leading-relaxed"
+          style={{ background: "#0f1218", border: "1px solid #2f343d", borderLeft: "3px solid #a78bfa" }}
+        >
+          {aiText}
+        </motion.div>
+      )}
     </motion.div>
   );
 }
@@ -1182,51 +1254,98 @@ function TrendingDownIcon({ className }: { className: string }) {
 
 function RankRow({ rank, item, onClick, mode }: {
   rank: number; item: import("@/lib/api").RankItem; onClick: () => void;
-  mode: "up" | "down" | "vol";
+  mode: "up" | "down" | "vol" | "health";
 }) {
   const c = chgColor(item.change_pct);
   const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `${rank}.`;
+  const picks = useSession((s) => s.briefingPicks);
+  const togglePick = useSession((s) => s.togglePick);
+  const isPicked = picks.includes(item.ticker);
+  const canPin = picks.length < 5 || isPicked;
   const showVol = mode === "vol";
-  const Icon = mode === "up" ? ArrowUpRight : mode === "down" ? ArrowDownRight : BarChart3;
+  const showHealth = mode === "health" && item.composite != null;
+
+  const leftColor = showHealth
+    ? (item.composite! >= 70 ? "#5eead4" : item.composite! >= 50 ? "#fbbf24" : "#f43f5e")
+    : c;
+
   return (
-    <motion.button
-      onClick={onClick}
-      whileTap={{ scale: 0.98 }}
+    <motion.div
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full text-left rounded-st flex items-center gap-3 p-3"
+      className="rounded-st flex items-center gap-3 p-3 relative"
       style={{
         background: "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
         border: "1px solid #3a4150",
-        borderLeft: `3px solid ${c}`,
+        borderLeft: `3px solid ${leftColor}`,
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), inset 0 -1px 0 rgba(0,0,0,0.4)",
       }}
     >
-      <div className="w-7 text-center text-base font-bold tabular-nums" style={{ color: rank <= 3 ? "#fbbf24" : "#94a3b8" }}>
-        {medal}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-2">
-          <span className="tabular-nums text-sm font-bold text-st-fg">{item.ticker}</span>
-          <span className="text-xs text-st-soft truncate">{item.name}</span>
+      <button
+        onClick={onClick}
+        className="flex items-center gap-3 flex-1 min-w-0 text-left active:scale-[0.98]"
+      >
+        <div className="w-7 text-center text-base font-bold tabular-nums flex-shrink-0" style={{ color: rank <= 3 ? "#fbbf24" : "#94a3b8" }}>
+          {medal}
         </div>
-        <div className="text-[10px] text-st-muted">{item.industry || "—"}</div>
-      </div>
-      <div className="text-right flex-shrink-0">
-        <div className="tabular-nums font-bold text-st-fg text-sm">
-          {item.price.toFixed(2)}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className="tabular-nums text-sm font-bold text-st-fg">{item.ticker}</span>
+            <span className="text-xs text-st-soft truncate">{item.name}</span>
+          </div>
+          <div className="text-[10px] text-st-muted">🏷️ {item.industry || "—"}</div>
         </div>
-        {showVol ? (
-          <div className="text-[10px] text-purple-300 tabular-nums">
-            <Icon className="w-3 h-3 inline" /> {fmtVolMain(item.volume)}
-          </div>
-        ) : (
-          <div className="text-[10px] tabular-nums font-bold" style={{ color: c }}>
-            <Icon className="w-3 h-3 inline" /> {chgArrow(item.change_pct)} {Math.abs(item.change_pct).toFixed(2)}%
-          </div>
-        )}
-      </div>
-    </motion.button>
+        <div className="text-right flex-shrink-0">
+          {showHealth ? (
+            <>
+              <div className="tabular-nums font-extrabold text-base" style={{ color: leftColor, lineHeight: 1 }}>
+                {item.composite}
+              </div>
+              <div className="text-[9px] font-bold" style={{ color: leftColor }}>{item.verdict}</div>
+            </>
+          ) : (
+            <>
+              <div className="tabular-nums font-bold text-st-fg text-sm">
+                {item.price.toFixed(2)}
+              </div>
+              {showVol ? (
+                <div className="text-[10px] text-purple-300 tabular-nums">
+                  📊 {fmtVolMain(item.volume)}
+                </div>
+              ) : (
+                <div className="text-[10px] tabular-nums font-bold" style={{ color: c }}>
+                  {chgArrow(item.change_pct)} {Math.abs(item.change_pct).toFixed(2)}%
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </button>
+
+      {/* Pin 按鈕 — 一鍵加到晨報精選 */}
+      <button
+        onClick={() => togglePick(item.ticker)}
+        disabled={!canPin}
+        title={
+          isPicked ? "從晨報精選移除" :
+          canPin ? "加入晨報精選(最多 5 檔)" :
+          "晨報精選已滿(5 / 5)"
+        }
+        className="flex-shrink-0 w-9 h-9 rounded-st flex items-center justify-center disabled:opacity-30 active:scale-90"
+        style={{
+          background: isPicked
+            ? "linear-gradient(135deg, rgba(252,211,77,0.25), rgba(217,119,6,0.15))"
+            : "linear-gradient(135deg, rgba(40,45,56,0.6), rgba(22,24,29,0.5))",
+          border: `1px solid ${isPicked ? "rgba(252,211,77,0.5)" : "rgba(58,65,80,0.5)"}`,
+          color: isPicked ? "#fbbf24" : "#64748b",
+          boxShadow: isPicked
+            ? "0 0 16px rgba(252,211,77,0.25), inset 0 1px 0 rgba(255,255,255,0.1)"
+            : "inset 0 1px 0 rgba(255,255,255,0.05)",
+        }}
+      >
+        {isPicked ? "★" : "☆"}
+      </button>
+    </motion.div>
   );
 }
 
@@ -1253,15 +1372,15 @@ function MiniQuoteRow({ q, onClick }: { q: import("@/lib/api").Quote; onClick: (
 
 function SearchPanel() {
   const [q, setQ] = useState("");
-  const [mode, setMode] = useState<"hot" | "up" | "down" | "vol">("hot");
+  const [mode, setMode] = useState<"hot" | "up" | "down" | "vol" | "health">("hot");
   const router = useRouter();
   const isSearching = q.trim().length >= 1;
 
   // 排行榜 fetch (依 mode)
-  const rankBy = mode === "up" ? "up" : mode === "down" ? "down" : "volume";
+  const rankBy = mode === "up" ? "up" : mode === "down" ? "down" : mode === "health" ? "health" : "volume";
   const { data: rankData, isLoading: rankLoading } = useQuery({
     queryKey: ["ranking", rankBy],
-    queryFn: () => api.getRanking(rankBy as "up" | "down" | "volume", 20),
+    queryFn: () => api.getRanking(rankBy as "up" | "down" | "volume" | "health", 20),
     enabled: !isSearching && mode !== "hot",
     staleTime: 3 * 60_000,
   });
@@ -1349,9 +1468,10 @@ function SearchPanel() {
         <div className="flex gap-1 bg-st-bg border border-st-border rounded-st p-1">
           {([
             { k: "hot", label: "🔥 熱門", color: "#fbbf24" },
-            { k: "up", label: "▲ 漲幅榜", color: "#ef4444" },
-            { k: "down", label: "▼ 跌幅榜", color: "#10b981" },
-            { k: "vol", label: "📊 量爆榜", color: "#a78bfa" },
+            { k: "health", label: "🩺 健檢", color: "#5eead4" },
+            { k: "up", label: "▲ 漲", color: "#ef4444" },
+            { k: "down", label: "▼ 跌", color: "#10b981" },
+            { k: "vol", label: "📊 量", color: "#a78bfa" },
           ] as const).map((m) => (
             <button
               key={m.k}
@@ -1378,7 +1498,7 @@ function SearchPanel() {
             </div>
           )}
           {rankData?.items.map((r, i) => (
-            <RankRow key={r.ticker} rank={i + 1} item={r} onClick={() => router.push(`/ticker/${r.ticker}`)} mode={mode} />
+            <RankRow key={r.ticker} rank={i + 1} item={r} onClick={() => router.push(`/ticker/${r.ticker}`)} mode={mode as "up" | "down" | "vol" | "health"} />
           ))}
         </div>
       )}

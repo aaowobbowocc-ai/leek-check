@@ -1,5 +1,6 @@
-"""排行榜 — 漲幅 / 跌幅 / 量爆 / 高健檢分."""
+"""排行榜 — 漲幅 / 跌幅 / 量爆 / 健檢分數."""
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
@@ -27,6 +28,8 @@ class RankItem(BaseModel):
     price: float
     change_pct: float
     volume: int
+    composite: int | None = None  # 健檢分數(僅 health 模式)
+    verdict: str | None = None     # 健康/亞健康/韭菜病
 
 
 class RankOut(BaseModel):
@@ -36,7 +39,7 @@ class RankOut(BaseModel):
 
 @router.get("/ranking", response_model=RankOut)
 def ranking(
-    by: str = Query("up", description="up / down / volume"),
+    by: str = Query("up", description="up / down / volume / health"),
     limit: int = Query(20, ge=1, le=50),
 ):
     universe = list(dict.fromkeys(RANKING_UNIVERSE))
@@ -52,7 +55,28 @@ def ranking(
             price=q["price"], change_pct=q["change_pct"],
             volume=q["volume"],
         ))
-    if by == "up":
+
+    if by == "health":
+        # 健檢排行:批次跑 health-check 算分(parallel)
+        from backend.api.health_check import health_check as run_hc
+        scored = []
+        def _score(tk: str):
+            try:
+                hc = run_hc(tk)
+                return tk, hc.health.get("composite"), hc.health.get("verdict")
+            except Exception:
+                return tk, None, None
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            for tk, comp, verdict in ex.map(_score, [x.ticker for x in items]):
+                if comp is not None:
+                    scored.append((tk, comp, verdict))
+        score_map = {tk: (comp, v) for tk, comp, v in scored}
+        for it in items:
+            if it.ticker in score_map:
+                it.composite, it.verdict = score_map[it.ticker]
+        items = [x for x in items if x.composite is not None]
+        items.sort(key=lambda x: x.composite or 0, reverse=True)
+    elif by == "up":
         items.sort(key=lambda x: x.change_pct, reverse=True)
     elif by == "down":
         items.sort(key=lambda x: x.change_pct)
