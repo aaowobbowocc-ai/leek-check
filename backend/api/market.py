@@ -22,6 +22,10 @@ class MarketDashboard(BaseModel):
     nasdaq: MarketIndex | None
     dxj: MarketIndex | None
     nikkei: MarketIndex | None
+    # 商品
+    gold: MarketIndex | None = None
+    oil: MarketIndex | None = None
+    silver: MarketIndex | None = None
 
 
 def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
@@ -55,4 +59,7 @@ def market_dashboard():
         nasdaq=_fetch_yf_index("^IXIC", "NASDAQ"),
         dxj=_fetch_yf_index("DXJ", "日股 DXJ"),
         nikkei=_fetch_yf_index("^N225", "日經 225"),
+        gold=_fetch_yf_index("GC=F", "黃金"),
+        oil=_fetch_yf_index("CL=F", "西德州原油"),
+        silver=_fetch_yf_index("SI=F", "白銀"),
     )

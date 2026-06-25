@@ -319,13 +319,16 @@ function MarketDashboardCard() {
     queryFn: () => api.getMarketDashboard(),
     staleTime: 5 * 60_000,
   });
-  const items: Array<{ key: "taiex" | "vix" | "sp500" | "nasdaq" | "nikkei" | "dxj"; emoji: string }> = [
+  const items: Array<{ key: "taiex" | "vix" | "sp500" | "nasdaq" | "nikkei" | "dxj" | "gold" | "oil" | "silver"; emoji: string }> = [
     { key: "taiex", emoji: "🇹🇼" },
     { key: "vix", emoji: "😱" },
     { key: "sp500", emoji: "🇺🇸" },
     { key: "nasdaq", emoji: "💻" },
     { key: "nikkei", emoji: "🇯🇵" },
     { key: "dxj", emoji: "💴" },
+    { key: "gold", emoji: "🪙" },
+    { key: "oil", emoji: "🛢️" },
+    { key: "silver", emoji: "🥈" },
   ];
   return (
     <div
@@ -740,7 +743,7 @@ function MePanel() {
   const clearGuest = useSession((s) => s.clearGuest);
   const router = useRouter();
   const [email, setEmail] = useState<string | null>(null);
-  const [sub, setSub] = useState<"home" | "global" | "selfcheck">("home");
+  const [sub, setSub] = useState<"home" | "global" | "selfcheck" | "about">("home");
 
   useEffect(() => {
     const sb = createClient();
@@ -749,6 +752,7 @@ function MePanel() {
 
   if (sub === "global") return <GlobalMarketsPanel onBack={() => setSub("home")} />;
   if (sub === "selfcheck") return <SelfCheckPanel onBack={() => setSub("home")} />;
+  if (sub === "about") return <AboutPanel onBack={() => setSub("home")} />;
 
   return (
     <div className="space-y-4 pb-4">
@@ -820,10 +824,10 @@ function MePanel() {
           badge="WIP"
         />
         <MenuItem
-          icon="📋"
-          title="關於 / 隱私"
-          desc="不報明牌承諾 + 資料來源 + 帳號刪除"
-          onClick={() => window.open("https://aaowobbowocc-ai.github.io/leek-check/privacy.html", "_blank")}
+          icon="❓"
+          title="關於 / 名詞解釋"
+          desc="健檢分數 / 稀有度 / VIX / MA200 等 14 個名詞"
+          onClick={() => setSub("about")}
         />
       </div>
 
@@ -931,6 +935,97 @@ function GlobalMarketsPanel({ onBack }: { onBack: () => void }) {
           </motion.div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/* ────── 關於 panel ────── */
+const ABOUT_TERMS = [
+  { term: "健檢分數", desc: "0-100 分綜合評估個股體質(技術 40% + 籌碼 30% + 基本 20% + 新聞 10%)。70+ 健康、50-69 亞健康、<50 韭菜病。歷史驗證 2020-26 7y backtest:70+ 體質股 60d 平均 +10.93% / win 60.3% / vs 0050 alpha +4.57pp(n=194)。" },
+  { term: "稀有度", desc: "用 20 日平均成交額分:LEGENDARY > 50 億、EPIC 10-50 億、RARE 3-10 億、UNCOMMON 0.5-3 億、COMMON < 0.5 億。代表流動性,跟好壞無關。" },
+  { term: "VIX", desc: "美股恐慌指數,反映 30 天波動預期。> 30 = 高恐慌、< 18 = 過度樂觀、20-30 = 正常範圍。" },
+  { term: "MA200", desc: "200 日移動平均線。股價距 MA200 反映長期趨勢:+30% 過熱、合理區間 ±5%、-15% 低估。" },
+  { term: "AB 雙重共識", desc: "外資 + 投信同時大買的訊號。memory 真 alpha:60d +8.78% / t=+3.83 / n=126 OOS PASS。" },
+  { term: "量縮漲停", desc: "單日漲停但成交量低於 20 日均量 0.8 倍。memory 真 alpha:20d +4.83% / n=5437。「無量上漲」反映籌碼穩定。" },
+  { term: "量縮跌停反彈", desc: "單日跌停但成交量低。memory 真 alpha:20d +7.99% / 5d +4.27% / n=4733。籌碼不亂出反彈機率高。" },
+  { term: "行庫共識度反向", desc: "5+ 家公股行庫同買 = 政府護盤股。memory:後續 60d alpha -1.62% / t=-28.46。「越多護盤後續越弱」反直覺真 alpha。" },
+  { term: "散戶比例", desc: "持股 < 50 張的散戶合計佔比。比例極端區(極低 = 法人主導 / 極高 = 韭菜聚集)有 alpha,lift +11.3pp。" },
+  { term: "月營收 YoY", desc: "本月營收 vs 去年同月年增率。> 30% + 流動性過濾 = memory 真 alpha 60d +3.95% / t=24.19 / n=24K。" },
+  { term: "RSI", desc: "0-100 動能指標。> 70 超買 / < 30 超賣 / 30-70 中性。" },
+  { term: "KD", desc: "K 與 D 線交叉預測短期反轉。K > D 黃金交叉(看多)、K < D 死亡交叉(看空)。" },
+  { term: "本益比 PER", desc: "股價 ÷ EPS。< 15 偏低 / 15-25 合理 / > 30 偏高。台股大盤平均 ~18。" },
+  { term: "DXJ vs EWJ", desc: "兩個日本 ETF。DXJ 避險日圓貶值風險,EWJ 完整日股曝險。memory:DXJ 16 年 alpha +12.33% CAGR(+6.40pp/yr vs 0050)。" },
+];
+
+function AboutPanel({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="space-y-4 pb-4">
+      <button onClick={onBack} className="text-teal-300 text-sm flex items-center gap-2">
+        <span>←</span> 回 我的
+      </button>
+      <h2 className="text-2xl font-extrabold text-st-fg">❓ 關於韭菜健檢</h2>
+
+      {/* Brand block */}
+      <div
+        className="rounded-st p-5 hero-halo"
+        style={{
+          background: "linear-gradient(135deg, #0f766e 0%, #0a1a1f 50%, #16181d 100%)",
+          border: "1px solid #2f343d",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 0 24px rgba(20,184,166,0.12)",
+        }}
+      >
+        <div className="text-3xl">🩺</div>
+        <h3 className="text-xl font-extrabold text-st-fg mt-2">買進前,先做一次健檢</h3>
+        <p className="text-sm text-teal-200 mt-2 leading-relaxed">
+          韭菜不是命,是健檢不夠勤。這不是投顧 App,
+          <b className="text-teal-300">不報明牌、不喊飆股</b>,
+          只給你買進前該知道的客觀數據。
+        </p>
+      </div>
+
+      {/* 4 大原則 */}
+      <div className="rounded-st p-4" style={{ background: "#16181d", border: "1px solid #2f343d", borderLeft: "3px solid #fbbf24" }}>
+        <div className="text-xs text-amber-300 font-bold tracking-widest mb-2">🛡️ 4 大原則</div>
+        <ul className="space-y-1.5 text-sm text-st-soft">
+          <li>✓ 不報明牌、不給買賣建議</li>
+          <li>✓ 不喊飆股、不炒題材</li>
+          <li>✓ 所有訊號 backtest + Walk-Forward + MCPT 驗證</li>
+          <li>✓ 純客觀資料展示,盈虧自負</li>
+        </ul>
+      </div>
+
+      {/* 名詞解釋 */}
+      <div>
+        <h3 className="text-base font-extrabold text-st-fg mb-2">📖 名詞解釋(14 個)</h3>
+        <div className="space-y-2">
+          {ABOUT_TERMS.map((t, i) => (
+            <details
+              key={t.term}
+              className="rounded-st p-3"
+              style={{ background: "#16181d", border: "1px solid #2f343d" }}
+            >
+              <summary className="cursor-pointer font-bold text-teal-300 text-sm">
+                {i + 1}. {t.term}
+              </summary>
+              <p className="text-xs text-st-soft mt-2 leading-relaxed">{t.desc}</p>
+            </details>
+          ))}
+        </div>
+      </div>
+
+      {/* 連結 */}
+      <div className="space-y-2 pt-2">
+        <a href="https://aaowobbowocc-ai.github.io/leek-check/privacy.html" target="_blank" rel="noreferrer" className="block w-full text-center text-sm text-teal-300 font-bold py-3 rounded-st" style={{ background: "#16181d", border: "1px solid #2f343d" }}>
+          🔒 隱私政策
+        </a>
+        <a href="https://aaowobbowocc-ai.github.io/leek-check/delete-account.html" target="_blank" rel="noreferrer" className="block w-full text-center text-sm text-rose-300 font-bold py-3 rounded-st" style={{ background: "#16181d", border: "1px solid #2f343d" }}>
+          🗑️ 帳號刪除說明
+        </a>
+      </div>
+
+      <p className="text-[10px] text-st-muted text-center pt-2">
+        韭菜健檢 v0.2 · aaowobbowocc Apps
+      </p>
     </div>
   );
 }

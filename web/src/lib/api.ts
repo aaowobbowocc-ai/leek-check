@@ -134,6 +134,9 @@ export interface MarketDashboard {
   nasdaq: MarketIndex | null;
   dxj: MarketIndex | null;
   nikkei: MarketIndex | null;
+  gold: MarketIndex | null;
+  oil: MarketIndex | null;
+  silver: MarketIndex | null;
 }
 
 export interface RankItem {
