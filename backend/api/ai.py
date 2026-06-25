@@ -188,7 +188,8 @@ def _gemini_run(prompt: str, max_tokens: int = 600):
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_KEY)
-        model = genai.GenerativeModel("gemini-flash-latest")
+        # gemini-2.5-flash 有 1500/day free tier
+        model = genai.GenerativeModel("gemini-2.5-flash")
         resp = model.generate_content(
             prompt,
             generation_config={
@@ -196,6 +197,13 @@ def _gemini_run(prompt: str, max_tokens: int = 600):
                 "max_output_tokens": max_tokens,
             },
         )
-        return ExplainOut(text=resp.text or "(AI 沒回應)", model="gemini-flash-latest")
+        return ExplainOut(text=resp.text or "(AI 沒回應)", model="gemini-2.5-flash")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI 失敗: {e}")
+        err_str = str(e)
+        # 把 429 rate limit 抽出來給更友善訊息
+        if "429" in err_str or "quota" in err_str.lower() or "rate" in err_str.lower():
+            raise HTTPException(
+                status_code=429,
+                detail="智能整理今日 free tier 額度已滿,明天再試(或站長升 Gemini Pro 付費版)",
+            )
+        raise HTTPException(status_code=500, detail=f"智能整理失敗: {err_str[:200]}")
