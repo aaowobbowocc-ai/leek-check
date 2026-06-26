@@ -119,11 +119,13 @@ def market_insight(p: MarketInsightIn):
             continue
         intl_lines.append(f"  • {k}: {v.get('price','?')} ({v.get('change_pct',0):+.2f}%)")
     inst = p.institutional or {}
+    ma200_str = f"{p.taiex_ma200_dist:+.1f}%" if p.taiex_ma200_dist is not None else "?"
+    vix_str = f"{p.vix:.1f}" if p.vix is not None else "?"
     prompt = f"""你是「韭菜健檢」的客觀分析助理 — 解讀國際市場對台股的影響。
 
-【加權指數】{p.taiex_price:.0f} ({p.taiex_change_pct:+.2f}%) · {p.taiex_temperature} · 距 MA200 {p.taiex_ma200_dist:+.1f}% if p.taiex_ma200_dist else '?'
+【加權指數】{p.taiex_price:.0f} ({p.taiex_change_pct:+.2f}%) · {p.taiex_temperature} · 距 MA200 {ma200_str}
 
-【VIX 恐慌】{p.vix:.1f if p.vix else '?'}
+【VIX 恐慌】{vix_str}
 
 【國際市場】
 {chr(10).join(intl_lines) if intl_lines else '(無資料)'}
