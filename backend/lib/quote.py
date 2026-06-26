@@ -1,10 +1,12 @@
-"""yfinance quote fetcher — 批次 + per-ticker."""
+"""Quote fetcher — TWSE mis 即時優先,yfinance 15min delay fallback."""
 from __future__ import annotations
 
 from functools import lru_cache
 from time import time
 
 import yfinance as yf
+
+from backend.lib import twse_quote
 
 
 # session-level cache(15 分鐘 TTL)— production 走 redis 之後再換
@@ -26,10 +28,21 @@ def _to_cache(tk: str, data: dict):
 
 
 def fetch_quote(ticker: str) -> dict | None:
-    """單檔 quote — try .TW then .TWO."""
+    """單檔 quote — TWSE 即時優先,yfinance fallback."""
     cached = _from_cache(ticker)
     if cached:
         return cached
+
+    # 1) TWSE mis 即時(平日 9:00-13:30 真即時,盤後也有最後價)
+    try:
+        rt = twse_quote.fetch_realtime(ticker)
+        if rt and rt.get("price"):
+            _to_cache(ticker, rt)
+            return rt
+    except Exception:
+        pass
+
+    # 2) yfinance fallback
     for suffix in (".TW", ".TWO"):
         try:
             t = yf.Ticker(f"{ticker}{suffix}")
@@ -58,11 +71,26 @@ def fetch_quote(ticker: str) -> dict | None:
 
 
 def fetch_quotes_batch(tickers: list[str]) -> dict[str, dict]:
-    """批次 quote — yf.download with threads."""
+    """批次 quote — TWSE 即時批次優先,yfinance 補救."""
     if not tickers:
         return {}
     todo = [t for t in tickers if _from_cache(t) is None]
     out = {t: _from_cache(t) for t in tickers if _from_cache(t)}
+
+    if not todo:
+        return out
+
+    # 1) TWSE mis 即時批次(一次最多 50 檔)
+    try:
+        twse_results = twse_quote.fetch_realtime_batch(todo)
+        for tk, data in twse_results.items():
+            if data and data.get("price"):
+                _to_cache(tk, data)
+                out[tk] = data
+        # 剩下沒回的,留給 yfinance 補
+        todo = [t for t in todo if t not in out]
+    except Exception as e:
+        print(f"[fetch_quotes_batch twse] {e}")
 
     if not todo:
         return out
