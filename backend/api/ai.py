@@ -93,7 +93,7 @@ def build_prompt(p: ExplainIn) -> str:
 
 @router.post("/ai/explain", response_model=ExplainOut)
 def ai_explain(payload: ExplainIn):
-    return _gemini_run(build_prompt(payload), max_tokens=600)
+    return _gemini_run(build_prompt(payload), max_tokens=1200)
 
 
 # ────── 智能國際情勢 ──────
@@ -148,7 +148,7 @@ def market_insight(p: MarketInsightIn):
 - 直接從第 1 點開始
 - markdown 粗體強調重點
 """
-    return _gemini_run(prompt, max_tokens=500)
+    return _gemini_run(prompt, max_tokens=1000)
 
 
 # ────── 智能新聞情緒 ──────
@@ -181,7 +181,7 @@ def news_sentiment(p: NewsSentimentIn):
 - 直接從第 1 點開始
 - markdown 粗體強調重點
 """
-    return _gemini_run(prompt, max_tokens=400)
+    return _gemini_run(prompt, max_tokens=900)
 
 
 def _gemini_run(prompt: str, max_tokens: int = 600):
