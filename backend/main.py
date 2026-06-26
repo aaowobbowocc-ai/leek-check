@@ -48,6 +48,32 @@ async def lifespan(app: FastAPI):
             day_of_week="mon-fri", hour=14, minute=30, id="twse_etl",
         )
 
+        # ── Bootstrap:若 TWSE cache 空或 > 1 天舊,啟動後 10 秒先跑一次 ──
+        from datetime import datetime, timedelta
+        status = twse_cache_mod.cache_status()
+        need_bootstrap = False
+        for label in ("institutional", "per_pbr"):
+            info = status.get(label, {})
+            if not info.get("exists"):
+                need_bootstrap = True
+                break
+            latest = info.get("latest_date")
+            if not latest:
+                need_bootstrap = True
+                break
+            try:
+                age_days = (datetime.now().date() - datetime.fromisoformat(latest).date()).days
+                if age_days > 1:
+                    need_bootstrap = True
+                    break
+            except Exception:
+                pass
+        if need_bootstrap:
+            sched_obj.add_job(_twse_etl_with_cache_clear, "date",
+                              run_date=datetime.now() + timedelta(seconds=10),
+                              id="twse_bootstrap")
+            print("[startup] TWSE cache 過舊或缺,10 秒後 bootstrap ETL")
+
         sched_obj.start()
         app.state.scheduler = sched_obj
         print("[startup] APScheduler 啟動 — 3 AI slots + 30min news watcher + TWSE ETL 14:30")

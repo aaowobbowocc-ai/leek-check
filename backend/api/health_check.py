@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from backend.lib.quote import fetch_quote
 from backend.lib.score import calc_composite_health
 from backend.lib.ticker_map import get_ticker_info
+from backend.lib import twse_cache
 
 router = APIRouter(tags=["health"])
 
@@ -92,32 +93,49 @@ def _calc_tech(df: pd.DataFrame | None) -> dict | None:
 
 
 def _load_chip(ticker: str) -> dict | None:
-    """讀本地 FinMind 法人 cache."""
+    """讀法人 — 優先 FinMind cache,fallback TWSE 官方."""
+    # 1) FinMind cache
     p = FINMIND_INST / f"{ticker}.parquet"
-    if not p.exists():
-        return None
-    try:
-        df = pd.read_parquet(p)
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.sort_values("date").tail(120)
-        df["net"] = df["buy"] - df["sell"]
-        # 取最後 20 個交易日
-        last_dates = df["date"].unique()[-20:]
-        sub = df[df["date"].isin(last_dates)]
-        agg = sub.groupby("name")["net"].sum() / 1000  # → 張
+    if p.exists():
+        try:
+            df = pd.read_parquet(p)
+            df["date"] = pd.to_datetime(df["date"])
+            df = df.sort_values("date").tail(120)
+            df["net"] = df["buy"] - df["sell"]
+            last_dates = df["date"].unique()[-20:]
+            sub = df[df["date"].isin(last_dates)]
+            agg = sub.groupby("name")["net"].sum() / 1000  # → 張
+            f = int(agg.get("Foreign_Investor", 0))
+            i = int(agg.get("Investment_Trust", 0))
+            d = int(agg.get("Dealer_self", 0))
+            # 若 FinMind 有資料就用,否則 fall through 到 TWSE
+            if abs(f) + abs(i) + abs(d) > 0:
+                return {
+                    "foreign_20d": f, "invtrust_20d": i, "dealer_20d": d,
+                    "source": "finmind",
+                }
+        except Exception:
+            pass
+
+    # 2) TWSE rolling cache fallback
+    twse_data = twse_cache.get_inst_20d(ticker)
+    if twse_data:
+        # TWSE 已是「股數」單位,÷ 1000 → 張數對齊 FinMind
         return {
-            "foreign_20d": int(agg.get("Foreign_Investor", 0)),
-            "invtrust_20d": int(agg.get("Investment_Trust", 0)),
-            "dealer_20d": int(agg.get("Dealer_self", 0)),
+            "foreign_20d": twse_data["foreign_net_20d"] // 1000,
+            "invtrust_20d": twse_data["inv_trust_net_20d"] // 1000,
+            "dealer_20d": twse_data["dealer_net_20d"] // 1000,
+            "source": "twse",
+            "asof": twse_data.get("latest_date"),
+            "days": twse_data.get("days"),
         }
-    except Exception:
-        return None
+    return None
 
 
 def _load_funda(ticker: str) -> dict:
-    """讀月營收 + PER cache."""
+    """讀月營收 + PER cache — PER 缺值 fallback TWSE."""
     out: dict = {}
-    # PER / PBR / yield
+    # 1) FinMind PER cache
     per_p = FINMIND_PER / f"{ticker}_per.parquet"
     if per_p.exists():
         try:
@@ -131,6 +149,19 @@ def _load_funda(ticker: str) -> dict:
                     out[dst] = float(v)
         except Exception:
             pass
+
+    # 2) TWSE fallback:若 per/pbr/yield 缺,從 TWSE 補
+    missing = [k for k in ("per", "pbr", "yield") if k not in out]
+    if missing:
+        twse_per = twse_cache.get_per_latest(ticker)
+        if twse_per:
+            if "per" in missing and twse_per.get("per") is not None:
+                out["per"] = twse_per["per"]
+                out["per_source"] = "twse"
+            if "pbr" in missing and twse_per.get("pbr") is not None:
+                out["pbr"] = twse_per["pbr"]
+            if "yield" in missing and twse_per.get("dividend_yield") is not None:
+                out["yield"] = twse_per["dividend_yield"]
     # 月營收 YoY
     rev_p = FINMIND_REV / f"{ticker}.parquet"
     if rev_p.exists():
