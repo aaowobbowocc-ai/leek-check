@@ -229,6 +229,15 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
         />
       </motion.div>
 
+      {/* 🌅 晨報精選 — 提到最上面(僅次於 hero),user 第一眼看到 */}
+      {picks.length > 0 && (
+        <BriefPicksCard
+          picks={picks}
+          quotes={wlQuotes}
+          onClick={(tk) => router.push(`/ticker/${tk}`)}
+        />
+      )}
+
       {/* ═══════ 🌡️ 大盤即時(TAIEX + 國際 + 商品)═══════ */}
       <GroupHeader emoji="🌡️" label="大盤即時" />
       <MarketDashboardCard />
@@ -345,15 +354,6 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
             還沒有觀察清單。<button onClick={() => onNav("search")} className="text-teal-300 font-bold underline">去搜尋股票</button>加入第一檔。
           </p>
         </div>
-      )}
-
-      {/* 🌅 晨報精選(如有 picks)*/}
-      {picks.length > 0 && (
-        <BriefPicksCard
-          picks={picks}
-          quotes={wlQuotes}
-          onClick={(tk) => router.push(`/ticker/${tk}`)}
-        />
       )}
 
       {/* 🩺 一鍵巡禮 */}

@@ -1,12 +1,63 @@
-"""AI 智能解讀 endpoint — Gemini Flash 寫白話健檢報告."""
+"""AI 智能解讀 endpoint — Gemini Flash 寫白話健檢報告.
+
+【Daily Cache 策略】
+- 國際情勢 / 新聞情緒 每天 7:30 AM 自動生成(或第一個使用者觸發)
+- 24h 內後續呼叫都讀 cache,不花 API 額度
+- 個股健檢仍即時生成(每檔不同,難 cache)
+"""
 from __future__ import annotations
 
+import json
 import os
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from pathlib import Path
 
 router = APIRouter(tags=["ai"])
+
+ROOT = Path(__file__).resolve().parents[2]
+CACHE_DIR = ROOT / "data" / "ai_cache" / "daily"
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+TPE = ZoneInfo("Asia/Taipei")
+
+
+def _slot_str() -> str:
+    """3 時段切點(台灣時間):
+    07:30 morning  — 美股收盤後 + 台股開盤前(看夜盤動向)
+    14:00 noon     — 台股收盤後(消化當日盤)
+    20:30 evening  — 美股開盤後(夜盤實況)
+    格式:YYYY-MM-DD_slot
+    """
+    now = datetime.now(TPE)
+    h, m = now.hour, now.minute
+    if h < 7 or (h == 7 and m < 30):
+        # 07:30 前,讀昨晚 evening
+        import datetime as _dt
+        yest = (now - _dt.timedelta(days=1)).strftime("%Y-%m-%d")
+        return f"{yest}_evening"
+    if h < 14:
+        return f"{now.strftime('%Y-%m-%d')}_morning"
+    if h < 20 or (h == 20 and m < 30):
+        return f"{now.strftime('%Y-%m-%d')}_noon"
+    return f"{now.strftime('%Y-%m-%d')}_evening"
+
+
+def _load_daily_cache(kind: str) -> dict | None:
+    fp = CACHE_DIR / f"{kind}_{_slot_str()}.json"
+    if not fp.exists():
+        return None
+    try:
+        return json.loads(fp.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _save_daily_cache(kind: str, data: dict):
+    fp = CACHE_DIR / f"{kind}_{_slot_str()}.json"
+    fp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 # 讀 streamlit secrets.toml 拿 GEMINI key
 SECRETS = Path(__file__).resolve().parents[2] / ".streamlit" / "secrets.toml"
@@ -132,8 +183,18 @@ class MarketInsightIn(BaseModel):
     timeframe: str = "mid"
 
 
-@router.post("/ai/market-insight", response_model=ExplainOut)
+class CachedExplainOut(ExplainOut):
+    cached: bool = False
+    cached_at: str | None = None  # ISO timestamp
+
+
+@router.post("/ai/market-insight", response_model=CachedExplainOut)
 def market_insight(p: MarketInsightIn):
+    # 默認語氣才走 cache(用戶選 pro/casual/short/long 才即時生成)
+    if p.style == "neutral" and p.timeframe == "mid":
+        cached = _load_daily_cache("market_insight")
+        if cached:
+            return CachedExplainOut(**cached, cached=True)
     style = PROMPT_STYLES.get(p.style, PROMPT_STYLES["neutral"])
     tf = TIMEFRAMES.get(p.timeframe, TIMEFRAMES["mid"])
     intl_lines = []
@@ -189,7 +250,14 @@ def market_insight(p: MarketInsightIn):
 - 數字要具體(例:「距 MA200 +41.9% 屬偏熱」「VIX 18.2 屬中性」)
 - 寧可長一點也別簡略
 """
-    return _gemini_run(prompt, max_tokens=1800)
+    result = _gemini_run(prompt, max_tokens=1800)
+    # 默認 neutral/mid 才存 cache
+    if p.style == "neutral" and p.timeframe == "mid":
+        now_iso = datetime.now(TPE).isoformat()
+        _save_daily_cache("market_insight", {
+            "text": result.text, "model": result.model, "cached_at": now_iso,
+        })
+    return CachedExplainOut(text=result.text, model=result.model, cached=False)
 
 
 # ────── 智能新聞情緒 ──────
@@ -199,8 +267,12 @@ class NewsSentimentIn(BaseModel):
     timeframe: str = "mid"
 
 
-@router.post("/ai/news-sentiment", response_model=ExplainOut)
+@router.post("/ai/news-sentiment", response_model=CachedExplainOut)
 def news_sentiment(p: NewsSentimentIn):
+    if p.style == "neutral" and p.timeframe == "mid":
+        cached = _load_daily_cache("news_sentiment")
+        if cached:
+            return CachedExplainOut(**cached, cached=True)
     style = PROMPT_STYLES.get(p.style, PROMPT_STYLES["neutral"])
     tf = TIMEFRAMES.get(p.timeframe, TIMEFRAMES["mid"])
     titles = "\n".join(f"  • {t}" for t in p.news_titles[:15])
@@ -242,7 +314,45 @@ def news_sentiment(p: NewsSentimentIn):
 - 數字 / 比例請具體(例:「跌破月線 3%」)
 - 寧可長一點也別簡略
 """
-    return _gemini_run(prompt, max_tokens=1800)
+    result = _gemini_run(prompt, max_tokens=1800)
+    if p.style == "neutral" and p.timeframe == "mid":
+        now_iso = datetime.now(TPE).isoformat()
+        _save_daily_cache("news_sentiment", {
+            "text": result.text, "model": result.model, "cached_at": now_iso,
+        })
+    return CachedExplainOut(text=result.text, model=result.model, cached=False)
+
+
+# ────── 手動強制重生(admin)──────
+@router.delete("/ai/cache/{kind}")
+def clear_cache(kind: str):
+    """admin: 清掉本 slot cache 強制下次重生."""
+    fp = CACHE_DIR / f"{kind}_{_slot_str()}.json"
+    if fp.exists():
+        fp.unlink()
+        return {"cleared": kind, "slot": _slot_str()}
+    return {"already_empty": kind, "slot": _slot_str()}
+
+
+@router.get("/ai/cache/status")
+def cache_status():
+    """查目前 cache 狀態."""
+    out = {"slot": _slot_str(), "items": {}}
+    for kind in ["market_insight", "news_sentiment"]:
+        fp = CACHE_DIR / f"{kind}_{_slot_str()}.json"
+        if fp.exists():
+            try:
+                data = json.loads(fp.read_text(encoding="utf-8"))
+                out["items"][kind] = {
+                    "cached": True,
+                    "cached_at": data.get("cached_at"),
+                    "text_len": len(data.get("text", "")),
+                }
+            except Exception:
+                out["items"][kind] = {"cached": False}
+        else:
+            out["items"][kind] = {"cached": False}
+    return out
 
 
 def _gemini_run(prompt: str, max_tokens: int = 600):
