@@ -334,6 +334,14 @@ def clear_cache(kind: str):
     return {"already_empty": kind, "slot": _slot_str()}
 
 
+@router.post("/ai/cache/check-now")
+def check_now():
+    """手動立刻跑 news watcher(等同每 30 分鐘的自動檢查)."""
+    from backend.jobs.news_watcher import check_and_maybe_regen
+    triggered = check_and_maybe_regen()
+    return {"triggered_regen": triggered, "slot": _slot_str()}
+
+
 @router.get("/ai/cache/status")
 def cache_status():
     """查目前 cache 狀態."""

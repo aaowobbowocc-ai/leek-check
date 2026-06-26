@@ -90,7 +90,8 @@ def regen_news_sentiment() -> bool:
         print(f"  ✗ news fail: {e}")
         return False
 
-    titles = [n["title"] for n in news.get("items", [])[:15]]
+    items = news if isinstance(news, list) else news.get("items", [])
+    titles = [(n.get("title", "") if isinstance(n, dict) else "") for n in items[:15]]
     if not titles:
         print("  ✗ no news, skip")
         return False

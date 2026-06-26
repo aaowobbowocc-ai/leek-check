@@ -23,9 +23,31 @@ async def lifespan(app: FastAPI):
     # Startup
     print("[startup] loading ticker map...")
     load_ticker_map()
+
+    # ── 啟動 APScheduler:3 固定 slot + 30 分鐘輕量檢查 ──
+    sched_obj = None
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from backend.jobs.daily_ai_cache import main as run_daily_cache
+        from backend.jobs.news_watcher import check_and_maybe_regen
+
+        sched_obj = BackgroundScheduler(timezone="Asia/Taipei")
+        sched_obj.add_job(run_daily_cache, "cron", hour=7, minute=30, id="cache_morning")
+        sched_obj.add_job(run_daily_cache, "cron", hour=14, minute=0, id="cache_noon")
+        sched_obj.add_job(run_daily_cache, "cron", hour=20, minute=30, id="cache_evening")
+        sched_obj.add_job(check_and_maybe_regen, "interval", minutes=30, id="news_watcher")
+        sched_obj.start()
+        app.state.scheduler = sched_obj
+        print("[startup] APScheduler 啟動 — 3 fixed slots + 每 30 min news watcher")
+    except Exception as e:
+        print(f"[startup] APScheduler failed: {e}")
+
     print("[startup] ready")
     yield
-    # Shutdown
+
+    if sched_obj:
+        sched_obj.shutdown(wait=False)
+        print("[shutdown] scheduler stopped")
 
 
 app = FastAPI(
