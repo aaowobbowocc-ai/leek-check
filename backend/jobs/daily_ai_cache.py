@@ -14,6 +14,12 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+# 強制 stdout/stderr utf-8 防 Windows cp950 emoji crash
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 BACKEND = "http://localhost:8000"
 TPE = ZoneInfo("Asia/Taipei")

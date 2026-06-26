@@ -133,10 +133,23 @@ SHORT_WATCHLIST = {
 
 
 # ── 小工具 ──
+# 上櫃 (TPEx) 股票 — yfinance 需用 .TWO 後綴
+_TPEX_TICKERS = {
+    "6233", "6234", "6235", "6238", "6239", "6244", "6271", "6285", "6286",
+    "4543", "4540", "4541", "4523", "4534", "4536", "4538", "4720", "4721",
+    "5371", "5388", "5410", "5425", "5439", "5471", "5483", "5536", "5478",
+    "6147", "6131", "6125", "6116", "6172", "6196", "6202", "6204", "6206",
+    "8044", "8047", "8049", "8261", "8358", "8478", "8499", "8478",
+}
+
+
 def _yf_symbol(ticker: str) -> str:
     if ticker.startswith("^") or "." in ticker:
         return ticker
     if ticker.isdigit() and 4 <= len(ticker) <= 6:
+        # OTC (上櫃) 用 .TWO,TWSE (上市) 用 .TW
+        if ticker in _TPEX_TICKERS:
+            return f"{ticker}.TWO"
         return f"{ticker}.TW"
     return ticker
 
@@ -161,22 +174,43 @@ def _read_cached_last_close(ticker: str) -> float:
 
 
 def fetch_price(ticker: str) -> float:
+    # 1. Shioaji 即時 (TWSE + TPEx 最準) — 需 production permission,目前用戶沒
+    try:
+        from src.data.shioaji_quote import get_snapshot_price, is_available
+        if is_available():
+            p = get_snapshot_price(ticker)
+            if p and p > 0:
+                return float(p)
+    except Exception:
+        pass
+    # 2. yfinance — intraday 1m 優先,fallback 到 daily close
     try:
         import yfinance as yf
         sym = _yf_symbol(ticker)
         t = yf.Ticker(sym)
+        # 2a. fast_info 通常是即時 (盤中) 或最新收盤 (盤後)
         try:
             p = t.fast_info.get("last_price") or t.fast_info.get("regular_market_price")
-            if p:
+            if p and p > 0:
                 return float(p)
         except Exception:
             pass
+        # 2b. 1m 最後 bar (盤中即時)
+        try:
+            hist_1m = t.history(period="1d", interval="1m", auto_adjust=False)
+            if not hist_1m.empty:
+                last_valid = hist_1m["Close"].dropna()
+                if not last_valid.empty:
+                    return float(last_valid.iloc[-1])
+        except Exception:
+            pass
+        # 2c. 2d daily fallback (盤後使用最新收盤)
         hist = t.history(period="2d", auto_adjust=False)
         if not hist.empty:
             return float(hist.iloc[-1]["Close"])
     except Exception:
         pass
-    # Fallback to cached parquet (避免 404 時 P&L 顯示 -100%)
+    # 3. Cached parquet fallback
     return _read_cached_last_close(ticker)
 
 
@@ -192,11 +226,14 @@ EXTRA_NAMES = {
     "00929":  "復華科技優息",
     "00940":  "元大價值高息",
     "00946":  "群益台ESG",
-    "00947":  "中信半導體",
-    "009819": "中信數據基建",
+    "00947":  "台新臺灣IC設計動能",  # 修正 (was 中信半導體)
+    "009819": "中信數據及電力",       # 修正 (was 中信數據基建)
+    "00635U": "期元大S&P黃金",
     "EWY":    "iShares 韓國",
     # 持股 / watchlist 個股
     "2345":   "智邦",
+    "4543":   "萬在",          # 上櫃
+    "6233":   "旺玖科技",       # 上櫃
     "6770":   "力積電",
     "2408":   "南亞科",
     "2485":   "兆赫",
@@ -429,6 +466,8 @@ class Dashboard(tk.Tk):
         self._build_dca_timing(left)
         self._build_orb_signal(left)
         self._build_institutional_signal(left)
+        self._build_quiet_limitdown_signal(left)  # 量縮跌停反彈 (短線 5d)
+        self._build_volume_anomaly(left)       # 妖股偵測 (異常量能)
         # self._build_short_watchlist(left)    # REMOVED 2026-05-05: 退勢空 dead-end (memory 確認)
         self._build_dca(left)
 
@@ -913,6 +952,156 @@ class Dashboard(tk.Tk):
         tv.tag_configure("none", foreground=COLORS["fg_dim"])
         self.orb_tv = tv
 
+    def _build_quiet_limitdown_signal(self, parent):
+        """量縮跌停反彈 (短線 5d) — 讀 scanner_hits.csv 顯示今日候選."""
+        body = self._section(
+            parent, "📉 量縮跌停反彈 (短線 5d, paper)",
+            default_open=False,
+            badge="audit +4.27%",
+            badge_color=COLORS["green"],
+        )
+        cols = ("ticker", "close", "pct", "vol_ratio", "vix", "limit_buy", "alpha_5d")
+        tv = ttk.Treeview(body, columns=cols, show="headings", height=4)
+        for c, w, txt in [
+            ("ticker", 70, "代號"),
+            ("close", 75, "收盤"),
+            ("pct", 70, "跌幅"),
+            ("vol_ratio", 70, "量比"),
+            ("vix", 60, "VIX"),
+            ("limit_buy", 90, "T+1 限價"),
+            ("alpha_5d", 90, "預期 5d"),
+        ]:
+            tv.heading(c, text=txt)
+            tv.column(c, width=w, anchor="w")
+        tv.pack(fill="x")
+        tv.tag_configure("locked",  foreground=COLORS["red"])
+        tv.tag_configure("normal",  foreground=COLORS["green"])
+        tv.tag_configure("none",    foreground=COLORS["fg_dim"])
+        self.quiet_ld_tv = tv
+
+    def _update_quiet_limitdown(self):
+        """Refresh 量縮跌停 panel from scanner_hits.csv."""
+        tv = getattr(self, "quiet_ld_tv", None)
+        if tv is None:
+            return
+        for item in tv.get_children():
+            tv.delete(item)
+        hits_path = ROOT / "data" / "paper_trades" / "scanner_hits.csv"
+        if not hits_path.exists():
+            tv.insert("", "end", values=("—", "尚無 scan 結果", "", "", "", "", ""),
+                      tags=("none",))
+            return
+        try:
+            df = pd.read_csv(hits_path)
+        except Exception:
+            return
+        qld = df[df["signal"] == "quiet_limitdown_reversal"]
+        if qld.empty:
+            tv.insert("", "end", values=("—", "今日無觸發", "(平日好事)", "", "", "", ""),
+                      tags=("none",))
+            return
+        latest = qld["scan_date"].max()
+        today_qld = qld[qld["scan_date"] == latest].sort_values("vol_ratio").head(10)
+        for _, r in today_qld.iterrows():
+            limit_buy = r["close"] * 1.005
+            alpha_5d = r.get("expected_alpha_20d_net", 0) * 0.4
+            locked = r.get("locked_limit", False)
+            tag = "locked" if locked else "normal"
+            tv.insert("", "end", values=(
+                r["ticker"],
+                f"{r['close']:.2f}",
+                f"{r['pct']:+.2f}%",
+                f"{r['vol_ratio']:.2f}x",
+                f"{r.get('vix', 0):.1f}",
+                f"{limit_buy:.2f}",
+                f"~{alpha_5d:+.2f}%",
+            ), tags=(tag,))
+
+    def _build_volume_anomaly(self, parent):
+        """妖股偵測 — 解析今日晨報「異常量能」section,verdict 跟晨報一致."""
+        body = self._section(
+            parent, "🔔 妖股偵測 (異常量能 z>=2.5)",
+            default_open=False,
+            badge="幽靈追蹤",
+            badge_color=COLORS["bg3"],
+        )
+        cols = ("ticker", "name", "z", "verdict")
+        tv = ttk.Treeview(body, columns=cols, show="headings", height=4)
+        for c, w, txt, anchor in [
+            ("ticker", 60, "代號", "w"),
+            ("name", 100, "名稱", "w"),
+            ("z", 55, "z", "e"),
+            ("verdict", 360, "晨報結論", "w"),
+        ]:
+            tv.heading(c, text=txt)
+            tv.column(c, width=w, anchor=anchor, stretch=False)
+        tv.pack(fill="x")
+        tv.tag_configure("high",   foreground=COLORS["green"])
+        tv.tag_configure("mid",    foreground=COLORS["yellow"])
+        tv.tag_configure("low",    foreground=COLORS["orange"])
+        tv.tag_configure("reject", foreground=COLORS["red"])
+        tv.tag_configure("none",   foreground=COLORS["fg_dim"])
+        self.vol_anomaly_tv = tv
+
+    def _update_volume_anomaly(self):
+        """Refresh 妖股 panel — 直接解析今日晨報 markdown,跟晨報 verdict 一致."""
+        import re
+        tv = getattr(self, "vol_anomaly_tv", None)
+        if tv is None:
+            return
+        for item in tv.get_children():
+            tv.delete(item)
+        # 找最新晨報 md (今天/昨天 fallback)
+        from datetime import date, timedelta
+        md_path = None
+        for offset in range(0, 7):
+            d = date.today() - timedelta(days=offset)
+            p = ROOT / "logs" / f"{d.isoformat()}.md"
+            if p.exists():
+                md_path = p
+                briefing_date = d
+                break
+        if md_path is None:
+            tv.insert("", "end", values=("—", "尚無晨報", "", "等晨報跑完才有資料"), tags=("none",))
+            return
+        content = md_path.read_text(encoding="utf-8")
+        # 抽異常量能 section
+        m = re.search(r"## 🔔 \[Paper\] 異常量能.*?(?=\n## |\Z)", content, re.S)
+        if not m:
+            tv.insert("", "end", values=("—", f"{briefing_date} 晨報無此 section", "", ""), tags=("none",))
+            return
+        sec = m.group(0)
+        # Per-ticker bullets: - **NNNN 名稱** verdict (until next bullet / blank line / ###)
+        bullets = re.findall(
+            r"-\s+\*\*(\d{4})\s+([^\*]+?)\*\*\s+(.+?)(?=\n\s+-\s+\*\*\d|\n\n|\n###|\Z)",
+            sec, re.S,
+        )
+        if not bullets:
+            tv.insert("", "end", values=("—", f"{briefing_date} 無觸發", "", "(平日好事)"), tags=("none",))
+            return
+        for tk, name, verdict in bullets:
+            v = " ".join(verdict.split())  # 多行 → 單行
+            # 抽 z 數值
+            zm = re.search(r"z=([\d.]+)", v)
+            z = zm.group(1) if zm else "—"
+            # 第一段 verdict (在「—」前) 作標籤判定
+            head = v.split("—")[0].strip()
+            if "拒絕" in head:
+                tag = "reject"
+            elif "高信心" in head:
+                tag = "high"
+            elif "中信心" in head:
+                tag = "mid"
+            elif "低信心" in head:
+                tag = "low"
+            else:
+                tag = "none"
+            # 截短 verdict (column width 360 約容納 24 中字)
+            v_short = v[:80] + ("…" if len(v) > 80 else "")
+            tv.insert("", "end", values=(
+                tk, name.strip(), z, v_short,
+            ), tags=(tag,))
+
     def _build_institutional_signal(self, parent):
         body = self._section(
             parent, "📡 法人訊號 (paper trade)",
@@ -1132,6 +1321,9 @@ class Dashboard(tk.Tk):
                 cost_incl_fee = float(h.get("cost_incl_fee", cost))
                 name = lookup_name(tk_)
                 price = fetch_price(tk_)
+                # Gross PnL convention (matches broker display).
+                # 買進已含 0.1425% 手續費 (cost_incl_fee);賣出費用未扣 (券商慣例)。
+                # 真實 exit net 會少 0.4-0.6% (broker 0.1425% + tax 0.1-0.3%)
                 mv = shares * price
                 cost_total = shares * cost_incl_fee
                 pnl = mv - cost_total
@@ -1164,6 +1356,9 @@ class Dashboard(tk.Tk):
 
             # Institutional signals
             self._update_institutional_signal()
+
+            # Quiet limit-down reversal (短線 5d)
+            self._update_quiet_limitdown()
 
             # Overnight signals
             self._update_overnight()
@@ -1199,6 +1394,12 @@ class Dashboard(tk.Tk):
                 self._update_paper_trade()
             except Exception as e:
                 self._log(f"paper trade refresh: {e}")
+
+            # 妖股偵測 (異常量能)
+            try:
+                self._update_volume_anomaly()
+            except Exception as e:
+                self._log(f"volume anomaly refresh: {e}")
 
             # Short watchlist
             # self._update_short_watchlist(now)  # REMOVED 2026-05-05: 退勢空 dead-end

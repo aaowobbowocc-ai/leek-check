@@ -1,6 +1,21 @@
 """
 Shioaji Paper Trade Engine — 自動掃訊號 + 模擬下單 + 追蹤部位
 
+🔒 SAFETY: 此引擎完全不接 Shioaji broker API
+  - 不 import shioaji
+  - 不 import src.exec.shioaji_executor
+  - 純讀 CSV (scanner_hits.csv / daily_state.csv) → 純寫 CSV (paper_trades/*.csv)
+  - 任何「下單」都只是 print + 寫 CSV,永遠不會觸發真實券商
+  - 即使 API key 在 .env,本檔案也不會用到
+
+  要打實盤必須:
+    1. 改用 src/exec/shioaji_executor.py (本檔案不會 import 它)
+    2. 設 SHIOAJI_LIVE_TRADING_UNLOCK=I_UNDERSTAND_LIVE_TRADING_RISKS
+    3. paper_mode=False
+  三條件 AND 才會真連線。任何單一條件缺失都會 raise。
+
+
+
 4 個策略 paralle 執行:
 
 1. Pair: 2408-2344 DRAM (z>2.5 進, z<0.5 出, max 25d hold)
@@ -196,7 +211,9 @@ def close_pair_if_due(positions: pd.DataFrame, today: date, z: float) -> tuple[p
                 "exit_date": today.isoformat(),
                 "leg_a_exit": a_exit, "leg_b_exit": b_exit,
                 "gross_pct": round(net_pct, 2),
-                "net_pct": round(net_pct - 0.34, 2),  # cost adj
+                # gross_pct 是 total_pnl / total_notional × 100,個股 RT 0.585% (CLAUDE.md)
+                # 兩腿同 cost rate → weighted avg 仍是 0.585%(不是 ×2)
+                "net_pct": round(net_pct - 0.585, 2),
                 "pnl_twd": round(total_pnl, 0),
             })
             positions.at[idx, "status"] = "closed"
@@ -348,7 +365,8 @@ def close_dealer_if_due(positions: pd.DataFrame, today: date) -> tuple[pd.DataFr
             **row.to_dict(),
             "exit_date": today.isoformat(),
             "leg_a_exit": exit_p, "leg_b_exit": 0,
-            "gross_pct": round(gross, 2), "net_pct": round(gross - 0.78, 2),
+            # 0050 是 ETF,RT ~0.34% (CLAUDE.md)
+            "gross_pct": round(gross, 2), "net_pct": round(gross - 0.34, 2),
             "pnl_twd": round(pnl, 0),
         })
         positions.at[idx, "status"] = "closed"

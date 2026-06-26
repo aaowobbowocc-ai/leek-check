@@ -3,6 +3,7 @@ REM Daily 14:00 — Unified Paper Ledger + Daily Signal Scanner + Revenue YoY Tr
 REM (after TW market close, 13:30 + 30min buffer for data settlement)
 cd /d C:\Users\USER\Desktop\INVEST
 set PYTHONIOENCODING=utf-8
+set PYTHONUTF8=1
 
 REM 1. Unified paper ledger (pair / 法人連買 tracking)
 "C:\Users\USER\AppData\Local\Programs\Python\Python312\python.exe" scripts\unified_paper_ledger.py >> logs\scheduler.log 2>&1

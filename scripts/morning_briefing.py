@@ -485,6 +485,15 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
     except Exception as e:
         logger.warning("集中度 advisor 失敗: %s", e)
 
+    # ── fadatsai (Crypto Perp 引擎) 表現追蹤 ──────────────
+    try:
+        from src.report.fadatsai_section import render_fadatsai_section
+        fada_md = render_fadatsai_section(ROOT)
+        if fada_md:
+            report_md = report_md.rstrip() + "\n\n---\n\n" + fada_md
+    except Exception as e:
+        logger.warning("fadatsai section 失敗: %s", e)
+
     # ── 持股法人即時 (TWSE T86 直抓，比 FinMind 早 12-14h) ──────
     try:
         from src.report.holdings_inst_realtime_section import render_holdings_inst_section
@@ -503,6 +512,15 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
             report_md = report_md.rstrip() + "\n\n---\n\n" + decay_md
     except Exception as e:
         logger.warning("Alpha Decay section 失敗: %s", e)
+
+    # ── ETF 除權息 pre-drift (deploy 級 alpha,2026-05-08 驗證) ──────
+    try:
+        from src.report.dividend_drift_section import render as render_dividend_drift
+        div_md = render_dividend_drift(today=as_of_date)
+        if div_md:
+            report_md = report_md.rstrip() + "\n\n---\n\n" + div_md
+    except Exception as e:
+        logger.warning("Dividend drift section 失敗: %s", e)
 
     # ── 部署排程 + 集中度監控 ──────────────────────────
     try:
@@ -523,7 +541,8 @@ def main(as_of_date: date, dry_run: bool = False) -> None:
             try:
                 notifier = DiscordNotifier(webhook_url)
                 report_path = ROOT / "logs" / f"{as_of_date}.md"
-                ok = notifier.send_briefing(str(as_of_date), report_path)
+                # 精簡版：只推 Top 動作 + 三秒鐘決策 + 觸發訊號 + .md 附件
+                ok = notifier.send_briefing_action_only(str(as_of_date), report_path)
                 if ok:
                     logger.info("Discord 推送成功 → 頻道")
                 else:

@@ -28,7 +28,7 @@ import argparse
 import io
 import os
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -102,6 +102,35 @@ def load_inst(tk):
                             aggfunc="sum", fill_value=0).reset_index()
     pivot.columns.name = None
     return pivot.sort_values("date").reset_index(drop=True)
+
+
+def inst_consecutive_buy_run(tk, today, lookback=7):
+    """回傳「外資+投信」截至 today 的連續 net-buy 天數.
+
+    Round 2 PEAD 發現 (2026-05-08): Revenue YoY surprise 後法人立刻連買 3 天
+    → 60d -1.56% / t=-2.65 (顯著反向)。「法人立刻買 confirm」= late-chase 反指標,
+    不是 smart confirmation。用作 anti-filter 排除/降級這類 Revenue YoY 訊號。
+    """
+    # 2026-05-22 fix: today 可能傳 datetime,load_inst 的 date 是 date → 統一
+    if isinstance(today, datetime):
+        today = today.date()
+    inst = load_inst(tk)
+    if inst.empty:
+        return 0
+    recent = inst[inst["date"] <= today].tail(lookback)
+    if recent.empty:
+        return 0
+    fi_col = "Foreign_Investor" if "Foreign_Investor" in recent.columns else None
+    inv_col = "Investment_Trust" if "Investment_Trust" in recent.columns else None
+    run = 0
+    for _, row in recent.iloc[::-1].iterrows():   # today → 往回
+        fi = float(row[fi_col]) if fi_col else 0.0
+        inv = float(row[inv_col]) if inv_col else 0.0
+        if fi + inv > 0:
+            run += 1
+        else:
+            break
+    return run
 
 
 def load_holding(tk):
@@ -577,11 +606,25 @@ def scan_signal_3(tk, today):
     # L4 deploy threshold: 10 億/日（驗證後唯一 deployable level）
     LIQUIDITY_L4 = 1e9
     deploy_ready = avg_dv_60d >= LIQUIDITY_L4
-    liq_label = (
-        f"✅ L4 流動性 (>{LIQUIDITY_L4/1e8:.0f}億/日, 可實單)"
-        if deploy_ready
-        else f"⚠️ 流動性不足 ({avg_dv_60d/1e8:.1f}億/日 < L4，僅 informational)"
-    )
+
+    # 2026-05-22 法人 anti-filter (Round 2 PEAD 發現,t=-2.65)
+    # 法人公告後立刻連買 3 天 = late-chase 反指標 → 降為 informational
+    inst_buy_run = inst_consecutive_buy_run(tk, today)
+    inst_anti_filter = inst_buy_run >= 3
+    if inst_anti_filter:
+        deploy_ready = False   # 反指標觸發 → 不可實單
+
+    # 2026-05-22 fix: 雙重失敗時兩個原因都顯示,不掩蓋
+    low_liq = avg_dv_60d < LIQUIDITY_L4
+    if deploy_ready:
+        liq_label = f"✅ L4 流動性 (>{LIQUIDITY_L4/1e8:.0f}億/日, 可實單)"
+    else:
+        reasons = []
+        if inst_anti_filter:
+            reasons.append(f"🚫 法人 anti-filter (公告後連買 {inst_buy_run} 天, t=-2.65)")
+        if low_liq:
+            reasons.append(f"⚠️ 流動性不足 ({avg_dv_60d/1e8:.1f}億/日 < L4)")
+        liq_label = " + ".join(reasons) + " → 僅 informational"
 
     return {
         "ticker": tk,
@@ -597,6 +640,8 @@ def scan_signal_3(tk, today):
         "days_since_announce": days_since,
         "avg_dv_60d_yi": round(avg_dv_60d / 1e8, 1),  # 億/日
         "deploy_ready": deploy_ready,
+        "inst_buy_run": inst_buy_run,
+        "inst_anti_filter": inst_anti_filter,
         "liq_label": liq_label,
         # L4 portfolio CAGR +25.7% (vs 0050 +21.7%, +4.0pp); 1H +15.5pp 強勝
         "expected_alpha_60d": 4.0 if deploy_ready else 3.95,
@@ -967,7 +1012,119 @@ def _push_executive_summary(hits, today, holdings_tickers: set) -> list:
     return lines
 
 
+def _build_action_only_message(hits, today) -> str:
+    """Simplified Discord message — only today's BUY / SELL actions.
+
+    Per user 2026-05-07 feedback: "DC只要講今天買甚麼賣甚麼就好".
+    Removes regime/hedge/persona/multi-section noise. Pure action format.
+    """
+    from src.strategy.volume_anomaly_scanner import lookup_ticker_name
+    from pathlib import Path as _Path
+    import pandas as _pd
+
+    # ── 今日 BUY 訊號 (deploy-ready only) ────────────────────────────────
+    # 只列已 audit 通過、可實單的訊號類型
+    DEPLOYABLE = {
+        "quiet_limitdown_reversal",   # +4.27% audited
+        "monster_limitup_foreign",    # +8.48pp audited
+        "multifactor_S1_S3",          # +8.13pp audited
+        "revenue_relative_yoy",       # only if deploy_ready=True
+    }
+    buys = []
+    for h in hits:
+        sig = h["signal"]
+        if sig not in DEPLOYABLE:
+            continue
+        # revenue_yoy: 只取 deploy_ready (L4 流動性)
+        if sig == "revenue_relative_yoy" and not h.get("deploy_ready"):
+            continue
+        tk = h["ticker"]
+        name = lookup_ticker_name(tk)
+        close = h["close"]
+        limit_buy = close * 1.005  # T+1 限價 +0.5%
+        sig_label = {
+            "quiet_limitdown_reversal": "量縮跌停反彈",
+            "monster_limitup_foreign":  "妖股連漲+法人",
+            "multifactor_S1_S3":        "多因子S1+S3",
+            "revenue_relative_yoy":     "月營收YoY",
+        }[sig]
+        buys.append((tk, name, sig_label, close, limit_buy))
+
+    # ── 今日 SELL (持倉到期) ─────────────────────────────────────────────
+    sells = []
+    triggered_csv = ROOT / "data" / "paper_trades" / "triggered_signals.csv"
+    if triggered_csv.exists():
+        try:
+            df = _pd.read_csv(triggered_csv, dtype=str)
+            open_rows = df[df["status"] == "open"]
+            for _, r in open_rows.iterrows():
+                try:
+                    sig_date = _pd.Timestamp(r["signal_date"]).date()
+                    hold_days = int(r.get("hold_days", 5))
+                    days_held = (today - sig_date).days
+                    if days_held >= hold_days:
+                        tk = r.get("ticker", "")
+                        name = lookup_ticker_name(tk) if tk else "—"
+                        strat = r.get("strategy", "")
+                        entry_p = float(r.get("entry_price_a", 0))
+                        sells.append((tk, name, strat, entry_p, days_held))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    # ── 組裝訊息 ──────────────────────────────────────────────────────────
+    lines = [f"📊 **{today}** 訊號"]
+    lines.append("")
+
+    if not buys and not sells:
+        lines.append("✅ 今日無 deploy-ready 訊號 (持倉照常,無新動作)")
+        return "\n".join(lines)
+
+    if buys:
+        lines.append(f"**🟢 今日買進 ({len(buys)} 檔)** — T+1 09:00 掛限價")
+        lines.append("```")
+        lines.append(f"{'代號':<8} {'名稱':<10} {'訊號':<14} {'限價':>9}")
+        for tk, name, sig, close, limit in buys[:15]:  # cap 15 lines
+            lines.append(f"{tk:<8} {name[:8]:<10} {sig:<14} {limit:>9.2f}")
+        if len(buys) > 15:
+            lines.append(f"... 另 {len(buys) - 15} 檔")
+        lines.append("```")
+        lines.append("")
+
+    if sells:
+        lines.append(f"**🔴 今日賣出 ({len(sells)} 檔)** — 持倉到期,當日 13:30 前以市價或限價賣")
+        lines.append("```")
+        lines.append(f"{'代號':<8} {'名稱':<10} {'進場日':<7} {'進場價':>9}")
+        for tk, name, strat, entry_p, days in sells[:15]:
+            d_ago = f"{days}d前"
+            lines.append(f"{tk:<8} {name[:8]:<10} {d_ago:<7} {entry_p:>9.2f}")
+        lines.append("```")
+
+    return "\n".join(lines)
+
+
 def push_discord(hits, today):
+    url = os.environ.get("DISCORD_WEBHOOK_URL")
+    if not url:
+        try:
+            url = (ROOT / ".discord_webhook").read_text(encoding="utf-8").strip()
+        except Exception:
+            print("  ⚠️ DISCORD_WEBHOOK_URL 未設定")
+            return
+    try:
+        import requests
+        text = _build_action_only_message(hits, today)
+        requests.post(url, json={"content": text}, timeout=10)
+        print(f"  ✅ Discord (action-only) push: {len(text)} chars")
+        return
+    except Exception as e:
+        print(f"  ⚠️ Discord push 失敗: {e}")
+        return
+
+
+def push_discord_verbose(hits, today):
+    """舊版本詳盡 push (保留供需要 deep dive 時呼叫)."""
     url = os.environ.get("DISCORD_WEBHOOK_URL")
     if not url:
         try:
