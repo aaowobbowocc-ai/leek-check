@@ -211,7 +211,13 @@ class TWSEClient:
     def _get_text(self, url: str) -> str:
         try:
             resp = requests.get(url, headers=_HEADERS, timeout=30)
-            resp.encoding = resp.apparent_encoding or "utf-8"
+            # TWSE 從 2024 起 T86 / BWIBBU_d 用 MS950 (Big5),非 UTF-8
+            # apparent_encoding (chardet) 對台股 Big5 偵測常失敗 → 直接強制 MS950
+            try:
+                resp.encoding = "ms950"
+                _ = resp.text  # 試解
+            except UnicodeDecodeError:
+                resp.encoding = resp.apparent_encoding or "utf-8"
             time.sleep(self.polite_delay)
             if resp.status_code != 200:
                 return ""

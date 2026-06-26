@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import quote, health_check, strategy, ai, market, ranking, news
+from backend.api import quote, health_check, strategy, ai, market, ranking, news, twse
 from backend.lib.ticker_map import load_ticker_map
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,9 +36,21 @@ async def lifespan(app: FastAPI):
         sched_obj.add_job(run_daily_cache, "cron", hour=14, minute=0, id="cache_noon")
         sched_obj.add_job(run_daily_cache, "cron", hour=20, minute=30, id="cache_evening")
         sched_obj.add_job(check_and_maybe_regen, "interval", minutes=30, id="news_watcher")
+
+        # TWSE ETL — 平日 14:30 跑(盤後 30min TWSE 公布完整)
+        from backend.jobs.twse_daily_etl import run_etl as run_twse_etl
+        from backend.lib import twse_cache as twse_cache_mod
+        def _twse_etl_with_cache_clear():
+            run_twse_etl()
+            twse_cache_mod.clear_cache()
+        sched_obj.add_job(
+            _twse_etl_with_cache_clear, "cron",
+            day_of_week="mon-fri", hour=14, minute=30, id="twse_etl",
+        )
+
         sched_obj.start()
         app.state.scheduler = sched_obj
-        print("[startup] APScheduler 啟動 — 3 fixed slots + 每 30 min news watcher")
+        print("[startup] APScheduler 啟動 — 3 AI slots + 30min news watcher + TWSE ETL 14:30")
     except Exception as e:
         print(f"[startup] APScheduler failed: {e}")
 
@@ -94,3 +106,4 @@ app.include_router(ai.router, prefix="/api")
 app.include_router(market.router, prefix="/api")
 app.include_router(ranking.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
+app.include_router(twse.router)  # 已有 /api/twse prefix
