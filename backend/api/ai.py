@@ -190,13 +190,14 @@ def _gemini_run(prompt: str, max_tokens: int = 600):
     try:
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_KEY)
-        # gemini-2.5-flash 有 1500/day free tier
         model = genai.GenerativeModel("gemini-2.5-flash")
+        # 拉高 token 上限避免 thinking 吃光輸出
         resp = model.generate_content(
             prompt,
             generation_config={
                 "temperature": 0.3,
-                "max_output_tokens": max_tokens,
+                # 2.5-flash 預設 thinking 模式,需要給 4x token 才能完整輸出
+                "max_output_tokens": max_tokens * 4,
             },
         )
         return ExplainOut(text=resp.text or "(AI 沒回應)", model="gemini-2.5-flash")
