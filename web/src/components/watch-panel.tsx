@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence, Reorder } from "framer-motion";
+import { motion, AnimatePresence, Reorder, useMotionValue, useTransform } from "framer-motion";
 import {
-  Plus, Star, AlertTriangle, Wallet,
+  Plus, Star, AlertTriangle, Wallet, Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StockRow } from "@/components/stock-row";
@@ -206,7 +206,7 @@ export function WatchPanel() {
       {/* 拖曳排序提示 */}
       {list.length > 1 && (
         <div className="text-[10px] text-st-muted text-center -mb-1">
-          ⋮⋮ 長按卡片可拖曳排序
+          ⋮⋮ 長按卡片可拖曳排序  ·  👈 左滑顯示刪除
         </div>
       )}
 
@@ -252,6 +252,7 @@ export function WatchPanel() {
               isPicked={picks.includes(item.ticker)}
               onPin={() => togglePick(item.ticker)}
               onOpen={() => router.push(`/ticker/${item.ticker}`)}
+              onRemove={() => handleRemove(item)}
             />
           );
         })}
@@ -274,9 +275,9 @@ export function WatchPanel() {
   );
 }
 
-/** 整張卡可拖曳(framer-motion drag threshold 自動分辨 tap vs drag)*/
+/** 整張卡可拖曳排序 + 左滑顯示刪除 */
 function ReorderableRow({
-  item, q, hasHolding, pnl, pnlPct, isPicked, onPin, onOpen,
+  item, q, hasHolding, pnl, pnlPct, isPicked, onPin, onOpen, onRemove,
 }: {
   item: WatchlistItem;
   q?: Quote;
@@ -286,42 +287,82 @@ function ReorderableRow({
   isPicked: boolean;
   onPin: () => void;
   onOpen: () => void;
+  onRemove: () => void;
 }) {
+  const x = useMotionValue(0);
+  const [swiped, setSwiped] = useState(false);
+  // 刪除按鈕透明度跟著 swipe 距離平滑變化
+  const deleteOpacity = useTransform(x, [-80, -20, 0], [1, 0.3, 0]);
+
   return (
     <Reorder.Item
       value={item}
-      // 預設 dragListener=true:整張可拖
-      // framer 自動偵測 pointer 移動 > 3px 才視為 drag,點擊不受影響
       whileDrag={{
         scale: 1.03,
         boxShadow: "0 16px 40px rgba(0,0,0,0.6), 0 0 32px var(--accent-glow)",
         zIndex: 50,
-        cursor: "grabbing",
       }}
-      style={{
-        touchAction: "pan-y",
-      }}
+      style={{ touchAction: "pan-y", position: "relative" }}
     >
-      <StockRow
-        ticker={item.ticker}
-        name={q?.name ?? ""}
-        industry={q?.industry ?? "—"}
-        quote={q}
-        hasHolding={hasHolding}
-        holding={
-          hasHolding && q
-            ? {
-                shares: item.shares!,
-                cost_per_share: item.cost_per_share!,
-                pnl,
-                pnlPct,
-              }
-            : undefined
-        }
-        isPicked={isPicked}
-        onPin={onPin}
-        onOpen={onOpen}
-      />
+      {/* 紅色刪除按鈕(藏在卡片下方)*/}
+      <motion.div
+        className="absolute inset-0 flex items-center justify-end pr-4 rounded-st"
+        style={{
+          opacity: deleteOpacity,
+          background: "linear-gradient(90deg, transparent 30%, #dc2626 100%)",
+        }}
+      >
+        <button
+          onClick={() => {
+            if (confirm(`確定從觀察清單移除 ${item.ticker}?`)) onRemove();
+            x.set(0);
+            setSwiped(false);
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-st bg-white/15 text-white font-bold text-sm active:scale-95"
+        >
+          <Trash2 className="w-4 h-4" /> 移除
+        </button>
+      </motion.div>
+
+      {/* 卡片本體 — drag x 露出刪除 */}
+      <motion.div
+        drag="x"
+        dragConstraints={{ left: -88, right: 0 }}
+        dragElastic={0.12}
+        dragMomentum={false}
+        style={{ x }}
+        animate={swiped ? { x: -88 } : { x: 0 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.x < -50) {
+            setSwiped(true);
+            x.set(-88);
+          } else {
+            setSwiped(false);
+            x.set(0);
+          }
+        }}
+      >
+        <StockRow
+          ticker={item.ticker}
+          name={q?.name ?? ""}
+          industry={q?.industry ?? "—"}
+          quote={q}
+          hasHolding={hasHolding}
+          holding={
+            hasHolding && q
+              ? {
+                  shares: item.shares!,
+                  cost_per_share: item.cost_per_share!,
+                  pnl,
+                  pnlPct,
+                }
+              : undefined
+          }
+          isPicked={isPicked}
+          onPin={onPin}
+          onOpen={onOpen}
+        />
+      </motion.div>
     </Reorder.Item>
   );
 }
