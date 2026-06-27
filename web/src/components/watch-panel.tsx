@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence, Reorder, useDragControls } from "framer-motion";
+import { motion, AnimatePresence, Reorder } from "framer-motion";
 import {
-  Plus, Star, AlertTriangle, Wallet, GripVertical,
+  Plus, Star, AlertTriangle, Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StockRow } from "@/components/stock-row";
@@ -205,8 +205,8 @@ export function WatchPanel() {
 
       {/* 拖曳排序提示 */}
       {list.length > 1 && (
-        <div className="text-[10px] text-st-muted text-center -mb-1 flex items-center justify-center gap-1">
-          <GripVertical className="w-3 h-3" /> 長按左側握把可拖曳排序
+        <div className="text-[10px] text-st-muted text-center -mb-1">
+          ⋮⋮ 長按卡片可拖曳排序
         </div>
       )}
 
@@ -274,7 +274,7 @@ export function WatchPanel() {
   );
 }
 
-/** 觀察卡片 + 左側握把(只有握把可拖)*/
+/** 整張卡可拖曳(framer-motion drag threshold 自動分辨 tap vs drag)*/
 function ReorderableRow({
   item, q, hasHolding, pnl, pnlPct, isPicked, onPin, onOpen,
 }: {
@@ -287,55 +287,41 @@ function ReorderableRow({
   onPin: () => void;
   onOpen: () => void;
 }) {
-  const controls = useDragControls();
   return (
     <Reorder.Item
       value={item}
-      dragListener={false}        // 整張卡不可拖
-      dragControls={controls}     // 只有握把(controls.start)能觸發
-      className="flex items-stretch gap-2"
+      // 預設 dragListener=true:整張可拖
+      // framer 自動偵測 pointer 移動 > 3px 才視為 drag,點擊不受影響
       whileDrag={{
-        scale: 1.02,
-        boxShadow: "0 12px 32px rgba(0,0,0,0.5)",
+        scale: 1.03,
+        boxShadow: "0 16px 40px rgba(0,0,0,0.6), 0 0 32px var(--accent-glow)",
         zIndex: 50,
+        cursor: "grabbing",
+      }}
+      style={{
+        touchAction: "pan-y",
       }}
     >
-      {/* 拖曳握把 — 左側 */}
-      <button
-        type="button"
-        onPointerDown={(e) => controls.start(e)}
-        className="flex items-center justify-center w-7 flex-shrink-0 rounded-st cursor-grab active:cursor-grabbing touch-none select-none"
-        style={{
-          background: "linear-gradient(180deg, #1c2028, #11141a)",
-          border: "1px solid #2a3340",
-          color: "#64748b",
-        }}
-        title="長按拖曳排序"
-      >
-        <GripVertical className="w-4 h-4" />
-      </button>
-      <div className="flex-1 min-w-0">
-        <StockRow
-          ticker={item.ticker}
-          name={q?.name ?? ""}
-          industry={q?.industry ?? "—"}
-          quote={q}
-          hasHolding={hasHolding}
-          holding={
-            hasHolding && q
-              ? {
-                  shares: item.shares!,
-                  cost_per_share: item.cost_per_share!,
-                  pnl,
-                  pnlPct,
-                }
-              : undefined
-          }
-          isPicked={isPicked}
-          onPin={onPin}
-          onOpen={onOpen}
-        />
-      </div>
+      <StockRow
+        ticker={item.ticker}
+        name={q?.name ?? ""}
+        industry={q?.industry ?? "—"}
+        quote={q}
+        hasHolding={hasHolding}
+        holding={
+          hasHolding && q
+            ? {
+                shares: item.shares!,
+                cost_per_share: item.cost_per_share!,
+                pnl,
+                pnlPct,
+              }
+            : undefined
+        }
+        isPicked={isPicked}
+        onPin={onPin}
+        onOpen={onOpen}
+      />
     </Reorder.Item>
   );
 }
