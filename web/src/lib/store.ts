@@ -23,6 +23,7 @@ type SessionState = {
   guestWatchlist: WatchlistItem[];
   addGuestItem: (item: WatchlistItem) => void;
   removeGuestItem: (ticker: string, type: string) => void;
+  reorderGuestWatchlist: (items: WatchlistItem[]) => void;
   updateGuestHolding: (
     ticker: string,
     type: string,
@@ -69,6 +70,8 @@ export const useSession = create<SessionState>()(
           if (exists) return s;
           return { guestWatchlist: [...s.guestWatchlist, item] };
         }),
+      reorderGuestWatchlist: (items) =>
+        set(() => ({ guestWatchlist: items })),
       removeGuestItem: (ticker, type) =>
         set((s) => ({
           guestWatchlist: s.guestWatchlist.filter(

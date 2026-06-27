@@ -3,15 +3,16 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Reorder, useDragControls } from "framer-motion";
 import {
-  Plus, Star, AlertTriangle, Wallet, Pin, PinOff,
+  Plus, Star, AlertTriangle, Wallet, GripVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StockRow } from "@/components/stock-row";
 import { api, type Quote } from "@/lib/api";
 import {
   loadCloudWatchlist, addCloudTicker, removeCloudTicker, updateCloudHolding,
+  reorderCloudWatchlist,
   type WatchlistItem,
 } from "@/lib/watchlist";
 import { useSession } from "@/lib/store";
@@ -26,6 +27,7 @@ export function WatchPanel() {
   const guestList = useSession((s) => s.guestWatchlist);
   const addGuest = useSession((s) => s.addGuestItem);
   const removeGuest = useSession((s) => s.removeGuestItem);
+  const reorderGuest = useSession((s) => s.reorderGuestWatchlist);
   const updateGuest = useSession((s) => s.updateGuestHolding);
 
   const queryClient = useQueryClient();
@@ -201,8 +203,33 @@ export function WatchPanel() {
         </motion.div>
       )}
 
-      {/* Pills with expandable brief */}
-      <AnimatePresence mode="popLayout">
+      {/* 拖曳排序提示 */}
+      {list.length > 1 && (
+        <div className="text-[10px] text-st-muted text-center -mb-1 flex items-center justify-center gap-1">
+          <GripVertical className="w-3 h-3" /> 長按左側握把可拖曳排序
+        </div>
+      )}
+
+      {/* Reorderable list */}
+      <Reorder.Group
+        axis="y"
+        values={list}
+        onReorder={async (newOrder) => {
+          if (isGuest) {
+            reorderGuest(newOrder);
+          } else if (userId) {
+            // optimistic update
+            queryClient.setQueryData(["watchlist-cloud", userId], newOrder);
+            try {
+              await reorderCloudWatchlist(newOrder, userId);
+            } catch (e) {
+              alert(`排序失敗: ${(e as Error).message}`);
+              await queryClient.invalidateQueries({ queryKey: ["watchlist-cloud", userId] });
+            }
+          }
+        }}
+        className="space-y-3"
+      >
         {list.map((item) => {
           const q = quoteMap.get(item.ticker);
           const hasHolding = !!(item.shares && item.cost_per_share);
@@ -215,37 +242,20 @@ export function WatchPanel() {
             pnlPct = (mv / cost - 1) * 100;
           }
           return (
-            <motion.div
+            <ReorderableRow
               key={`${item.ticker}-${item.type}`}
-              layout
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-            >
-              <StockRow
-                ticker={item.ticker}
-                name={q?.name ?? ""}
-                industry={q?.industry ?? "—"}
-                quote={q}
-                hasHolding={hasHolding}
-                holding={
-                  hasHolding && q
-                    ? {
-                        shares: item.shares!,
-                        cost_per_share: item.cost_per_share!,
-                        pnl,
-                        pnlPct,
-                      }
-                    : undefined
-                }
-                isPicked={picks.includes(item.ticker)}
-                onPin={() => togglePick(item.ticker)}
-                onOpen={() => router.push(`/ticker/${item.ticker}`)}
-              />
-            </motion.div>
+              item={item}
+              q={q}
+              hasHolding={hasHolding}
+              pnl={pnl}
+              pnlPct={pnlPct}
+              isPicked={picks.includes(item.ticker)}
+              onPin={() => togglePick(item.ticker)}
+              onOpen={() => router.push(`/ticker/${item.ticker}`)}
+            />
           );
         })}
-      </AnimatePresence>
+      </Reorder.Group>
 
       <AddTickerSheet
         open={adding}
@@ -261,6 +271,72 @@ export function WatchPanel() {
         onRemove={editing ? () => handleRemove(editing) : undefined}
       />
     </div>
+  );
+}
+
+/** 觀察卡片 + 左側握把(只有握把可拖)*/
+function ReorderableRow({
+  item, q, hasHolding, pnl, pnlPct, isPicked, onPin, onOpen,
+}: {
+  item: WatchlistItem;
+  q?: Quote;
+  hasHolding: boolean;
+  pnl: number;
+  pnlPct: number;
+  isPicked: boolean;
+  onPin: () => void;
+  onOpen: () => void;
+}) {
+  const controls = useDragControls();
+  return (
+    <Reorder.Item
+      value={item}
+      dragListener={false}        // 整張卡不可拖
+      dragControls={controls}     // 只有握把(controls.start)能觸發
+      className="flex items-stretch gap-2"
+      whileDrag={{
+        scale: 1.02,
+        boxShadow: "0 12px 32px rgba(0,0,0,0.5)",
+        zIndex: 50,
+      }}
+    >
+      {/* 拖曳握把 — 左側 */}
+      <button
+        type="button"
+        onPointerDown={(e) => controls.start(e)}
+        className="flex items-center justify-center w-7 flex-shrink-0 rounded-st cursor-grab active:cursor-grabbing touch-none select-none"
+        style={{
+          background: "linear-gradient(180deg, #1c2028, #11141a)",
+          border: "1px solid #2a3340",
+          color: "#64748b",
+        }}
+        title="長按拖曳排序"
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+      <div className="flex-1 min-w-0">
+        <StockRow
+          ticker={item.ticker}
+          name={q?.name ?? ""}
+          industry={q?.industry ?? "—"}
+          quote={q}
+          hasHolding={hasHolding}
+          holding={
+            hasHolding && q
+              ? {
+                  shares: item.shares!,
+                  cost_per_share: item.cost_per_share!,
+                  pnl,
+                  pnlPct,
+                }
+              : undefined
+          }
+          isPicked={isPicked}
+          onPin={onPin}
+          onOpen={onOpen}
+        />
+      </div>
+    </Reorder.Item>
   );
 }
 
