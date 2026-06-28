@@ -3,7 +3,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
+import { motion, useMotionValue, useTransform } from "framer-motion";
+import { Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Wallet, AlertTriangle, PieChart, Banknote, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -212,12 +213,21 @@ export function BookPanel() {
               const tier = cardTier(ticker, industry);
               const concPct = portfolio.totalMv > 0 ? (it.mv / portfolio.totalMv) * 100 : 0;
               return (
-                <motion.div
+                <SwipeableHoldingCard
                   key={ticker}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.04 }}
-                  className="relative"
+                  index={i}
+                  ticker={ticker}
+                  onRemoveHolding={async () => {
+                    // 移除持股 = 把 shares/cost 設 null,保留在 watchlist
+                    if (isGuest) {
+                      updateGuest(ticker, it.item.type, null, null, null);
+                    } else if (userId) {
+                      try {
+                        await updateCloudHolding(ticker, it.item.type, null, null, null);
+                        await queryClient.invalidateQueries({ queryKey: ["watchlist-cloud", userId] });
+                      } catch (e) { alert(`移除失敗: ${(e as Error).message}`); }
+                    }
+                  }}
                 >
                   <motion.button
                     onClick={() => router.push(`/ticker/${ticker}`)}
@@ -317,7 +327,7 @@ export function BookPanel() {
                       📉 賣出
                     </button>
                   </div>
-                </motion.div>
+                </SwipeableHoldingCard>
               );
             })}
           </div>
@@ -676,6 +686,71 @@ function Inline({ label, value, sub }: { label: string; value: string; sub?: str
       <div className="font-bold text-st-fg tabular-nums">{value}</div>
       {sub && <div className="text-[9px] text-st-muted tabular-nums">{sub}</div>}
     </div>
+  );
+}
+
+/** 持股卡 swipe-left → 露出移除按鈕 */
+function SwipeableHoldingCard({
+  ticker, index, onRemoveHolding, children,
+}: {
+  ticker: string;
+  index: number;
+  onRemoveHolding: () => void | Promise<void>;
+  children: React.ReactNode;
+}) {
+  const x = useMotionValue(0);
+  const [swiped, setSwiped] = useState(false);
+  const deleteOpacity = useTransform(x, [-100, -20, 0], [1, 0.3, 0]);
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.04 }}
+      className="relative"
+    >
+      {/* 紅色「移除持股」藏於下層 */}
+      <motion.div
+        className="absolute inset-0 flex items-center justify-end pr-4 rounded-st"
+        style={{
+          opacity: deleteOpacity,
+          background: "linear-gradient(90deg, transparent 25%, #dc2626 100%)",
+        }}
+      >
+        <button
+          onClick={async () => {
+            if (confirm(`${ticker} 從記帳移除?(觀察清單保留)`)) {
+              await onRemoveHolding();
+              x.set(0);
+              setSwiped(false);
+            }
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-st bg-white/15 text-white font-bold text-sm active:scale-95"
+        >
+          <Trash2 className="w-4 h-4" /> 移除持股
+        </button>
+      </motion.div>
+
+      {/* 卡片本體 */}
+      <motion.div
+        drag="x"
+        dragConstraints={{ left: -100, right: 0 }}
+        dragElastic={0.12}
+        dragMomentum={false}
+        style={{ x }}
+        animate={swiped ? { x: -100 } : { x: 0 }}
+        onDragEnd={(_, info) => {
+          if (info.offset.x < -60) {
+            setSwiped(true);
+            x.set(-100);
+          } else {
+            setSwiped(false);
+            x.set(0);
+          }
+        }}
+      >
+        {children}
+      </motion.div>
+    </motion.div>
   );
 }
 

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { useSession } from "@/lib/store";
 import { Toaster } from "@/components/ui/toaster";
+import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 
 function AccentApplier() {
   const accent = useSession((s) => s.accentTheme);
@@ -31,6 +32,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <AccentApplier />
       {children}
       <Toaster />
+      <PwaInstallPrompt />
     </QueryClientProvider>
   );
 }

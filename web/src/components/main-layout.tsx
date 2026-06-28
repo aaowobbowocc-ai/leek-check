@@ -2046,6 +2046,71 @@ function StrategyHitRow({
   );
 }
 
+/** 💎 PRO 升級 hero — Phase 11 才會接金流,目前純 UI placeholder */
+function ProUpgradeCard({ isGuest }: { isGuest: boolean }) {
+  const [showFeatures, setShowFeatures] = useState(false);
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-st overflow-hidden relative legendary-border"
+      style={{ borderRadius: "1rem" }}
+    >
+      <div className="p-4 relative">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">💎</span>
+            <div>
+              <div className="text-xs text-amber-300 font-bold tracking-widest">LEEK CHECK</div>
+              <div className="text-lg font-extrabold text-st-fg">PRO 會員</div>
+            </div>
+          </div>
+          <span
+            className="text-[10px] font-bold px-2 py-0.5 rounded"
+            style={{ background: "rgba(252,211,77,0.2)", color: "#fcd34d" }}
+          >
+            即將開放
+          </span>
+        </div>
+        <p className="text-xs text-st-soft mt-3 leading-relaxed">
+          解鎖無限智能整理 / 即時警示 / 進階策略 / 自訂主題色保存等功能。
+          Phase 10 paper trading 滿後將推出。
+        </p>
+        <button
+          onClick={() => setShowFeatures(!showFeatures)}
+          className="text-xs font-bold mt-3 text-amber-300 flex items-center gap-1"
+        >
+          {showFeatures ? "▲ 收起" : "▼ 看完整 PRO 功能"}
+        </button>
+        <AnimatePresence>
+          {showFeatures && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <ul className="text-xs text-st-soft space-y-1.5 mt-3 pt-3 border-t border-amber-300/20">
+                <li>🤖 <b>無限智能整理</b>(免費版每日 10 次)</li>
+                <li>🔔 <b>即時價格警示</b>(免費版上限 3 個 / 用戶)</li>
+                <li>📡 <b>進階策略訊號</b>(多因子組合 + 妖股 + 反向訊號)</li>
+                <li>🎨 <b>自訂主題色保存</b>(免費版重開回 teal)</li>
+                <li>📈 <b>歷史走勢回放</b>(看你過去 watchlist 表現)</li>
+                <li>⚡ <b>盤中秒級報價</b>(免費版 60 秒 cache)</li>
+                <li>📊 <b>每日 PDF 晨報</b>(寄信箱)</li>
+              </ul>
+              <div className="mt-3 text-[10px] text-st-muted">
+                💡 預期定價 NT$ 99-199 / 月
+                {isGuest && "(需先註冊帳號)"}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}
+
 function MePanel() {
   const isGuest = useSession((s) => s.isGuest);
   const clearGuest = useSession((s) => s.clearGuest);
@@ -2069,6 +2134,9 @@ function MePanel() {
 
       {/* 📊 活動統計 */}
       <UserStatsCard isGuest={isGuest} />
+
+      {/* 💎 升級 PRO Hero (placeholder) */}
+      <ProUpgradeCard isGuest={isGuest} />
 
       {isGuest ? (
         <div

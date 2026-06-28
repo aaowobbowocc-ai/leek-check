@@ -1,0 +1,29 @@
+# Render Blueprint — backend deploy 一鍵設定
+# 在 Render 連接這個 repo,選 "New Blueprint Instance",指到這檔
+services:
+  - type: web
+    name: leek-check-api
+    runtime: python
+    plan: free      # 升 starter ($7/mo) 可避免 spin-down
+    region: singapore  # 離台灣近
+    rootDir: .
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false      # 部署後手動填
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: DISCORD_ALERT_WEBHOOK
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+    disk:
+      name: data-cache
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
