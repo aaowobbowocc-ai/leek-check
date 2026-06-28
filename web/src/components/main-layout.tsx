@@ -8,6 +8,7 @@ import {
   ArrowUpRight, ArrowDownRight, BarChart3,
 } from "lucide-react";
 import { useSession } from "@/lib/store";
+import { NotificationCenter } from "@/components/notification-center";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRouter } from "next/navigation";
@@ -55,14 +56,18 @@ export function MainLayout() {
               BETA
             </span>
           </div>
-          {isGuest && (
-            <button
-              onClick={() => { clearGuest(); router.push("/login"); }}
-              className="text-xs text-amber-300 flex items-center gap-1 font-semibold"
-            >
-              <Ghost className="w-3 h-3" /> 訪客
-            </button>
-          )}
+          <div className="flex items-center gap-1">
+            {/* 訊息中心 — 訊息鈴鐺,登入者才顯示 */}
+            <NotificationCenter />
+            {isGuest && (
+              <button
+                onClick={() => { clearGuest(); router.push("/login"); }}
+                className="text-xs text-amber-300 flex items-center gap-1 font-semibold ml-1"
+              >
+                <Ghost className="w-3 h-3" /> 訪客
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
