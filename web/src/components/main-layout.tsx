@@ -160,11 +160,15 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
   const wlList = isGuest ? guestList : (wlQ.data ?? []);
   const wlTickers = wlList.map(x => x.ticker);
 
-  // 觀察清單批次 quote
+  // 觀察清單 + 晨報精選 合併批次 quote(picks 可以是清單外的 ticker)
+  const allTickers = useMemo(() => {
+    const set = new Set([...wlTickers, ...picks]);
+    return Array.from(set);
+  }, [wlTickers, picks]);
   const wlQuotesQ = useQuery({
-    queryKey: ["wl-quotes", [...wlTickers].sort()],
-    queryFn: () => wlTickers.length ? api.getQuotesBatch(wlTickers) : Promise.resolve([]),
-    enabled: wlTickers.length > 0,
+    queryKey: ["wl-quotes", [...allTickers].sort()],
+    queryFn: () => allTickers.length ? api.getQuotesBatch(allTickers) : Promise.resolve([]),
+    enabled: allTickers.length > 0,
     staleTime: 60_000,
   });
   const wlQuotes = wlQuotesQ.data ?? [];
