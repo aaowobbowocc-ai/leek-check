@@ -12,7 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api import quote, health_check, strategy, ai, market, ranking, news, twse
+from backend.api import quote, health_check, strategy, ai, market, ranking, news, twse, alerts
 from backend.lib.ticker_map import load_ticker_map
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -46,6 +46,14 @@ async def lifespan(app: FastAPI):
         sched_obj.add_job(
             _twse_etl_with_cache_clear, "cron",
             day_of_week="mon-fri", hour=14, minute=30, id="twse_etl",
+        )
+
+        # 價格警示 checker — 平日 9:00-13:30 每 3 分鐘檢查
+        from backend.jobs.alert_checker import run_check as run_alert_check
+        sched_obj.add_job(
+            run_alert_check, "cron",
+            day_of_week="mon-fri", hour="9-13", minute="*/3",
+            id="alert_checker",
         )
 
         # ── Bootstrap:若 TWSE cache 空或 > 1 天舊,啟動後 10 秒先跑一次 ──
@@ -133,3 +141,4 @@ app.include_router(market.router, prefix="/api")
 app.include_router(ranking.router, prefix="/api")
 app.include_router(news.router, prefix="/api")
 app.include_router(twse.router)  # 已有 /api/twse prefix
+app.include_router(alerts.router)  # 已有 /api/alerts prefix

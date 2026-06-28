@@ -8,6 +8,7 @@ import { ArrowLeft, Stethoscope, Sparkles } from "lucide-react";
 import { api, type HealthCheck } from "@/lib/api";
 import { formatNumber, formatPct } from "@/lib/utils";
 import { ScoreRing } from "@/components/ui/score-ring";
+import { AlertBell } from "@/components/alert-bell";
 import { StCard, StHeader, StCaption } from "@/components/ui/st-card";
 import { PriceChart, RevenueBarChart, ChipStackedBar, TechGrid, FundaGrid, HealthScanGrid } from "@/components/charts";
 
@@ -112,6 +113,10 @@ function HealthCheckView({ data, onBack }: { data: HealthCheck; onBack: () => vo
             <div className="flex-1 max-w-[160px]">
               {sparkline.length > 0 && <Sparkline data={sparkline} up={up} />}
             </div>
+          </div>
+          {/* 🔔 價格警示按鈕 */}
+          <div className="mt-3 flex justify-end">
+            <AlertBell ticker={ticker} currentPrice={quote.price} />
           </div>
         </StCard>
 
