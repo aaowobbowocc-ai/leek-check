@@ -217,11 +217,26 @@ def health_check(ticker: str):
     tech = _calc_tech(ohlcv) if ohlcv is not None else None
     chip = _load_chip(ticker)
     funda = _load_funda(ticker)
+
+    # 抓近期新聞 title list 給 news score 用
+    news_titles: list[str] = []
+    try:
+        from backend.api.news import _fetch_rss
+        name = info.get("name", "") or ""
+        query = f"{ticker} {name}".strip()
+        news_items = _fetch_rss(query, max_n=10)
+        # _fetch_rss 回 List[NewsItem],pydantic obj
+        for n in news_items[:10]:
+            t = getattr(n, "title", None) or (n.get("title") if isinstance(n, dict) else "")
+            if t:
+                news_titles.append(t)
+    except Exception:
+        pass
+
     health = calc_composite_health(
         tech, chip,
-        # 把 funda 簡化成 score 需要的格式
         {k: funda.get(k) for k in ("per", "pbr", "yield", "rev_yoy")} if funda else None,
-        None,
+        news_titles or None,
     )
 
     # 60 日 OHLCV + MA(供前端 chart)

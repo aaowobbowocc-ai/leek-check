@@ -108,16 +108,52 @@ def calc_fundamental_score(funda: dict | None) -> tuple[int, list[str]]:
     return max(0, min(100, s)), notes
 
 
-def calc_news_score(news: dict | None) -> tuple[int, list[str]]:
-    """新聞面分數 + 解讀 (暫時 placeholder, 之後接 sentiment API)."""
+POSITIVE_KW = ["突破", "獲利", "利多", "成長", "創高", "暴漲", "大漲", "看好",
+                "強勢", "新高", "翻倍", "回升", "復甦", "受惠", "佈局", "搶單",
+                "訂單", "Q增", "受益", "領先"]
+NEGATIVE_KW = ["跌停", "虧損", "利空", "警告", "下調", "下修", "暴跌", "大跌",
+                "看壞", "弱勢", "新低", "腰斬", "風險", "違約", "減資", "出走",
+                "停損", "停產", "停工", "減損"]
+
+
+def calc_news_score(news: dict | list | None) -> tuple[int, list[str]]:
+    """新聞面 — 從近期新聞 title 關鍵字 + n 篇數量計算 sentiment."""
+    # 不接入 → 中性 + 提示
     if not news:
-        return 50, ["新聞情緒分析尚未接入"]
-    sentiment = news.get("sentiment", "neutral")
-    if sentiment == "positive":
-        return 70, ["近期新聞偏正面"]
-    if sentiment == "negative":
-        return 30, ["近期新聞偏負面"]
-    return 50, ["近期新聞中性"]
+        return 50, ["近期無新聞或暫未抓取"]
+
+    # 接受 dict {sentiment, titles} 或 list[str/dict]
+    titles: list[str] = []
+    if isinstance(news, dict):
+        if news.get("sentiment"):
+            s = news["sentiment"]
+            if s == "positive":
+                return 70, ["近期新聞偏正面"]
+            if s == "negative":
+                return 30, ["近期新聞偏負面"]
+        titles = [str(t) for t in (news.get("titles") or [])]
+    elif isinstance(news, list):
+        for it in news:
+            if isinstance(it, str):
+                titles.append(it)
+            elif isinstance(it, dict):
+                titles.append(str(it.get("title", "")))
+
+    if not titles:
+        return 50, ["近期無新聞或暫未抓取"]
+
+    pos_hits = sum(1 for t in titles for kw in POSITIVE_KW if kw in t)
+    neg_hits = sum(1 for t in titles for kw in NEGATIVE_KW if kw in t)
+    n = len(titles)
+    if pos_hits + neg_hits == 0:
+        return 50, [f"📰 {n} 篇近期新聞 · 情緒中性"]
+    if pos_hits > neg_hits * 1.5:
+        score = min(80, 50 + pos_hits * 5)
+        return score, [f"📰 {n} 篇新聞 · 正面 {pos_hits} / 負面 {neg_hits}"]
+    if neg_hits > pos_hits * 1.5:
+        score = max(20, 50 - neg_hits * 5)
+        return score, [f"📰 {n} 篇新聞 · 正面 {pos_hits} / 負面 {neg_hits}"]
+    return 50, [f"📰 {n} 篇新聞 · 正面 {pos_hits} / 負面 {neg_hits} · 偏中性"]
 
 
 def calc_composite_health(

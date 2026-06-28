@@ -296,7 +296,7 @@ export function HealthScanGrid({
                 </div>
               </>
             ) : (
-              <div className="text-[10px] text-st-muted mt-1">資料不足</div>
+              <div className="text-[10px] text-st-muted/60 mt-1 italic">財報資料待接</div>
             )}
           </div>
         );
