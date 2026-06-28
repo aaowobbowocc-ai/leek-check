@@ -156,4 +156,14 @@ def fetch_quotes_batch(tickers: list[str]) -> dict[str, dict]:
                     continue
     except Exception as e:
         print(f"[fetch_quotes_batch] {e}")
+
+    # 3) 最後一道防線:批次仍漏的 ticker 逐檔 fetch_quote(用單檔邏輯)
+    final_miss = [t for t in tickers if t not in out]
+    for t in final_miss:
+        try:
+            data = fetch_quote(t)
+            if data:
+                out[t] = data
+        except Exception as e:
+            print(f"[fetch_quotes_batch final_fallback {t}] {e}")
     return out
