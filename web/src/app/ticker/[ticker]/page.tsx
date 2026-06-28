@@ -138,6 +138,9 @@ function HealthCheckView({ data, onBack }: { data: HealthCheck; onBack: () => vo
           </StCaption>
         </StCard>
 
+        {/* 🤖 智能健檢報告 — 緊接分數下方,user 第一眼看到 */}
+        <AiPromptCard data={data} verdict={verdict} />
+
         {/* 📈 60 日股價圖 + MA(主圖)*/}
         {data.ohlcv_60d.length > 0 && (
           <StCard>
@@ -221,9 +224,6 @@ function HealthCheckView({ data, onBack }: { data: HealthCheck; onBack: () => vo
 
         {/* 📰 個股新聞 + 🤖 智能新聞整理 */}
         <TickerNewsCard ticker={ticker} name={name} />
-
-        {/* AI prompt (streamlit expander 翻成 card) */}
-        <AiPromptCard data={data} verdict={verdict} />
 
         {/* Disclaimer */}
         <div className="rounded-st border border-amber-300/40 bg-amber-300/10 p-3 text-xs text-amber-300">
