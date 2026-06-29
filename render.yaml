@@ -5,7 +5,8 @@ services:
     name: leek-check-api
     runtime: python
     plan: free      # 升 starter ($7/mo) 可避免 spin-down
-    region: singapore  # 離台灣近
+    region: oregon  # ⚠️ 不能用 singapore!Yahoo 會擋亞洲雲端 IP
+                     # 改用 oregon (us-west) — yfinance + TWSE 都能正常連
     rootDir: .
     buildCommand: pip install -r backend/requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
