@@ -20,11 +20,17 @@ ROOT = Path(__file__).resolve().parent.parent
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    print("[startup] loading ticker map...")
-    load_ticker_map()
+    # Startup — 每步都 try/except 防 startup crash loop
+    print("[startup] STAGE 1: loading ticker map ...", flush=True)
+    try:
+        load_ticker_map()
+        print("[startup] STAGE 1 ✓", flush=True)
+    except Exception as e:
+        print(f"[startup] STAGE 1 FAIL: {e}", flush=True)
+        import traceback; traceback.print_exc()
 
     # ── 啟動 APScheduler:3 固定 slot + 30 分鐘輕量檢查 ──
+    print("[startup] STAGE 2: APScheduler ...", flush=True)
     sched_obj = None
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
@@ -84,11 +90,12 @@ async def lifespan(app: FastAPI):
 
         sched_obj.start()
         app.state.scheduler = sched_obj
-        print("[startup] APScheduler 啟動 — 3 AI slots + 30min news watcher + TWSE ETL 14:30")
+        print("[startup] STAGE 2 ✓ APScheduler 啟動", flush=True)
     except Exception as e:
-        print(f"[startup] APScheduler failed: {e}")
+        print(f"[startup] STAGE 2 FAIL APScheduler: {e}", flush=True)
+        import traceback; traceback.print_exc()
 
-    print("[startup] ready")
+    print("[startup] ✓✓✓ READY — service is live", flush=True)
     yield
 
     if sched_obj:

@@ -21,7 +21,8 @@ try:
 except Exception:
     pass
 
-BACKEND = "http://localhost:8000"
+import os as _os
+BACKEND = _os.getenv("BACKEND_INTERNAL_URL", f"http://localhost:{_os.getenv('PORT', '8000')}")
 TPE = ZoneInfo("Asia/Taipei")
 
 

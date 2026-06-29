@@ -19,7 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 CACHE_DIR = ROOT / "data" / "ai_cache" / "daily"
 LOG_DIR = ROOT / "data" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-BACKEND = "http://localhost:8000"
+import os as _os
+BACKEND = _os.getenv("BACKEND_INTERNAL_URL", f"http://localhost:{_os.getenv('PORT', '8000')}")
 TPE = ZoneInfo("Asia/Taipei")
 
 # 黑天鵝關鍵字 — 出現就 trigger
