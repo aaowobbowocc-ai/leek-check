@@ -38,6 +38,7 @@ logs/
 *.parquet
 *.png
 !app/static/*.png
+!web/public/*.png
 
 # 例外:ticker 對照表 + IPO list(小檔,部署必備)
 !data/cache/finmind/extras/stock_info.parquet
