@@ -1,4 +1,7 @@
-const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+// 支援 2 個變數名稱(都是 user 可能設的)
+const BASE = process.env.NEXT_PUBLIC_API_URL
+  ?? process.env.NEXT_PUBLIC_API_BASE_URL
+  ?? "http://localhost:8000";
 
 export interface Quote {
   ticker: string;
