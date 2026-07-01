@@ -83,14 +83,77 @@ def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
         return None
 
 
+def _fetch_taiex_from_twse() -> pd.DataFrame | None:
+    """從 TWSE 官方 API 抓 TAIEX 每日收盤 — yfinance fallback.
+    Endpoint 免費、無需 auth、Render 也能連(不受 Yahoo 反爬影響)."""
+    try:
+        import requests as _rq
+        from datetime import date as _date, timedelta as _td
+        # TWSE MI_INDEX 一次抓月資料,拉 3 個月 = 2 年 backfill 太慢
+        # 改用 OpenAPI 一次拉完整歷史:
+        # https://openapi.twse.com.tw/v1/exchangeReport/FMTQIK 只有 30 天
+        # 用 MI_5MINS_HIST 一次拉當日,不夠
+        # 最實用:openapi.twse.com.tw MI_5MINS_HIST 每次一天
+        # → 改用 mis.twse.com.tw 即時抓 TAIEX + 前 250 交易日 close
+        rows = []
+        today = _date.today()
+        # 抓最近 15 個月確保有 200 交易日
+        for i in range(15):
+            d = today.replace(day=1) - _td(days=30 * i)
+            url = f"https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={d.strftime('%Y%m%d')}&type=IND&response=json"
+            try:
+                r = _rq.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+                # tables 陣列裡找加權指數
+                for tbl in data.get("tables", []):
+                    for row in tbl.get("data", []):
+                        if "發行量加權股價指數" in str(row[0]) or row[0] == "TAIEX":
+                            # row = [date, open, high, low, close, chg, chg_pct...]
+                            # 日期 in row[0] format YYYY/MM/DD
+                            try:
+                                dt_str = row[0].replace("/", "-")
+                                close = float(str(row[4]).replace(",", ""))
+                                rows.append({"date": dt_str, "close": close})
+                            except (ValueError, IndexError):
+                                pass
+            except Exception:
+                continue
+        if not rows:
+            return None
+        df = pd.DataFrame(rows)
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df = df.dropna(subset=["date", "close"]).sort_values("date").drop_duplicates("date")
+        return df.reset_index(drop=True) if not df.empty else None
+    except Exception as e:
+        print(f"[taiex_twse] {e}")
+        return None
+
+
 def _fetch_taiex_full() -> TaiexFull | None:
     """TAIEX 完整 — 含 MA200 距、20d 60d return、30d sparkline、溫度判讀."""
+    # 1) 先試 yfinance
+    h = None
     try:
         import yfinance as yf
         t = yf.Ticker("^TWII")
         h = t.history(period="2y", auto_adjust=False)
         if h.empty:
+            h = None
+    except Exception:
+        h = None
+
+    # 2) yfinance fail → TWSE 官方 API
+    if h is None:
+        twse_df = _fetch_taiex_from_twse()
+        if twse_df is None or twse_df.empty:
             return None
+        # 轉成 yfinance 相同的 shape
+        h = pd.DataFrame({"Close": twse_df["close"].values},
+                         index=pd.DatetimeIndex(twse_df["date"]))
+
+    try:
         h = h.dropna(subset=["Close"]).reset_index(drop=True)
         close = float(h["Close"].iloc[-1])
         prev = float(h["Close"].iloc[-2]) if len(h) >= 2 else close
