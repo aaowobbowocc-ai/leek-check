@@ -84,42 +84,36 @@ def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
 
 
 def _fetch_taiex_from_twse() -> pd.DataFrame | None:
-    """從 TWSE 官方 API 抓 TAIEX 每日收盤 — yfinance fallback.
-    Endpoint 免費、無需 auth、Render 也能連(不受 Yahoo 反爬影響)."""
+    """從 TWSE 官方 FMTQIK API 抓 TAIEX 每日收盤 — yfinance fallback.
+    每次 request 一整月,~13 個 request 拿到 250 交易日,足夠 MA200."""
     try:
         import requests as _rq
         from datetime import date as _date, timedelta as _td
-        # TWSE MI_INDEX 一次抓月資料,拉 3 個月 = 2 年 backfill 太慢
-        # 改用 OpenAPI 一次拉完整歷史:
-        # https://openapi.twse.com.tw/v1/exchangeReport/FMTQIK 只有 30 天
-        # 用 MI_5MINS_HIST 一次拉當日,不夠
-        # 最實用:openapi.twse.com.tw MI_5MINS_HIST 每次一天
-        # → 改用 mis.twse.com.tw 即時抓 TAIEX + 前 250 交易日 close
-        rows = []
+        rows: list[dict] = []
         today = _date.today()
-        # 抓最近 15 個月確保有 200 交易日
-        for i in range(15):
-            d = today.replace(day=1) - _td(days=30 * i)
-            url = f"https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date={d.strftime('%Y%m%d')}&type=IND&response=json"
+        cur = today.replace(day=1)
+        # 抓最近 13 個月(足夠 200 交易日)
+        for i in range(13):
+            url = f"https://www.twse.com.tw/rwd/zh/afterTrading/FMTQIK?date={cur.strftime('%Y%m%d')}&response=json"
             try:
                 r = _rq.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-                if r.status_code != 200:
-                    continue
-                data = r.json()
-                # tables 陣列裡找加權指數
-                for tbl in data.get("tables", []):
-                    for row in tbl.get("data", []):
-                        if "發行量加權股價指數" in str(row[0]) or row[0] == "TAIEX":
-                            # row = [date, open, high, low, close, chg, chg_pct...]
-                            # 日期 in row[0] format YYYY/MM/DD
-                            try:
-                                dt_str = row[0].replace("/", "-")
-                                close = float(str(row[4]).replace(",", ""))
-                                rows.append({"date": dt_str, "close": close})
-                            except (ValueError, IndexError):
-                                pass
+                if r.status_code == 200:
+                    data = r.json()
+                    for row in data.get("data", []):
+                        # row = [日期(民國), 成交股數, 成交金額, 成交筆數, 收盤指數, 漲跌]
+                        try:
+                            # 民國轉西元: 115/06/26 → 2026-06-26
+                            dt_raw = row[0]
+                            yy, mm, dd = dt_raw.split("/")
+                            dt_str = f"{int(yy) + 1911}-{int(mm):02d}-{int(dd):02d}"
+                            close = float(str(row[4]).replace(",", ""))
+                            rows.append({"date": dt_str, "close": close})
+                        except (ValueError, IndexError):
+                            pass
             except Exception:
-                continue
+                pass
+            # 上個月 1 號
+            cur = (cur - _td(days=1)).replace(day=1)
         if not rows:
             return None
         df = pd.DataFrame(rows)
