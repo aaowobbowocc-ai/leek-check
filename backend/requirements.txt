@@ -2,6 +2,7 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 yfinance==0.2.51
+curl_cffi==0.7.4
 pandas==2.2.3
 numpy==2.2.1
 pyarrow==18.0.0

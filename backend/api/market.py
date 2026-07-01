@@ -58,11 +58,28 @@ class MarketDashboard(BaseModel):
     international_note: str  # 國際市場連動文字判讀
 
 
+_YF_SESSION = None
+
+
+def _yf_session():
+    """curl_cffi + Chrome 指紋 session — 繞 Yahoo Akamai 反爬."""
+    global _YF_SESSION
+    if _YF_SESSION is not None:
+        return _YF_SESSION
+    try:
+        from curl_cffi import requests as _cc
+        _YF_SESSION = _cc.Session(impersonate="chrome")
+    except Exception:
+        _YF_SESSION = False
+    return _YF_SESSION
+
+
 def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
     try:
         import math
         import yfinance as yf
-        t = yf.Ticker(symbol)
+        sess = _yf_session()
+        t = yf.Ticker(symbol, session=sess) if sess else yf.Ticker(symbol)
         h = t.history(period="10d", auto_adjust=False)
         if h.empty:
             return None
