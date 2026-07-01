@@ -630,38 +630,57 @@ function MarketDashboardCard() {
         )}
       </div>
 
-      {/* 國際市場 + 商品(同類:tile 展示)*/}
-      <SectionCard emoji="🌍" title="國際市場連動" sub="台股早盤常跟美股夜盤連動">
-        <div className="grid grid-cols-3 gap-1.5 mb-3">
-          {[
-            { key: "sp500", emoji: "🇺🇸" },
-            { key: "nasdaq", emoji: "💻" },
-            { key: "sox", emoji: "🔌" },
-            { key: "dxy", emoji: "💵" },
-            { key: "oil", emoji: "🛢️" },
-            { key: "gold", emoji: "🪙" },
-            { key: "usdtwd", emoji: "🇹🇼" },
-            { key: "btc", emoji: "₿" },
-            { key: "eth", emoji: "Ξ" },
-          ].map(({ key, emoji }) => {
-            const idx = data[key as "sp500"];
-            if (!idx) return <SkelTile key={key} />;
-            return <IntlTile key={key} idx={idx} emoji={emoji} />;
-          })}
-        </div>
-        {/* 商品 + 日股(視覺整合到國際連動下方)*/}
-        <div className="text-[10px] text-st-muted font-bold tracking-wider mb-1.5 mt-3">
-          🪙 商品 + 日股
-        </div>
-        <div className="grid grid-cols-3 gap-1.5">
-          {data.silver && <IntlTile idx={data.silver} emoji="🥈" />}
-          {data.nikkei && <IntlTile idx={data.nikkei} emoji="🇯🇵" />}
-          {data.dxj && <IntlTile idx={data.dxj} emoji="💴" />}
-        </div>
-        <div className="text-[11px] text-st-muted text-center pt-3 mt-3 border-t border-st-border">
-          {data.international_note}
-        </div>
-      </SectionCard>
+      {/* 國際市場 + 商品(有資料才展示,全 null 顯示提示卡)*/}
+      {(() => {
+        const intlKeys = ["sp500", "nasdaq", "sox", "dxy", "oil", "gold", "usdtwd", "btc", "eth"] as const;
+        const hasAnyIntl = intlKeys.some(k => data[k]) || data.silver || data.nikkei || data.dxj;
+        if (!hasAnyIntl) {
+          return (
+            <SectionCard emoji="🌍" title="國際市場連動" sub="暫無資料">
+              <div className="text-center py-4 text-xs text-st-muted">
+                🚧 國際指數資料源正在替換 <br/>
+                (Yahoo Finance 擋雲端 IP,之後接 Alpha Vantage 補上)
+              </div>
+            </SectionCard>
+          );
+        }
+        return (
+          <SectionCard emoji="🌍" title="國際市場連動" sub="台股早盤常跟美股夜盤連動">
+            <div className="grid grid-cols-3 gap-1.5 mb-3">
+              {[
+                { key: "sp500", emoji: "🇺🇸" },
+                { key: "nasdaq", emoji: "💻" },
+                { key: "sox", emoji: "🔌" },
+                { key: "dxy", emoji: "💵" },
+                { key: "oil", emoji: "🛢️" },
+                { key: "gold", emoji: "🪙" },
+                { key: "usdtwd", emoji: "🇹🇼" },
+                { key: "btc", emoji: "₿" },
+                { key: "eth", emoji: "Ξ" },
+              ].map(({ key, emoji }) => {
+                const idx = data[key as "sp500"];
+                if (!idx) return <SkelTile key={key} />;
+                return <IntlTile key={key} idx={idx} emoji={emoji} />;
+              })}
+            </div>
+            {(data.silver || data.nikkei || data.dxj) && (
+              <>
+                <div className="text-[10px] text-st-muted font-bold tracking-wider mb-1.5 mt-3">
+                  🪙 商品 + 日股
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {data.silver && <IntlTile idx={data.silver} emoji="🥈" />}
+                  {data.nikkei && <IntlTile idx={data.nikkei} emoji="🇯🇵" />}
+                  {data.dxj && <IntlTile idx={data.dxj} emoji="💴" />}
+                </div>
+              </>
+            )}
+            <div className="text-[11px] text-st-muted text-center pt-3 mt-3 border-t border-st-border">
+              {data.international_note}
+            </div>
+          </SectionCard>
+        );
+      })()}
 
       {/* ════════ Group 2: 🤖 智能整理(同類聚合)════════ */}
       <GroupHeader emoji="🤖" label="智能整理" sub="用你選的語氣 × 時間框架" />

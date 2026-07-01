@@ -74,6 +74,29 @@ def _yf_session():
     return _YF_SESSION
 
 
+# Stooq symbol map — yfinance blocked 時走 Stooq
+_STOOQ_MAP = {
+    "^GSPC":     "^spx",     # S&P 500
+    "^IXIC":     "^ndx",     # Nasdaq 100 (closest — Nasdaq Composite 沒有)
+    "^SOX":      "^sox",     # 費城半導體
+    "DX-Y.NYB":  "dx.f",     # 美元指數 futures
+    "^N225":     "^nkx",     # 日經 225
+    "GC=F":      "gc.f",     # 黃金 futures
+    "CL=F":      "cl.f",     # WTI 原油
+    "SI=F":      "si.f",     # 白銀 futures
+    "TWD=X":     "usdtwd",   # USD/TWD
+    "BTC-USD":   "btc.v",    # BTC
+    "ETH-USD":   "eth.v",    # ETH
+    "^VIX":      "^vix",     # VIX
+    "DXJ":       None,       # WisdomTree Japan Hedged — Stooq 沒
+}
+
+
+def _fetch_stooq(symbol: str, name: str) -> MarketIndex | None:
+    """Stooq CSV fallback — 目前有 JS challenge 擋,保留 placeholder 之後接別 API."""
+    return None
+
+
 def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
     try:
         import math
@@ -82,10 +105,11 @@ def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
         t = yf.Ticker(symbol, session=sess) if sess else yf.Ticker(symbol)
         h = t.history(period="10d", auto_adjust=False)
         if h.empty:
-            return None
+            # yfinance 空 → 落 Stooq
+            return _fetch_stooq(symbol, name)
         close_raw = h["Close"].iloc[-1]
         if close_raw is None or (isinstance(close_raw, float) and math.isnan(close_raw)):
-            return None
+            return _fetch_stooq(symbol, name)
         close = float(close_raw)
         prev_raw = h["Close"].iloc[-2] if len(h) >= 2 else close_raw
         prev = float(prev_raw) if prev_raw and not math.isnan(prev_raw) else close
@@ -97,7 +121,8 @@ def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
         )
     except Exception as e:
         print(f"[_fetch_yf_index] {symbol} failed: {e}")
-        return None
+        # yfinance exception → 落 Stooq
+        return _fetch_stooq(symbol, name)
 
 
 def _fetch_taiex_from_twse() -> pd.DataFrame | None:
