@@ -120,6 +120,57 @@ def _fetch_coingecko(coin_id: str, symbol: str, name: str) -> MarketIndex | None
         return None
 
 
+_SNAPSHOT_CACHE: tuple[float, dict] | None = None
+_SNAPSHOT_TTL = 300  # 5 分鐘 cache
+
+
+def _fetch_from_supabase_snapshot(symbol: str, name: str) -> MarketIndex | None:
+    """從 Supabase market_snapshot 讀本地 script upsert 的資料."""
+    global _SNAPSHOT_CACHE
+    import os as _os
+    import time as _t
+    # cache 命中
+    if _SNAPSHOT_CACHE and (_t.time() - _SNAPSHOT_CACHE[0]) < _SNAPSHOT_TTL:
+        indices = _SNAPSHOT_CACHE[1]
+    else:
+        # 讀 secrets — 跟 ai.py 同套 fallback
+        sb_url = _os.getenv("SUPABASE_URL", "")
+        sb_anon = _os.getenv("SUPABASE_ANON_KEY", "")
+        if (not sb_url or not sb_anon):
+            from pathlib import Path as _P
+            secrets = _P(__file__).resolve().parents[2] / ".streamlit" / "secrets.toml"
+            if secrets.exists():
+                for line in secrets.read_text(encoding="utf-8").splitlines():
+                    s = line.strip()
+                    if s.startswith("SUPABASE_URL") and "=" in s:
+                        sb_url = s.split("=", 1)[1].strip().strip('"').strip("'")
+                    elif s.startswith("SUPABASE_ANON_KEY") and "=" in s:
+                        sb_anon = s.split("=", 1)[1].strip().strip('"').strip("'")
+        if not sb_url or not sb_anon:
+            return None
+        try:
+            from supabase import create_client
+            sb = create_client(sb_url, sb_anon)
+            r = sb.table("market_snapshot").select("data").eq("id", 1).execute()
+            if not r.data:
+                return None
+            indices = r.data[0]["data"].get("indices", {})
+            _SNAPSHOT_CACHE = (_t.time(), indices)
+        except Exception as e:
+            print(f"[snapshot] {e}")
+            return None
+
+    d = indices.get(symbol)
+    if not d:
+        return None
+    return MarketIndex(
+        symbol=symbol, name=name,
+        price=float(d["price"]),
+        change_pct=float(d["change_pct"]),
+        asof=str(d["asof"]),
+    )
+
+
 def _fetch_er_fx(target: str, symbol: str, name: str) -> MarketIndex | None:
     """open.er-api.com 免費 FX — 支援 TWD/JPY/所有貨幣,免 key.
     只有現價無歷史,chg_pct 我們算不出來就給 0."""
@@ -152,11 +203,11 @@ def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
         t = yf.Ticker(symbol, session=sess) if sess else yf.Ticker(symbol)
         h = t.history(period="10d", auto_adjust=False)
         if h.empty:
-            # yfinance 空 → 落 Stooq
-            return _fetch_stooq(symbol, name)
+            # yfinance 空 → 落 Supabase snapshot
+            return _fetch_from_supabase_snapshot(symbol, name)
         close_raw = h["Close"].iloc[-1]
         if close_raw is None or (isinstance(close_raw, float) and math.isnan(close_raw)):
-            return _fetch_stooq(symbol, name)
+            return _fetch_from_supabase_snapshot(symbol, name)
         close = float(close_raw)
         prev_raw = h["Close"].iloc[-2] if len(h) >= 2 else close_raw
         prev = float(prev_raw) if prev_raw and not math.isnan(prev_raw) else close
@@ -168,8 +219,8 @@ def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
         )
     except Exception as e:
         print(f"[_fetch_yf_index] {symbol} failed: {e}")
-        # yfinance exception → 落 Stooq
-        return _fetch_stooq(symbol, name)
+        # yfinance exception → 落 Supabase snapshot
+        return _fetch_from_supabase_snapshot(symbol, name)
 
 
 def _fetch_taiex_from_twse() -> pd.DataFrame | None:
