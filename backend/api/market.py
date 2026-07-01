@@ -173,25 +173,46 @@ def _intl_note(items: dict) -> str:
     return "⚪ 國際市場波動平穩,無明顯訊號"
 
 
+import time as _time
+from concurrent.futures import ThreadPoolExecutor as _TPE
+
+_DASHBOARD_CACHE: tuple[float, MarketDashboard] | None = None
+_DASHBOARD_TTL = 120  # 2 分鐘 — 國際 index 分鐘級變動無感
+
+
 @router.get("/market/dashboard", response_model=MarketDashboard)
 def market_dashboard():
-    intl = {
-        "sp500":   _fetch_yf_index("^GSPC", "S&P 500"),
-        "nasdaq":  _fetch_yf_index("^IXIC", "NASDAQ"),
-        "sox":     _fetch_yf_index("^SOX", "費城半導體"),
-        "dxy":     _fetch_yf_index("DX-Y.NYB", "美元指數"),
-        "dxj":     _fetch_yf_index("DXJ", "日股 DXJ"),
-        "nikkei":  _fetch_yf_index("^N225", "日經 225"),
-        "gold":    _fetch_yf_index("GC=F", "黃金"),
-        "oil":     _fetch_yf_index("CL=F", "WTI 原油"),
-        "silver":  _fetch_yf_index("SI=F", "白銀"),
-        "usdtwd":  _fetch_yf_index("TWD=X", "USD/TWD"),
-        "btc":     _fetch_yf_index("BTC-USD", "BTC"),
-        "eth":     _fetch_yf_index("ETH-USD", "ETH"),
-        "vix":     _fetch_yf_index("^VIX", "美股恐慌指數"),
-    }
-    return MarketDashboard(
-        taiex=_fetch_taiex_full(),
+    global _DASHBOARD_CACHE
+    # 60 秒內熱資料直接回,不再打 yfinance
+    if _DASHBOARD_CACHE and (_time.time() - _DASHBOARD_CACHE[0]) < _DASHBOARD_TTL:
+        return _DASHBOARD_CACHE[1]
+
+    # 平行抓 14 個 yfinance(單線程要 ~40s → 平行 ~5s)
+    symbols = [
+        ("sp500", "^GSPC", "S&P 500"),
+        ("nasdaq", "^IXIC", "NASDAQ"),
+        ("sox", "^SOX", "費城半導體"),
+        ("dxy", "DX-Y.NYB", "美元指數"),
+        ("dxj", "DXJ", "日股 DXJ"),
+        ("nikkei", "^N225", "日經 225"),
+        ("gold", "GC=F", "黃金"),
+        ("oil", "CL=F", "WTI 原油"),
+        ("silver", "SI=F", "白銀"),
+        ("usdtwd", "TWD=X", "USD/TWD"),
+        ("btc", "BTC-USD", "BTC"),
+        ("eth", "ETH-USD", "ETH"),
+        ("vix", "^VIX", "美股恐慌指數"),
+    ]
+    with _TPE(max_workers=8) as ex:
+        futs = {key: ex.submit(_fetch_yf_index, sym, name) for key, sym, name in symbols}
+        taiex_fut = ex.submit(_fetch_taiex_full)
+        inst_fut = ex.submit(_fetch_institutional_total)
+        intl = {key: f.result() for key, f in futs.items()}
+        taiex = taiex_fut.result()
+        inst = inst_fut.result()
+
+    result = MarketDashboard(
+        taiex=taiex,
         vix=intl["vix"],
         sp500=intl["sp500"],
         nasdaq=intl["nasdaq"],
@@ -205,6 +226,8 @@ def market_dashboard():
         usdtwd=intl["usdtwd"],
         btc=intl["btc"],
         eth=intl["eth"],
-        institutional=_fetch_institutional_total(),
+        institutional=inst,
         international_note=_intl_note(intl),
     )
+    _DASHBOARD_CACHE = (_time.time(), result)
+    return result
