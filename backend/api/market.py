@@ -97,6 +97,53 @@ def _fetch_stooq(symbol: str, name: str) -> MarketIndex | None:
     return None
 
 
+def _fetch_coingecko(coin_id: str, symbol: str, name: str) -> MarketIndex | None:
+    """CoinGecko 免費 API — BTC / ETH / 其他加密貨幣."""
+    try:
+        import requests as _rq
+        from datetime import date as _date
+        url = f"https://api.coingecko.com/api/v3/simple/price?ids={coin_id}&vs_currencies=usd&include_24hr_change=true"
+        r = _rq.get(url, timeout=10)
+        if r.status_code != 200:
+            return None
+        d = r.json().get(coin_id, {})
+        if not d:
+            return None
+        return MarketIndex(
+            symbol=symbol, name=name,
+            price=float(d["usd"]),
+            change_pct=round(float(d.get("usd_24h_change", 0)), 2),
+            asof=str(_date.today()),
+        )
+    except Exception as e:
+        print(f"[coingecko] {coin_id}: {e}")
+        return None
+
+
+def _fetch_er_fx(target: str, symbol: str, name: str) -> MarketIndex | None:
+    """open.er-api.com 免費 FX — 支援 TWD/JPY/所有貨幣,免 key.
+    只有現價無歷史,chg_pct 我們算不出來就給 0."""
+    try:
+        import requests as _rq
+        from datetime import date as _date
+        r = _rq.get("https://open.er-api.com/v6/latest/USD", timeout=10)
+        if r.status_code != 200:
+            return None
+        data = r.json()
+        rate = data.get("rates", {}).get(target)
+        if not rate:
+            return None
+        return MarketIndex(
+            symbol=symbol, name=name,
+            price=float(rate),
+            change_pct=0.0,   # 免費版無歷史,顯示 0
+            asof=str(_date.today()),
+        )
+    except Exception as e:
+        print(f"[er-api] USD/{target}: {e}")
+        return None
+
+
 def _fetch_yf_index(symbol: str, name: str) -> MarketIndex | None:
     try:
         import math
@@ -302,11 +349,24 @@ def market_dashboard():
         ("eth", "ETH-USD", "ETH"),
         ("vix", "^VIX", "美股恐慌指數"),
     ]
-    with _TPE(max_workers=8) as ex:
+    with _TPE(max_workers=10) as ex:
         futs = {key: ex.submit(_fetch_yf_index, sym, name) for key, sym, name in symbols}
         taiex_fut = ex.submit(_fetch_taiex_full)
         inst_fut = ex.submit(_fetch_institutional_total)
+        # 免 key 的 fallback,不依賴 Yahoo
+        btc_fut = ex.submit(_fetch_coingecko, "bitcoin", "BTC-USD", "BTC")
+        eth_fut = ex.submit(_fetch_coingecko, "ethereum", "ETH-USD", "ETH")
+        usdtwd_fut = ex.submit(_fetch_er_fx, "TWD", "TWD=X", "USD/TWD")
+        usdjpy_fut = ex.submit(_fetch_er_fx, "JPY", "JPY=X", "USD/JPY")
+
         intl = {key: f.result() for key, f in futs.items()}
+        # 覆蓋 yfinance 空的欄位
+        if not intl.get("btc"):
+            intl["btc"] = btc_fut.result()
+        if not intl.get("eth"):
+            intl["eth"] = eth_fut.result()
+        if not intl.get("usdtwd"):
+            intl["usdtwd"] = usdtwd_fut.result()
         taiex = taiex_fut.result()
         inst = inst_fut.result()
 
