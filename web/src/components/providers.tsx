@@ -21,8 +21,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             staleTime: 60_000,
+            gcTime: 30 * 60_000,          // 快取保留 30 分鐘,回頁面秒回
             refetchOnWindowFocus: false,
-            retry: 1,
+            refetchOnMount: false,        // 有 cache 就先顯示不重抓
+            refetchOnReconnect: true,
+            retry: 2,
+            retryDelay: 500,              // 快速 retry
           },
         },
       })
