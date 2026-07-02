@@ -73,6 +73,55 @@ def get_per_latest(ticker: str) -> dict[str, Any] | None:
     }
 
 
+# ────── 即時 fallback:cache 沒 ticker 時直接打 TWSE ──────
+import time as _time
+from concurrent.futures import ThreadPoolExecutor as _TPE
+_LIVE_PER_CACHE: dict[str, tuple[float, dict]] = {}
+_LIVE_TTL = 6 * 3600  # 6h
+
+
+def get_per_latest_live(ticker: str) -> dict[str, Any] | None:
+    """cache 沒 → 打 TWSE BWIBBU_d 拉當日 → 記憶體 cache 6h."""
+    now = _time.time()
+    hit = _LIVE_PER_CACHE.get(ticker)
+    if hit and (now - hit[0]) < _LIVE_TTL:
+        return hit[1]
+    # cache 先試
+    try:
+        c = get_per_latest(ticker)
+        if c:
+            _LIVE_PER_CACHE[ticker] = (now, c)
+            return c
+    except Exception:
+        pass
+    # cache 也沒 → 直接抓當日 TWSE
+    try:
+        from datetime import date as _date, timedelta as _td
+        from src.data.twse_client import TWSEClient
+        client = TWSEClient(polite_delay=0.5)
+        # 找最近 5 個交易日
+        d = _date.today()
+        for _ in range(5):
+            if d.weekday() < 5:
+                df = client.get_per_pbr_day(d)
+                if not df.empty:
+                    hit_row = df[df["ticker"] == str(ticker)]
+                    if not hit_row.empty:
+                        row = hit_row.iloc[0]
+                        result = {
+                            "per": float(row["per"]) if pd.notna(row.get("per")) else None,
+                            "pbr": float(row["pbr"]) if pd.notna(row.get("pbr")) else None,
+                            "dividend_yield": float(row["dividend_yield"]) if pd.notna(row.get("dividend_yield")) else None,
+                            "asof": str(d),
+                        }
+                        _LIVE_PER_CACHE[ticker] = (now, result)
+                        return result
+            d = d - _td(days=1)
+    except Exception as e:
+        print(f"[twse live per] {e}")
+    return None
+
+
 def cache_status() -> dict[str, Any]:
     """檢查 cache 健康度."""
     inst_fp = TWSE_DIR / "institutional_latest.parquet"

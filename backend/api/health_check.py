@@ -150,10 +150,10 @@ def _load_funda(ticker: str) -> dict:
         except Exception:
             pass
 
-    # 2) TWSE fallback:若 per/pbr/yield 缺,從 TWSE 補
+    # 2) TWSE fallback:若 per/pbr/yield 缺,從 TWSE 補(cache or live)
     missing = [k for k in ("per", "pbr", "yield") if k not in out]
     if missing:
-        twse_per = twse_cache.get_per_latest(ticker)
+        twse_per = twse_cache.get_per_latest_live(ticker)
         if twse_per:
             if "per" in missing and twse_per.get("per") is not None:
                 out["per"] = twse_per["per"]

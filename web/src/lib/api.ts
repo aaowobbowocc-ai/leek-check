@@ -220,6 +220,10 @@ export const api = {
     tickers.length
       ? get<Record<string, number[]>>(`/api/sparklines/batch?tickers=${tickers.join(",")}&days=${days}`)
       : Promise.resolve({} as Record<string, number[]>),
+  getOhlcv: (ticker: string, days = 60) =>
+    get<{ ticker: string; bars: Array<{ date: string; open: number; high: number; low: number; close: number; volume: number }> }>(
+      `/api/ohlcv/${ticker}?days=${days}`
+    ),
 };
 
 export interface NewsItem {

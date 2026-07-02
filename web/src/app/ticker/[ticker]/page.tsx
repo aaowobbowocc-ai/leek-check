@@ -11,6 +11,7 @@ import { ScoreRing } from "@/components/ui/score-ring";
 import { AlertBell } from "@/components/alert-bell";
 import { StCard, StHeader, StCaption } from "@/components/ui/st-card";
 import { PriceChart, RevenueBarChart, ChipStackedBar, TechGrid, FundaGrid, HealthScanGrid } from "@/components/charts";
+import { AdvancedChart } from "@/components/advanced-chart";
 
 export default function TickerPage() {
   const params = useParams<{ ticker: string }>();
@@ -146,13 +147,11 @@ function HealthCheckView({ data, onBack }: { data: HealthCheck; onBack: () => vo
         {/* 🤖 智能健檢報告 — 緊接分數下方,user 第一眼看到 */}
         <AiPromptCard data={data} verdict={verdict} />
 
-        {/* 📈 60 日股價圖 + MA(主圖)*/}
-        {data.ohlcv_60d.length > 0 && (
-          <StCard>
-            <StHeader emoji="📈" title="60 日股價趨勢" />
-            <PriceChart bars={data.ohlcv_60d} />
-          </StCard>
-        )}
+        {/* 📈 股價圖 — 時間尺度 + 折線/K線 切換 */}
+        <StCard>
+          <StHeader emoji="📈" title="股價走勢" sub="5D / 1M / 3M / 6M / 1Y · 折線 / K 線 切換" />
+          <AdvancedChart ticker={ticker} />
+        </StCard>
 
         {/* 📋 技術面數值 grid */}
         {data.tech && (
