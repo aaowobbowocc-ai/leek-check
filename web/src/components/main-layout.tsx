@@ -736,10 +736,7 @@ function MarketDashboardCard() {
         );
       })()}
 
-      {/* ════════ Group 2: 🤖 智能整理(同類聚合)════════ */}
-      <GroupHeader emoji="🤖" label="智能整理" sub="用你選的語氣 × 時間框架" />
-      <AiMarketInsightCard dashboard={data} />
-      <AiNewsSentimentCard />
+      {/* 智能整理:大盤 / 新聞公版已合併到首頁「📖 今日大盤晨報」 */}
 
       {/* ════════ Group 3: 📰 新聞(同類聚合)════════ */}
       <GroupHeader emoji="📰" label="新聞" sub="Google News · 30 分快取" />
