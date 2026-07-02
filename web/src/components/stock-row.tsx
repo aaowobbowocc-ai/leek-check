@@ -35,7 +35,8 @@ type Props = {
 export function StockRow({
   ticker, name, industry, quote, hasHolding, holding, onOpen, onEdit,
   isPicked, onPin, isInWatch, onAddWatch, defaultExpanded = false,
-}: Props) {
+  sparkline,
+}: Props & { sparkline?: number[] }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const { light } = cardTier(ticker, industry);
   // 防連點:500ms 內只能 click 一次
@@ -66,6 +67,7 @@ export function StockRow({
         expanded={expanded}
         hasHolding={hasHolding}
         onClick={() => setExpanded(!expanded)}
+        sparkline={sparkline}
       />
 
       <AnimatePresence initial={false}>

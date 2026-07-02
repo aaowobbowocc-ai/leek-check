@@ -216,6 +216,10 @@ export const api = {
     post<{ text: string; model: string }>("/api/ai/personal-brief", body),
   aiTickerBrief: (body: Record<string, unknown>) =>
     post<{ text: string; model: string }>("/api/ai/ticker-brief", body),
+  getSparklinesBatch: (tickers: string[], days = 20) =>
+    tickers.length
+      ? get<Record<string, number[]>>(`/api/sparklines/batch?tickers=${tickers.join(",")}&days=${days}`)
+      : Promise.resolve({} as Record<string, number[]>),
 };
 
 export interface NewsItem {

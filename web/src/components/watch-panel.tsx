@@ -68,6 +68,14 @@ export function WatchPanel() {
     return m;
   }, [quotesQ.data]);
 
+  // 批次抓 20 日 sparkline
+  const sparklinesQ = useQuery({
+    queryKey: ["sparklines", [...tickers].sort()],
+    queryFn: () => api.getSparklinesBatch(tickers, 20),
+    enabled: tickers.length > 0,
+    staleTime: 6 * 60 * 60_000,   // 6h
+  });
+
   // 操作:加 / 移除 / 更新
   const handleAdd = async (info: { ticker: string; name: string; industry: string; type: string }) => {
     const item: WatchlistItem = { ticker: info.ticker, type: info.type };
@@ -253,6 +261,7 @@ export function WatchPanel() {
               onPin={() => togglePick(item.ticker)}
               onOpen={() => router.push(`/ticker/${item.ticker}`)}
               onRemove={() => handleRemove(item)}
+              sparkline={sparklinesQ.data?.[item.ticker]}
             />
           );
         })}
@@ -277,7 +286,7 @@ export function WatchPanel() {
 
 /** 整張卡可拖曳排序 + 左滑顯示刪除 */
 function ReorderableRow({
-  item, q, hasHolding, pnl, pnlPct, isPicked, onPin, onOpen, onRemove,
+  item, q, hasHolding, pnl, pnlPct, isPicked, onPin, onOpen, onRemove, sparkline,
 }: {
   item: WatchlistItem;
   q?: Quote;
@@ -288,6 +297,7 @@ function ReorderableRow({
   onPin: () => void;
   onOpen: () => void;
   onRemove: () => void;
+  sparkline?: number[];
 }) {
   const x = useMotionValue(0);
   const [swiped, setSwiped] = useState(false);
@@ -361,6 +371,7 @@ function ReorderableRow({
           isPicked={isPicked}
           onPin={onPin}
           onOpen={onOpen}
+          sparkline={sparkline}
         />
       </motion.div>
     </Reorder.Item>

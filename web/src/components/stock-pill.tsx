@@ -14,6 +14,7 @@ type Props = {
   expanded?: boolean;
   hasHolding?: boolean;
   onClick?: () => void;
+  sparkline?: number[];   // 20 日收盤 mini 折線
 };
 
 /**
@@ -27,7 +28,7 @@ type Props = {
  * 銳利 = 1px solid 不模糊 + 不用 box-shadow blur
  */
 export function StockPill({
-  ticker, name, industry, quote, expanded, hasHolding, onClick,
+  ticker, name, industry, quote, expanded, hasHolding, onClick, sparkline,
 }: Props) {
   const { light, dark, icon, rarity } = cardTier(ticker, industry);
   const chg = quote ? quote.change_pct : 0;
@@ -117,6 +118,13 @@ export function StockPill({
         </div>
       </div>
 
+      {/* mini 折線圖(20 日收盤,有資料才顯示)*/}
+      {sparkline && sparkline.length >= 2 && (
+        <div className="flex-shrink-0 w-16 h-8 -mr-1 opacity-80">
+          <MiniSparkline data={sparkline} />
+        </div>
+      )}
+
       {/* 價 + % */}
       <div className="text-right flex-shrink-0">
         {quote ? (
@@ -148,5 +156,33 @@ export function StockPill({
         <ChevronDown className="w-3.5 h-3.5 text-st-muted" />
       </motion.div>
     </motion.button>
+  );
+}
+
+function MiniSparkline({ data }: { data: number[] }) {
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const W = 64, H = 32;
+  const points = data.map((v, i) =>
+    `${(i / (data.length - 1)) * W},${H - ((v - min) / range) * (H - 4) - 2}`
+  ).join(" ");
+  const up = data[data.length - 1] >= data[0];
+  const stroke = up ? "#ef4444" : "#10b981";
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full">
+      <defs>
+        <linearGradient id={`g-${stroke}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
+          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <polyline
+        points={`0,${H} ${points} ${W},${H}`}
+        fill={`url(#g-${stroke})`}
+        stroke="none"
+      />
+      <polyline points={points} stroke={stroke} strokeWidth={1.3} fill="none" strokeLinejoin="round" />
+    </svg>
   );
 }
