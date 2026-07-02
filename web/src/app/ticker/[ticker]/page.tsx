@@ -314,7 +314,8 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
     setError(null);
     setAiText(null);
     try {
-      const res = await api.aiExplain({
+      // 用新 ticker-brief endpoint(健檢解讀 + 新聞情緒 一次生成)
+      const res = await api.aiTickerBrief({
         ticker: data.ticker,
         name: data.name,
         industry: data.industry,
@@ -338,7 +339,7 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
 
   return (
     <StCard>
-      <StHeader emoji="🤖" title="智能整理" sub="用白話幫你寫健檢報告" />
+      <StHeader emoji="🤖" title="智能整理" sub="健檢 4 面 + 新聞情緒 一次生成" />
 
       {/* style + timeframe selectors */}
       <div className="grid grid-cols-2 gap-2 mb-3">
@@ -386,7 +387,7 @@ function AiPromptCard({ data, verdict }: { data: HealthCheck; verdict: string })
       >
         <Sparkles className="w-4 h-4" />
         <span className="relative z-10">
-          {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : "查看健檢報告"}
+          {loading ? "智能整理中⋯ (10-15 秒)" : aiText ? "🔄 重新整理" : "查看完整健檢報告"}
         </span>
       </button>
 
@@ -420,80 +421,10 @@ function TickerNewsCard({ ticker, name }: { ticker: string; name: string }) {
     queryFn: () => api.getTickerNews(ticker, name),
     staleTime: 30 * 60_000,
   });
-  const [aiText, setAiText] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [style, setStyle] = useState<"neutral" | "pro" | "casual">("neutral");
-  const [tf, setTf] = useState<"short" | "mid" | "long">("short");
-
-  const runAi = async () => {
-    if (!news?.length) return;
-    setLoading(true);
-    try {
-      const res = await api.aiNewsSentiment({
-        news_titles: news.map(n => n.title),
-        style, timeframe: tf,
-      });
-      setAiText(res.text);
-    } catch (e) {
-      setAiText(`⚠️ ${(e as Error).message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <StCard>
-      <StHeader emoji="📰" title="個股新聞 + 智能整理" sub={`${ticker} ${name} · Google News 30 分快取`} />
-
-      {/* 選 + AI 按鈕 */}
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <div>
-          <div className="text-[10px] text-st-muted mb-1">語氣</div>
-          <select
-            value={style}
-            onChange={(e) => setStyle(e.target.value as typeof style)}
-            className="w-full text-xs rounded-st px-2 py-1.5"
-            style={{ background: "#16181d", border: "1px solid #2f343d", color: "#fff" }}
-          >
-            <option value="neutral">中立白話</option>
-            <option value="pro">嚴肅專業</option>
-            <option value="casual">輕鬆口語</option>
-          </select>
-        </div>
-        <div>
-          <div className="text-[10px] text-st-muted mb-1">時間框架</div>
-          <select
-            value={tf}
-            onChange={(e) => setTf(e.target.value as typeof tf)}
-            className="w-full text-xs rounded-st px-2 py-1.5"
-            style={{ background: "#16181d", border: "1px solid #2f343d", color: "#fff" }}
-          >
-            <option value="short">短期 (1-4 週)</option>
-            <option value="mid">中期 (1-3 月)</option>
-            <option value="long">長期 (6-12 月)</option>
-          </select>
-        </div>
-      </div>
-
-      <button
-        onClick={runAi}
-        disabled={loading || !news?.length}
-        className="btn-smart w-full mb-3"
-      >
-        ✨ <span className="relative z-10">
-          {loading ? "智能整理中⋯" : aiText ? "🔄 重新整理" : `查看新聞情緒(${news?.length ?? 0} 條)`}
-        </span>
-      </button>
-
-      {aiText && (
-        <motion.div
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-          className="rounded p-3 text-xs text-st-soft whitespace-pre-wrap leading-relaxed mb-3"
-          style={{ background: "#0f1218", border: "1px solid #2f343d", borderLeft: "3px solid var(--accent)" }}
-        >
-          {aiText}
-        </motion.div>
-      )}
+      <StHeader emoji="📰" title="個股新聞" sub={`${ticker} ${name} · 新聞情緒解讀已合併到上方智能整理`} />
 
       {/* 新聞列 */}
       {isLoading && <div className="shimmer rounded h-24" />}

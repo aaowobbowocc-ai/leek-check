@@ -206,12 +206,16 @@ export const api = {
   getDailyBrief: () => get<{
     market_insight: string | null;
     news_sentiment: string | null;
+    strategy_brief: string | null;
     slot: string;
     market_cached_at: string | null;
     news_cached_at: string | null;
+    strategy_cached_at: string | null;
   }>("/api/ai/daily-brief"),
   aiPersonalBrief: (body: Record<string, unknown>) =>
     post<{ text: string; model: string }>("/api/ai/personal-brief", body),
+  aiTickerBrief: (body: Record<string, unknown>) =>
+    post<{ text: string; model: string }>("/api/ai/ticker-brief", body),
 };
 
 export interface NewsItem {

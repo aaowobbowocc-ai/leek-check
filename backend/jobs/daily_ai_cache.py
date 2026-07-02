@@ -121,6 +121,53 @@ def regen_news_sentiment() -> bool:
         return False
 
 
+def regen_strategy_brief() -> bool:
+    """抓策略 top hits → call AI 生策略 briefing + cache."""
+    print("[strategy-brief] fetching strategy results ...")
+    try:
+        strat = requests.get(f"{BACKEND}/api/strategy/results", timeout=30).json()
+    except Exception as e:
+        print(f"  ✗ strategy fail: {e}")
+        return False
+
+    strategies = strat.get("strategies", {})
+    if not strategies:
+        print("  ✗ 無策略資料")
+        return False
+
+    # 每個策略取 top 5,平坦化成 list
+    top_hits = []
+    for strat_name, hits in strategies.items():
+        for h in hits[:5]:
+            top_hits.append({
+                "strategy": strat_name,
+                "ticker": h.get("ticker"),
+                "name": h.get("name"),
+                "industry": h.get("industry"),
+                "metric": h.get("metric"),
+            })
+    if not top_hits:
+        print("  ✗ 全部策略都空")
+        return False
+
+    requests.delete(f"{BACKEND}/api/ai/cache/strategy_brief", timeout=10)
+    print(f"  → calling AI with {len(top_hits)} hits ...")
+    try:
+        r = requests.post(f"{BACKEND}/api/ai/strategy-brief", json={
+            "top_hits": top_hits,
+            "style": "neutral", "timeframe": "mid",
+        }, timeout=180)
+        if r.status_code != 200:
+            print(f"  ✗ AI fail {r.status_code}: {r.text[:200]}")
+            return False
+        out = r.json()
+        print(f"  ✓ ok, {len(out.get('text', ''))} chars saved")
+        return True
+    except Exception as e:
+        print(f"  ✗ {e}")
+        return False
+
+
 def main():
     slot = _now_slot()
     print(f"=== daily AI cache regen | slot={slot} | "
@@ -128,6 +175,7 @@ def main():
     ok = []
     ok.append(("market_insight", regen_market_insight()))
     ok.append(("news_sentiment", regen_news_sentiment()))
+    ok.append(("strategy_brief", regen_strategy_brief()))
     succ = sum(1 for _, v in ok if v)
     print(f"=== done: {succ}/{len(ok)} ok ===")
     sys.exit(0 if succ == len(ok) else 1)

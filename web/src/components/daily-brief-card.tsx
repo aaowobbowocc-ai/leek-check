@@ -7,6 +7,34 @@ import { api, type Quote } from "@/lib/api";
 import type { WatchlistItem } from "@/lib/watchlist";
 
 /** 今日大盤晨報(公版,所有 user 同一份)+ 個人化按鈕 */
+const PERSONAL_CACHE_KEY = "leek-personal-brief-cache";
+const PERSONAL_CACHE_TTL = 30 * 60_000; // 30 分鐘
+
+function _loadPersonalCache(hashKey: string): string | null {
+  try {
+    const raw = localStorage.getItem(PERSONAL_CACHE_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (d.hashKey !== hashKey) return null;
+    if (Date.now() - d.ts > PERSONAL_CACHE_TTL) return null;
+    return d.text;
+  } catch { return null; }
+}
+
+function _savePersonalCache(hashKey: string, text: string) {
+  try {
+    localStorage.setItem(PERSONAL_CACHE_KEY, JSON.stringify({
+      hashKey, text, ts: Date.now(),
+    }));
+  } catch {}
+}
+
+function _makeHashKey(picks: string[], watchlist: WatchlistItem[]): string {
+  const p = [...picks].sort().join(",");
+  const wl = watchlist.map(w => `${w.ticker}:${w.shares || 0}:${w.cost_per_share || 0}`).sort().join("|");
+  return `${p}||${wl}`;
+}
+
 export function DailyBriefCard({
   picks,
   watchlist,
@@ -18,8 +46,10 @@ export function DailyBriefCard({
 }) {
   const [expandMarket, setExpandMarket] = useState(true);
   const [expandNews, setExpandNews] = useState(false);
+  const [expandStrategy, setExpandStrategy] = useState(false);
   const [personalText, setPersonalText] = useState<string | null>(null);
   const [personalLoading, setPersonalLoading] = useState(false);
+  const [personalFromCache, setPersonalFromCache] = useState(false);
 
   // 抓公版 daily brief(cache 命中 100%,秒回)
   const briefQ = useQuery({
@@ -35,8 +65,19 @@ export function DailyBriefCard({
     return m;
   }, [quotes]);
 
-  const genPersonal = async () => {
+  const genPersonal = async (force = false) => {
+    const hashKey = _makeHashKey(picks, watchlist);
+    // 命中 cache 直接回,不 hit Gemini
+    if (!force) {
+      const cached = _loadPersonalCache(hashKey);
+      if (cached) {
+        setPersonalText(cached);
+        setPersonalFromCache(true);
+        return;
+      }
+    }
     setPersonalLoading(true);
+    setPersonalFromCache(false);
     try {
       // 拉 dashboard + healthcheck picks(平行)
       const [dashboard, ...healths] = await Promise.all([
@@ -93,6 +134,7 @@ export function DailyBriefCard({
         timeframe: "mid",
       });
       setPersonalText(res.text);
+      _savePersonalCache(hashKey, res.text);
     } catch (e) {
       setPersonalText(`⚠️ 產生失敗:${(e as Error).message}`);
     } finally {
@@ -199,9 +241,37 @@ export function DailyBriefCard({
         </div>
       )}
 
+      {/* 📡 策略今日重點(公版)*/}
+      {brief?.strategy_brief && (
+        <div className="mb-3">
+          <button
+            onClick={() => setExpandStrategy(!expandStrategy)}
+            className="w-full flex items-center gap-2 text-left"
+          >
+            <span className="text-sm">📡</span>
+            <span className="text-xs font-bold text-st-fg flex-1">今日策略命中重點</span>
+            <span className="text-[10px] text-st-muted">{expandStrategy ? "▲" : "▼"}</span>
+          </button>
+          <AnimatePresence>
+            {expandStrategy && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="text-xs text-st-soft whitespace-pre-wrap leading-relaxed mt-2 pl-6 border-l border-st-border">
+                  {brief.strategy_brief}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
       {/* ✨ 個人化按鈕 */}
       <button
-        onClick={genPersonal}
+        onClick={() => genPersonal(!!personalText)}
         disabled={personalLoading || (picks.length === 0 && watchlist.length === 0)}
         className="btn-smart w-full"
       >
@@ -216,6 +286,11 @@ export function DailyBriefCard({
             : "產生我的個人化晨報"}
         </span>
       </button>
+      {personalFromCache && (
+        <div className="text-[10px] text-st-muted text-center mt-2">
+          🕐 讀 30 分鐘內快取(觀察 / 精選未變 · 點重新產生強制重生)
+        </div>
+      )}
 
       {/* 個人化結果 */}
       {personalText && (

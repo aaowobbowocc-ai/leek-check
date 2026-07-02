@@ -323,6 +323,102 @@ def news_sentiment(p: NewsSentimentIn):
     return CachedExplainOut(text=result.text, model=result.model, cached=False)
 
 
+# ────── 個股整合報告(健檢解讀 + 新聞情緒 一次 Gemini call)──────
+class TickerBriefIn(BaseModel):
+    ticker: str
+    name: str
+    industry: str
+    price: float
+    change_pct: float
+    composite: int
+    verdict: str
+    tech: dict | None = None
+    chip: dict | None = None
+    funda: dict | None = None
+    style: str = "neutral"
+    timeframe: str = "mid"
+
+
+@router.post("/ai/ticker-brief", response_model=ExplainOut)
+def ticker_brief(p: TickerBriefIn):
+    """個股完整報告 — 4 面健檢解讀 + 新聞情緒 + 綜合韭菜病警示 一次生成."""
+    def fmt(d):
+        if not d:
+            return "(無資料)"
+        return "\n".join(f"  • {k}: {v}" for k, v in d.items())
+    style = PROMPT_STYLES.get(p.style, PROMPT_STYLES["neutral"])
+    tf = TIMEFRAMES.get(p.timeframe, TIMEFRAMES["mid"])
+
+    # 內部抓近期新聞 title
+    news_titles: list[str] = []
+    try:
+        from backend.api.news import _fetch_rss
+        query = f"{p.ticker} {p.name}".strip()
+        news_items = _fetch_rss(query, max_n=10)
+        for n in news_items[:10]:
+            t = getattr(n, "title", None) or (n.get("title") if isinstance(n, dict) else "")
+            if t:
+                news_titles.append(t)
+    except Exception:
+        pass
+
+    news_section = ""
+    if news_titles:
+        news_section = "\n【近期新聞 title(用來判情緒)】\n" + "\n".join(f"  • {t}" for t in news_titles[:10])
+
+    prompt = f"""你是「韭菜健檢」的客觀分析助理 — 純資料展示,不報明牌不喊飆股。
+
+【標的】{p.ticker} {p.name} ({p.industry or '—'})
+【目前報價】NT$ {p.price:.2f} ({p.change_pct:+.2f}%)
+【健檢分數】{p.composite}/100 ({p.verdict})
+
+【技術面】
+{fmt(p.tech)}
+
+【籌碼面 20 日】
+{fmt(p.chip)}
+
+【基本面】
+{fmt(p.funda)}
+{news_section}
+
+請{style},{tf}
+
+格式(給足夠深度,每段不簡略):
+
+1. 🩺 **技術面健檢**(4-6 句)
+   - RSI / MA / 量價關係
+   - 短期支撐 / 壓力
+   - 動能健康度
+
+2. 🩺 **籌碼面健檢**(4-6 句)
+   - 20 日法人佈局
+   - 三方分歧 vs 一致
+
+3. 🩺 **基本面健檢**(4-6 句)
+   - PER / PBR 估值
+   - 月營收 YoY 趨勢
+
+4. 📰 **新聞情緒判讀**(4-6 句)
+   - 分析近期新聞正面 / 負面比例
+   - 有無 catalyst 或警訊
+   - 若沒新聞:「近期沒特別大新聞,盤面靠籌碼驅動」
+
+5. 🚨 **綜合判斷 + 韭菜病警示**(5-7 句)
+   - 整體 verdict 解釋
+   - 列 2-3 個韭菜病風險
+   - 中期走勢傾向(不明牌)
+   - 建議觀察的關鍵指標
+
+規則:
+- 不報明牌、不給買賣建議
+- 直接從第 1 點開始,不要開場白
+- 用 markdown 粗體強調
+- 數字要具體
+"""
+    return _gemini_run(prompt, max_tokens=3500)
+
+
 # ────── 每日公版晨報(所有 user 同一份)──────
 class DailyBriefOut(BaseModel):
     market_insight: str | None = None
@@ -332,18 +428,99 @@ class DailyBriefOut(BaseModel):
     news_cached_at: str | None = None
 
 
-@router.get("/ai/daily-brief", response_model=DailyBriefOut)
+class DailyBriefOut2(BaseModel):
+    market_insight: str | None = None
+    news_sentiment: str | None = None
+    strategy_brief: str | None = None
+    slot: str
+    market_cached_at: str | None = None
+    news_cached_at: str | None = None
+    strategy_cached_at: str | None = None
+
+
+@router.get("/ai/daily-brief", response_model=DailyBriefOut2)
 def get_daily_brief():
     """公版每日晨報 — 讀 cache,前端首頁自動顯示."""
     market = _load_daily_cache("market_insight") or {}
     news = _load_daily_cache("news_sentiment") or {}
-    return DailyBriefOut(
+    strat = _load_daily_cache("strategy_brief") or {}
+    return DailyBriefOut2(
         market_insight=market.get("text"),
         news_sentiment=news.get("text"),
+        strategy_brief=strat.get("text"),
         slot=_slot_str(),
         market_cached_at=market.get("cached_at"),
         news_cached_at=news.get("cached_at"),
+        strategy_cached_at=strat.get("cached_at"),
     )
+
+
+# 公版策略 briefing — daily_ai_cache job 呼叫
+class StrategyBriefIn(BaseModel):
+    top_hits: list[dict] = []   # [{strategy, ticker, name, metric, industry}]
+    style: str = "neutral"
+    timeframe: str = "mid"
+
+
+@router.post("/ai/strategy-brief", response_model=CachedExplainOut)
+def strategy_brief(p: StrategyBriefIn):
+    if p.style == "neutral" and p.timeframe == "mid":
+        cached = _load_daily_cache("strategy_brief")
+        if cached:
+            return CachedExplainOut(**cached, cached=True)
+
+    style = PROMPT_STYLES.get(p.style, PROMPT_STYLES["neutral"])
+    tf = TIMEFRAMES.get(p.timeframe, TIMEFRAMES["mid"])
+
+    if not p.top_hits:
+        raise HTTPException(status_code=400, detail="無策略 hits")
+
+    hits_by_strat: dict[str, list] = {}
+    for h in p.top_hits:
+        s = h.get("strategy", "unknown")
+        hits_by_strat.setdefault(s, []).append(h)
+
+    section = ""
+    for strat, hits in hits_by_strat.items():
+        section += f"\n【{strat}】\n"
+        for h in hits[:5]:  # 每策略最多列 5
+            metric_str = f"({h.get('metric'):.1f})" if h.get("metric") else ""
+            section += f"  • {h.get('ticker')} {h.get('name', '')} {metric_str} · {h.get('industry', '')}\n"
+
+    prompt = f"""你是「韭菜健檢」的策略分析助理 — 統整今日多個 alpha 策略的命中結果,寫給散戶看。
+
+{section}
+
+請{style},{tf}
+
+格式:
+
+1. 📊 **今日策略總覽**(3-4 句)
+   - 幾個策略命中,方向偏多還是偏空?
+   - 有沒有跨策略重疊的 ticker(值得注意)
+
+2. 🔥 **值得關注的 3-5 檔**(每檔 2-3 句)
+   - 逐檔說明它為什麼被策略命中
+   - 提到產業 + 是否有 catalyst
+   - 不下明牌,說「若 XX 突破 YY 可以留意」
+
+3. 🚨 **注意事項**
+   - 策略命中不等於保證獲利
+   - 需要哪些額外驗證(法人 / 技術面 / 基本面)
+
+規則:
+- 不下明牌、只解讀
+- 直接從第 1 點開始
+- markdown 粗體強調
+- 數字具體
+"""
+    result = _gemini_run(prompt, max_tokens=2500)
+    if p.style == "neutral" and p.timeframe == "mid":
+        now_iso = datetime.now(TPE).isoformat()
+        _save_daily_cache("strategy_brief", {
+            "text": result.text, "model": result.model, "cached_at": now_iso,
+        })
+    return CachedExplainOut(text=result.text, model=result.model, cached=False)
 
 
 # ────── 個人化晨報 ──────
