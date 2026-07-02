@@ -239,12 +239,62 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
       </motion.div>
 
       {/* 🌅 晨報精選 — 提到最上面(僅次於 hero),user 第一眼看到 */}
-      {picks.length > 0 && (
+      {picks.length > 0 ? (
         <BriefPicksCard
           picks={picks}
           quotes={wlQuotes}
           onClick={(tk) => router.push(`/ticker/${tk}`)}
         />
+      ) : (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="rounded-st p-4"
+          style={{
+            background: [
+              "radial-gradient(circle at 12% 18%, rgba(251,191,36,0.08), transparent 35%)",
+              "linear-gradient(180deg, #1c2028 0%, #16181d 50%, #11141a 100%)",
+            ].join(", "),
+            border: "1px dashed #fbbf24aa",
+            borderLeft: "3px solid #fbbf24",
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-2xl">🌅</span>
+            <div className="flex-1">
+              <div className="text-xs text-amber-300 font-bold tracking-wider">晨報精選</div>
+              <div className="text-sm text-st-fg font-bold">還沒鎖定任何檔</div>
+            </div>
+          </div>
+          <p className="text-[11px] text-st-soft leading-relaxed mb-2">
+            📌 到 <b className="text-amber-300">搜尋</b> 或 <b className="text-amber-300">策略</b> tab 點任一檔右邊 📰 按鈕
+            → 最多鎖 5 檔 → AI 每天幫你統一整理健檢報告
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => onNav("search")}
+              className="text-[11px] font-bold px-2.5 py-1 rounded"
+              style={{
+                background: "rgba(251,191,36,0.15)",
+                color: "#fcd34d",
+                border: "1px solid rgba(251,191,36,0.35)",
+              }}
+            >
+              🔍 去搜尋
+            </button>
+            <button
+              onClick={() => onNav("scan")}
+              className="text-[11px] font-bold px-2.5 py-1 rounded"
+              style={{
+                background: "rgba(94,234,212,0.12)",
+                color: "#5eead4",
+                border: "1px solid rgba(94,234,212,0.3)",
+              }}
+            >
+              📡 看策略
+            </button>
+          </div>
+        </motion.div>
       )}
 
       {/* ═══════ 🌡️ 大盤即時(TAIEX + 國際 + 商品)═══════ */}
