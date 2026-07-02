@@ -203,6 +203,15 @@ export const api = {
     post<{ text: string; model: string }>("/api/ai/market-insight", body),
   aiNewsSentiment: (body: { news_titles: string[]; style?: string; timeframe?: string }) =>
     post<{ text: string; model: string }>("/api/ai/news-sentiment", body),
+  getDailyBrief: () => get<{
+    market_insight: string | null;
+    news_sentiment: string | null;
+    slot: string;
+    market_cached_at: string | null;
+    news_cached_at: string | null;
+  }>("/api/ai/daily-brief"),
+  aiPersonalBrief: (body: Record<string, unknown>) =>
+    post<{ text: string; model: string }>("/api/ai/personal-brief", body),
 };
 
 export interface NewsItem {

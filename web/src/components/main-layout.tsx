@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useSession } from "@/lib/store";
 import { NotificationCenter } from "@/components/notification-center";
+import { DailyBriefCard } from "@/components/daily-brief-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useRouter } from "next/navigation";
@@ -237,6 +238,9 @@ function BriefPanel({ onNav }: { onNav: (t: Tab) => void }) {
           strategyHits={totalHits}
         />
       </motion.div>
+
+      {/* 📖 今日大盤晨報(公版 + 個人化按鈕)*/}
+      <DailyBriefCard picks={picks} watchlist={wlList} quotes={wlQuotes} />
 
       {/* 🌅 晨報精選 — 提到最上面(僅次於 hero),user 第一眼看到 */}
       {picks.length > 0 ? (

@@ -323,6 +323,132 @@ def news_sentiment(p: NewsSentimentIn):
     return CachedExplainOut(text=result.text, model=result.model, cached=False)
 
 
+# ────── 每日公版晨報(所有 user 同一份)──────
+class DailyBriefOut(BaseModel):
+    market_insight: str | None = None
+    news_sentiment: str | None = None
+    slot: str
+    market_cached_at: str | None = None
+    news_cached_at: str | None = None
+
+
+@router.get("/ai/daily-brief", response_model=DailyBriefOut)
+def get_daily_brief():
+    """公版每日晨報 — 讀 cache,前端首頁自動顯示."""
+    market = _load_daily_cache("market_insight") or {}
+    news = _load_daily_cache("news_sentiment") or {}
+    return DailyBriefOut(
+        market_insight=market.get("text"),
+        news_sentiment=news.get("text"),
+        slot=_slot_str(),
+        market_cached_at=market.get("cached_at"),
+        news_cached_at=news.get("cached_at"),
+    )
+
+
+# ────── 個人化晨報 ──────
+class PersonalBriefIn(BaseModel):
+    picks: list[dict] = []       # [{ticker, name, price, change_pct, composite, rev_yoy?, rsi?}]
+    holdings: list[dict] = []    # [{ticker, name, shares, cost_per_share, current_price, pnl_pct}]
+    watchlist: list[dict] = []   # [{ticker, name, price, change_pct}]
+    dashboard: dict = {}         # taiex, vix, sp500 等
+    style: str = "neutral"
+    timeframe: str = "mid"
+
+
+@router.post("/ai/personal-brief", response_model=ExplainOut)
+def personal_brief(p: PersonalBriefIn):
+    style = PROMPT_STYLES.get(p.style, PROMPT_STYLES["neutral"])
+    tf = TIMEFRAMES.get(p.timeframe, TIMEFRAMES["mid"])
+
+    # 組資料 sections
+    market_section = ""
+    if p.dashboard:
+        t = p.dashboard.get("taiex") or {}
+        vix = p.dashboard.get("vix") or {}
+        sp500 = p.dashboard.get("sp500") or {}
+        market_section = f"""
+【今日大盤】
+  • 加權 {t.get('price', '?')} ({t.get('change_pct', 0):+.2f}%) · {t.get('temperature', '')}
+  • 距 MA200 {t.get('ma200_dist_pct', '?')}%
+  • VIX {vix.get('price', '?')} ({vix.get('change_pct', 0):+.2f}%)
+  • SP500 {sp500.get('price', '?')} ({sp500.get('change_pct', 0):+.2f}%)"""
+
+    picks_section = ""
+    if p.picks:
+        picks_lines = []
+        for pk in p.picks:
+            line = (f"  • {pk.get('ticker')} {pk.get('name', '')} "
+                    f"${pk.get('price', 0):.2f} ({pk.get('change_pct', 0):+.2f}%) "
+                    f"· 健檢 {pk.get('composite', '?')}/100")
+            if pk.get("rev_yoy") is not None:
+                line += f" · YoY {pk['rev_yoy']:+.1f}%"
+            picks_lines.append(line)
+        picks_section = f"\n【晨報精選 {len(p.picks)} 檔】\n" + "\n".join(picks_lines)
+
+    holdings_section = ""
+    if p.holdings:
+        holdings_lines = []
+        for h in p.holdings:
+            pnl = h.get("pnl_pct", 0)
+            emoji = "🟢" if pnl >= 0 else "🔴"
+            holdings_lines.append(
+                f"  {emoji} {h.get('ticker')} {h.get('name', '')} "
+                f"{h.get('shares')} 股 · 成本 ${h.get('cost_per_share', 0):.2f} · "
+                f"現價 ${h.get('current_price', 0):.2f} · 未實現 {pnl:+.2f}%"
+            )
+        holdings_section = f"\n【當前持股】\n" + "\n".join(holdings_lines)
+
+    watchlist_section = ""
+    if p.watchlist:
+        wl_lines = [
+            f"  • {w.get('ticker')} {w.get('name', '')} "
+            f"({w.get('change_pct', 0):+.2f}%)"
+            for w in p.watchlist[:10]
+        ]
+        watchlist_section = f"\n【觀察清單 {len(p.watchlist)} 檔 (最多列 10)】\n" + "\n".join(wl_lines)
+
+    prompt = f"""你是使用者的專屬股市顧問 — 讀完他今日的持股、觀察、晨報精選、大盤數據,寫一份針對「他個人」的每日 briefing。
+
+{market_section}
+{picks_section}
+{holdings_section}
+{watchlist_section}
+
+請{style},{tf}
+
+格式(給足夠深度,不簡略):
+
+1. 🌡️ **市場位階與整體情緒**(3-5 句)
+   - 加權目前是什麼溫度、跟你關心的股相關性
+   - VIX / 美股連動對台股早盤影響
+
+2. 🎯 **晨報精選逐檔重點**(每檔 3-4 句)
+   - 逐檔用「你今天要盯的重點」語氣寫
+   - 提到分數、動能、有沒有 catalyst 事件
+
+3. 💰 **持股健康度回顧**(3-5 句)
+   - 整體損益狀況
+   - 特別提某檔 pnl 突出(正或負)
+   - 集中度風險(若有)
+
+4. ⭐ **觀察清單快速掃**(2-3 句)
+   - 觀察清單有沒有突然強勢的可以升級為精選
+   - 有沒有崩壞的建議下架
+
+5. 🚨 **今日 3 個 actionable 提醒**
+   - 具體可執行的觀察指標(不下明牌,說「若 XX 破 YY 值 → 提高警覺」)
+
+規則:
+- 不下明牌、純解讀
+- 不要說「以上僅供參考」等結尾贅述
+- 直接從第 1 點開始
+- 用 markdown 粗體強調關鍵字
+- 數字要具體
+"""
+    return _gemini_run(prompt, max_tokens=3000)
+
+
 # ────── 手動強制重生(admin)──────
 @router.delete("/ai/cache/{kind}")
 def clear_cache(kind: str):
