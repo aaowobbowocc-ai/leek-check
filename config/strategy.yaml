@@ -92,6 +92,15 @@ valuation:
   min_sample_size: 252
 
 # ─────────────────────────────────────────
+# Strategy Allocator（2D Regime → 資金分配）
+# ─────────────────────────────────────────
+strategy_allocator:
+  ma_short: 20                 # 短期均線（判斷方向）
+  ma_long: 60                  # 長期均線（趨勢確認）
+  bull_threshold_pct: 0.5      # Close > MA20 且 MA20 > MA60 各超過此 % → bull
+  bear_threshold_pct: -0.5     # Close < MA20 且 MA20 < MA60 各低於此 % → bear
+
+# ─────────────────────────────────────────
 # Concept Drift
 # ─────────────────────────────────────────
 concept_drift:

@@ -69,8 +69,9 @@ TICKER_CATEGORY = {
     "IAU": "gold", "00635U": "gold", "GLD": "gold",
     # Japan
     "DXJ": "japan_dxj", "EWJ": "japan_dxj",
-    # Legacy individual stocks (set stop loss -15%)
+    # Individual stocks / 個股部位 (set stop loss -15%)
     "2345": "legacy", "2408": "legacy", "009819": "legacy",
+    "6233": "legacy", "3017": "legacy", "4543": "legacy",
 }
 
 

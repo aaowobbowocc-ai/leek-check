@@ -210,12 +210,154 @@ def estimate_etf_premium(
 
 
 # ─────────────────────────────────────────
+# 輔助：直接從 yfinance 抓取 ETF 資料
+# ─────────────────────────────────────────
+def fetch_etf_ohlcv_direct(
+    ticker: str, days: int = 90
+) -> pd.DataFrame | None:
+    """
+    簡易版：用 yfinance 直接抓最近 N 日資料（無快取）。
+    主要用於宏觀儀表板的 ETF 溢價估算。
+    自動轉換台股 ETF 格式 (00646 → 0646.TW)。
+    """
+    try:
+        import yfinance as yf
+        # 轉換台股 ETF 格式
+        yf_ticker = ticker
+        if ticker.startswith("00"):
+            yf_ticker = ticker[2:] + ".TW"
+        elif ticker.startswith("0"):
+            yf_ticker = ticker + ".TW"
+
+        raw = yf.download(yf_ticker, period=f"{days}d", progress=False, auto_adjust=True)
+        if raw.empty:
+            return None
+        if isinstance(raw.columns, pd.MultiIndex):
+            raw.columns = raw.columns.get_level_values(0)
+        df = raw.reset_index().rename(columns={"Date": "date", "Close": "close"})
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        return df[["date", "close"]]
+    except Exception:
+        return None
+
+
+def estimate_etf_premiums_batch(
+    usd_twd_rate: float = 32.0,
+    etf_list: list[str] | None = None,
+    get_tw_ohlcv=None,
+) -> list[ETFPremiumCheck]:
+    """
+    批量估算指定 ETF 的溢價（或所有已知 ETF）。
+    用 get_tw_ohlcv_adjusted 取台股 ETF（支援快取），yfinance 取美股參考。
+    """
+    if etf_list is None:
+        etf_list = list(ETF_PREMIUM_REFERENCES.keys())
+
+    from datetime import date, timedelta
+    results = []
+    today = date.today()
+    start = today - timedelta(days=90)
+
+    for tw_tk in etf_list:
+        try:
+            info = ETF_PREMIUM_REFERENCES.get(tw_tk)
+            if info is None:
+                continue
+
+            # 台股 ETF：用 get_tw_ohlcv_adjusted（如果提供），或 yfinance fallback
+            tw_df = None
+            if get_tw_ohlcv is not None:
+                try:
+                    tw_df = get_tw_ohlcv(tw_tk, start, today)
+                except Exception:
+                    pass
+
+            if tw_df is None or tw_df.empty:
+                tw_df = fetch_etf_ohlcv_direct(tw_tk, days=90)
+
+            # 美股參考：用 yfinance
+            ref_df = fetch_etf_ohlcv_direct(info["ref"], days=90)
+
+            if tw_df is not None and not tw_df.empty and ref_df is not None and not ref_df.empty:
+                check = estimate_etf_premium(tw_tk, tw_df, ref_df, usd_twd_rate)
+                if check is not None:
+                    results.append(check)
+        except Exception:
+            continue
+    return results
+
+
+# ─────────────────────────────────────────
+# DXJ 加碼觸發（基於 16 年 backtest）
+# ─────────────────────────────────────────
+@dataclass(frozen=True)
+class DXJEntryTrigger:
+    """DXJ 進場時機訊號（base DCA 8% → 加碼 12%）
+
+    16 年實證 alpha（同 ticker random window baseline）：
+      - SPY 90 日跌 >10% → DXJ 90 日 alpha +3.71pp (z=4.24, win 87%)
+      - JPY 30 日急升 >5% → DXJ 90 日 alpha +5.22pp (z=5.44, win 88%)
+      - SPY 30 日跌 >10% → DXJ 30 日 alpha +3.27pp (z=5.01, win 80%)
+    """
+    spy_30d: float | None
+    spy_90d: float | None
+    jpy_30d: float | None
+    triggers: list[str]
+    suggestion: str  # 中文建議
+
+
+def compute_dxj_entry_trigger(
+    spy_ohlcv: pd.DataFrame | None,
+    usdjpy_ohlcv: pd.DataFrame | None,
+) -> DXJEntryTrigger | None:
+    """偵測 DXJ 加碼條件。需 SPY 與 USDJPY=X 各至少 95 日資料。"""
+    if spy_ohlcv is None or usdjpy_ohlcv is None:
+        return None
+    if spy_ohlcv.empty or usdjpy_ohlcv.empty:
+        return None
+
+    def pct_change_n(df, n):
+        if len(df) < n + 1: return None
+        d = df.sort_values("date").reset_index(drop=True)
+        return (float(d["close"].iloc[-1]) / float(d["close"].iloc[-n - 1]) - 1) * 100
+
+    spy_30 = pct_change_n(spy_ohlcv, 30)
+    spy_90 = pct_change_n(spy_ohlcv, 90)
+    jpy_30 = pct_change_n(usdjpy_ohlcv, 30)
+
+    triggers = []
+    # 2026-05-29 fix: SPY 30d threshold 是 -5% (matches backtest + strategy_signals_section);
+    # 之前 -10% 太嚴永遠不觸發
+    if spy_30 is not None and spy_30 < -5:
+        triggers.append(f"SPY 30 日跌 {spy_30:.1f}% (≤-5%) → DXJ 30 日 +3.27pp alpha")
+    if spy_90 is not None and spy_90 < -10:
+        triggers.append(f"SPY 90 日跌 {spy_90:.1f}% (≤-10%) → DXJ 90 日 +3.71pp alpha")
+    if jpy_30 is not None and abs(jpy_30) > 5:
+        if jpy_30 > 0:
+            triggers.append(f"USD/JPY 30 日 +{jpy_30:.1f}% (日圓貶 >5%) → DXJ 90 日 +2.81pp alpha")
+        else:
+            triggers.append(f"USD/JPY 30 日 {jpy_30:.1f}% (日圓急升 >5%) → DXJ 90 日 +5.22pp alpha 最強")
+
+    if triggers:
+        suggestion = "🟢 DXJ 加碼觸發（base 8% → 加碼至 12%）：\n" + "\n".join(
+            f"    - {t}" for t in triggers
+        )
+    else:
+        suggestion = "⚪ DXJ：無加碼訊號，維持 base DCA 8%"
+    return DXJEntryTrigger(
+        spy_30d=spy_30, spy_90d=spy_90, jpy_30d=jpy_30,
+        triggers=triggers, suggestion=suggestion,
+    )
+
+
+# ─────────────────────────────────────────
 # 渲染 Markdown
 # ─────────────────────────────────────────
 def render_macro_section(
     correlation: CorrelationStatus | None,
     vix: VIXStatus | None,
     etf_premiums: list[ETFPremiumCheck],
+    dxj_trigger: DXJEntryTrigger | None = None,
 ) -> str:
     lines = ["## 🌍 全球宏觀儀表板"]
 
@@ -229,6 +371,15 @@ def render_macro_section(
     # VIX
     if vix is not None:
         lines.append(f"- {vix.description}")
+
+    # DXJ 加碼觸發
+    if dxj_trigger is not None:
+        lines.append("\n### 🇯🇵 DXJ 進場時機")
+        lines.append(f"- {dxj_trigger.suggestion}")
+        if dxj_trigger.spy_30d is not None and dxj_trigger.spy_90d is not None and dxj_trigger.jpy_30d is not None:
+            lines.append(f"- 監控值: SPY 30d {dxj_trigger.spy_30d:+.1f}% / "
+                         f"90d {dxj_trigger.spy_90d:+.1f}% / "
+                         f"USDJPY 30d {dxj_trigger.jpy_30d:+.1f}%")
 
     # ETF 溢價
     lines.append("\n### TW 投信版海外 ETF 折溢價")

@@ -47,23 +47,39 @@ class FugleClient:
             logger.warning("Fugle API 失敗 (%s)，退回 yfinance: %s", ticker, exc)
             return self._yfinance_quote(ticker)
 
-    @staticmethod
-    def _yfinance_quote(ticker: str) -> float:
+    # 上櫃 (TPEx) 個股 — yfinance 需要 .TWO 而非 .TW
+    _TPEX_TICKERS = {"6233", "4543", "5483", "6488", "6515", "3324"}
+
+    @classmethod
+    def _yfinance_quote(cls, ticker: str) -> float:
         import pandas as pd
         import yfinance as yf  # type: ignore
 
-        tw_ticker = ticker if "." in ticker else f"{ticker}.TW"
-        hist = yf.download(tw_ticker, period="5d", auto_adjust=True, progress=False)
-        if hist.empty:
-            raise ValueError(f"yfinance 無法取得 {tw_ticker} 的報價")
-        # 新版 yfinance 單 ticker 也回 MultiIndex columns → 展平
-        if isinstance(hist.columns, pd.MultiIndex):
-            hist.columns = hist.columns.get_level_values(0)
-        close = hist["Close"].dropna()
-        if close.empty:
-            raise ValueError(f"yfinance {tw_ticker} 近 5 日無收盤價")
-        last = close.iloc[-1]
-        # squeeze() 處理單一元素殘留 Series 的情境
-        if hasattr(last, "item"):
-            return float(last.item() if hasattr(last, "item") else last)
-        return float(last)
+        if "." in ticker:
+            candidates = [ticker]
+        elif ticker in cls._TPEX_TICKERS:
+            candidates = [f"{ticker}.TWO", f"{ticker}.TW"]
+        else:
+            candidates = [f"{ticker}.TW", f"{ticker}.TWO"]
+
+        last_err: Exception | None = None
+        for tw_ticker in candidates:
+            try:
+                hist = yf.download(tw_ticker, period="5d", auto_adjust=True, progress=False)
+                if hist.empty:
+                    last_err = ValueError(f"yfinance {tw_ticker} 空資料")
+                    continue
+                if isinstance(hist.columns, pd.MultiIndex):
+                    hist.columns = hist.columns.get_level_values(0)
+                close = hist["Close"].dropna()
+                if close.empty:
+                    last_err = ValueError(f"yfinance {tw_ticker} 近 5 日無收盤價")
+                    continue
+                last = close.iloc[-1]
+                if hasattr(last, "item"):
+                    return float(last.item())
+                return float(last)
+            except Exception as exc:
+                last_err = exc
+                continue
+        raise ValueError(f"yfinance 無法取得 {ticker} 的報價 (tried {candidates}): {last_err}")

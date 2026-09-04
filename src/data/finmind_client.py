@@ -43,10 +43,34 @@ from src.data._cache import (
     save_cache,
     slice_by_date,
 )
+from src.data import local_source as _local
+
+# Migration toggle: try local TWSE/MOPS scraped cache before hitting FinMind.
+# Default True so post-2026-05-20 (FinMind expiry), system continues working
+# without code change. Set INVEST_DISABLE_LOCAL=1 in .env to force FinMind only.
+import os as _os
+_PREFER_LOCAL_DEFAULT = _os.environ.get("INVEST_DISABLE_LOCAL") != "1"
 
 _API_URL = "https://api.finmindtrade.com/api/v4/data"
 _HISTORY_START = date(2017, 1, 1)
 _DEFAULT_CACHE = Path(__file__).resolve().parents[2] / "data" / "cache" / "finmind"
+# Sponsor 訂閱於 2026-06-02 到期 — 過期後 API 會回 401/402,讓 caller 拿空 df fallback 到 cache
+# 避免每日 morning briefing crash。需要 daily update 時再臨時訂閱 1 個月。
+_FINMIND_EXPIRED_AFTER = date(2026, 6, 2)
+_FINMIND_EXPIRY_LOGGED = False  # 一天只 log 一次 warning
+
+
+def _log_finmind_expired_once() -> None:
+    """過期後 fallback 至 cache-only;每個 process 只 log 一次避免洗版。"""
+    global _FINMIND_EXPIRY_LOGGED
+    if not _FINMIND_EXPIRY_LOGGED:
+        import sys as _sys
+        print(
+            f"[WARN] FinMind Sponsor 訂閱已過期 ({_FINMIND_EXPIRED_AFTER}),"
+            f"API 失敗,返回空 DataFrame fallback 至 cache。需 daily update 請臨時訂閱。",
+            file=_sys.stderr, flush=True,
+        )
+        _FINMIND_EXPIRY_LOGGED = True
 
 
 class FinMindClient:
@@ -60,7 +84,14 @@ class FinMindClient:
     def get_institutional(self, ticker: str, start: date, end: date) -> pd.DataFrame:
         """
         回傳欄位: date | name(外資/投信/自營) | buy | sell | net_buy
+
+        Migration: tries local TWSE T86 scrape first (post-2026-05-20 FinMind
+        expiry); falls back to FinMind if local cache empty for the range.
         """
+        if _PREFER_LOCAL_DEFAULT:
+            local = _local.load_institutional_local(ticker, start, end)
+            if not local.empty:
+                return self._norm_institutional(local)
         return self._get(
             dataset="TaiwanStockInstitutionalInvestorsBuySell",
             ticker=ticker,
@@ -135,13 +166,19 @@ class FinMindClient:
             "start_date": d.isoformat(),
             "token": self.token,
         }
-        resp = requests.get(_API_URL, params=params, timeout=30)
-        resp.raise_for_status()
-        payload = resp.json()
-        if payload.get("status") != 200:
-            raise RuntimeError(
-                f"FinMind API error [{payload.get('status')}]: {payload.get('msg')}"
-            )
+        try:
+            resp = requests.get(_API_URL, params=params, timeout=30)
+            resp.raise_for_status()
+            payload = resp.json()
+            if payload.get("status") != 200:
+                raise RuntimeError(
+                    f"FinMind API error [{payload.get('status')}]: {payload.get('msg')}"
+                )
+        except Exception:
+            if date.today() > _FINMIND_EXPIRED_AFTER:
+                _log_finmind_expired_once()
+                return pd.DataFrame()
+            raise
         df = pd.DataFrame(payload.get("data", []))
         if df.empty:
             return df
@@ -165,6 +202,39 @@ class FinMindClient:
             df.groupby(["date", "broker_id", "broker_name"], as_index=False)[["buy", "sell"]].sum()
         )
         return agg
+
+    # ─────────────────────────────────────
+    # 大戶持股分級 — 需 Sponsor 方案（NT$999/月）
+    # ─────────────────────────────────────
+    def get_holding_shares_per(self, ticker: str, start: date, end: date) -> pd.DataFrame:
+        """
+        集保大戶持股分級（每週更新，通常週五揭露）。
+
+        回傳欄位: date | big_holder_pct
+          big_holder_pct: "more than 1,000,001 shares"（≥1000 張）佔發行量 %
+
+        ⚠️ 需 FinMind Sponsor 方案；資料頻率為週（非日），4 週斜率約 4 個資料點。
+        """
+        return self._get(
+            dataset="TaiwanStockHoldingSharesPer",
+            ticker=ticker,
+            start=start,
+            end=end,
+            normalize=self._norm_holding_shares_per,
+        )
+
+    @staticmethod
+    def _norm_holding_shares_per(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return pd.DataFrame()
+        df = df.copy()
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        df["percent"] = pd.to_numeric(df["percent"], errors="coerce")
+        big = df[df["HoldingSharesLevel"] == "more than 1,000,001"].copy()
+        if big.empty:
+            return pd.DataFrame()
+        big = big.rename(columns={"percent": "big_holder_pct"})
+        return big[["date", "big_holder_pct"]].sort_values("date").reset_index(drop=True)
 
     # ─────────────────────────────────────
     # 還原股價（Backer+ 方案補 yfinance 2018 前缺洞用）— 暫不啟用
@@ -241,7 +311,15 @@ class FinMindClient:
         """
         回傳欄位: date | per | pbr | dividend_yield
         FinMind TaiwanStockPER 欄位: PER | PBR | dividend_yield
+
+        Migration: tries local TWSE BWIBBU_d scrape first.
+        Note: TWSE PER methodology may differ from FinMind (trailing 4Q vs
+        backtest-aligned). Cross-validate with smoke_test_local_vs_finmind.py.
         """
+        if _PREFER_LOCAL_DEFAULT:
+            local = _local.load_per_local(ticker, start, end)
+            if not local.empty:
+                return self._norm_per_pbr(local)
         return self._get(
             dataset="TaiwanStockPER",
             ticker=ticker,
@@ -275,7 +353,15 @@ class FinMindClient:
         回傳欄位: date | revenue | revenue_month | revenue_year |
                   revenue_yoy | revenue_mom
         FinMind TaiwanStockMonthRevenue 的公告日即為 date。
+
+        Migration: tries local MOPS scrape first.
+        Note: MOPS doesn't expose YoY/MoM — these are computed downstream
+        if missing.
         """
+        if _PREFER_LOCAL_DEFAULT:
+            local = _local.load_monthly_revenue_local(ticker, start, end)
+            if not local.empty:
+                return self._norm_monthly_revenue(local)
         return self._get(
             dataset="TaiwanStockMonthRevenue",
             ticker=ticker,
@@ -394,9 +480,13 @@ class FinMindClient:
             last = pd.to_datetime(cached["date"]).dt.date.max()
             fetch_start = last + timedelta(days=1)
             new = self._fetch(dataset, ticker, fetch_start, date.today())
-            df = pd.concat([cached, new], ignore_index=True).drop_duplicates(
-                subset="date", keep="last"
-            )
+            # Bug fix (2026-05-04): 部分 dataset 每天有多 rows（如 holding 17 levels,
+            # institutional 多 法人, financial 多 type）。用所有 columns 做 dedup
+            # 而非單一 "date"，避免每天只保留 1 row 的 cache 損壞。
+            df = pd.concat([cached, new], ignore_index=True)
+            # 用所有 columns 做 unique key（保留所有 multi-row-per-date 結構）
+            dedup_cols = [c for c in df.columns if c not in ()]
+            df = df.drop_duplicates(subset=dedup_cols, keep="last")
             save_cache(path, df)
         else:
             df = self._fetch(dataset, ticker, _HISTORY_START, date.today())
@@ -418,13 +508,19 @@ class FinMindClient:
             "end_date": end.isoformat(),
             "token": self.token,
         }
-        resp = requests.get(_API_URL, params=params, timeout=30)
-        resp.raise_for_status()
-        payload = resp.json()
-        if payload.get("status") != 200:
-            raise RuntimeError(
-                f"FinMind API error [{payload.get('status')}]: {payload.get('msg')}"
-            )
+        try:
+            resp = requests.get(_API_URL, params=params, timeout=30)
+            resp.raise_for_status()
+            payload = resp.json()
+            if payload.get("status") != 200:
+                raise RuntimeError(
+                    f"FinMind API error [{payload.get('status')}]: {payload.get('msg')}"
+                )
+        except Exception:
+            if date.today() > _FINMIND_EXPIRED_AFTER:
+                _log_finmind_expired_once()
+                return pd.DataFrame()
+            raise
         df = pd.DataFrame(payload.get("data", []))
         if df.empty:
             return df

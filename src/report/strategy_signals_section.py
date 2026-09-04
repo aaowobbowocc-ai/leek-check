@@ -385,7 +385,7 @@ def render_dxj_timing_section() -> str:
             lines.append("| SPY | — | — | ⚠️ 資料抓取失敗 |")
 
         try:
-            jpy = yf.Ticker("USDJPY=X")
+            jpy = yf.Ticker("JPY=X")  # 統一 ticker (morning_briefing 用同一個)
             jpy_hist = jpy.history(period="40d", auto_adjust=False)
             if len(jpy_hist) >= 30:
                 jpy_30d_change = abs(jpy_hist["Close"].iloc[-1] / jpy_hist["Close"].iloc[-30] - 1) * 100
@@ -410,8 +410,102 @@ def render_dxj_timing_section() -> str:
         return f"## 🇯🇵 DXJ Timing\n\n計算失敗: {e}\n"
 
 
+def render_quiet_limitdown_section(project_root: Path) -> str:
+    """量縮跌停反彈 — 短線 5 天 strategy。
+
+    讀 scanner_hits.csv,過濾 signal == "quiet_limitdown_reversal",顯示具體
+    進出場規則。Audit:
+      - per-trade alpha +4.27%/5d, win 71% (n=4733)
+      - non-overlapping correction: +2.13% true alpha (還是顯著)
+      - portfolio-level 16-config sweep: 全輸 0050 (capacity-constrained)
+      - 結論: 對 retail 個別 trade picker 可用,不適合系統化 portfolio
+    """
+    hits_path = project_root / "data" / "paper_trades" / "scanner_hits.csv"
+    lines = ["## 📉 [Paper] 量縮跌停反彈 (短線 5d)\n"]
+
+    # Strategy explanation
+    lines.append("<details><summary>📖 量縮跌停反彈是什麼 (點開)</summary>\n")
+    lines.append("**單一條件訊號**:")
+    lines.append("- 當天跌幅 ≤ -9.5% (跌停或近跌停)")
+    lines.append("- 量比 (今日量 / 60 日均量) < 0.8 (量縮)")
+    lines.append("")
+    lines.append("**為什麼有 alpha**:")
+    lines.append("散戶看到跌停會恐慌,但「量縮」表示沒人砍倉 → 沒被洗出去 → 反彈高。")
+    lines.append("")
+    lines.append("**Audit 數字** (post-2020 robust, MCPT p < 0.0001):")
+    lines.append("- 5d hold: mean **+4.27%**, win **71%**, n=4733")
+    lines.append("- non-overlap 校正: +2.13% true alpha (仍顯著)")
+    lines.append("- ⚠️ portfolio 系統化 backtest: 16/16 config 輸 0050 — 只適合**個別 trade picker**")
+    lines.append("")
+    lines.append("**進場規則**:")
+    lines.append("```")
+    lines.append("T+1 09:00 開盤前掛限價買進 (限價 = T 收盤 +0.5%)")
+    lines.append("單筆 ≤ 總資產 5%, 最多同時 5 筆")
+    lines.append("```")
+    lines.append("")
+    lines.append("**出場規則**:")
+    lines.append("```")
+    lines.append("A. T+5 收盤 強制平倉 (固定 5d timeout)")
+    lines.append("B. 途中觸 +5% → 鎖 50% 利潤,剩 50% hold 到 T+5")
+    lines.append("C. 途中跌破 -7% → stop loss 全砍")
+    lines.append("```")
+    lines.append("</details>\n")
+
+    # Read today's hits
+    if not hits_path.exists():
+        lines.append("> 尚未有 scanner_hits.csv,等 14:00 收盤後 scanner 跑完")
+        return "\n".join(lines)
+
+    try:
+        df = pd.read_csv(hits_path)
+    except Exception as e:
+        lines.append(f"> 讀取錯誤: {e}")
+        return "\n".join(lines)
+
+    # Filter quiet_limitdown_reversal only, latest scan_date
+    qld = df[df["signal"] == "quiet_limitdown_reversal"]
+    if qld.empty:
+        lines.append("> ✅ 今日**無**量縮跌停訊號 (大多數時候是好事 — 市場沒崩)")
+        return "\n".join(lines)
+
+    latest_date = qld["scan_date"].max()
+    today_qld = qld[qld["scan_date"] == latest_date].sort_values("vol_ratio")
+
+    lines.append(f"### 今日候選 ({latest_date}, {len(today_qld)} 檔)\n")
+    lines.append("| Ticker | 收盤 | 跌幅 | 量比 | VIX | 預期 alpha (5d) | 限價建議 (T+1) |")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|")
+    for _, r in today_qld.iterrows():
+        # T+1 limit price = today close × 1.005 (+0.5% buffer to ensure fill)
+        limit_price = r["close"] * 1.005
+        # Approx 5d alpha = 20d alpha × 0.4 (rough split, conservative)
+        alpha_5d = r.get("expected_alpha_20d_net", 0) * 0.4
+        lock = " 🔒" if r.get("locked_limit") else ""
+        lines.append(
+            f"| **{r['ticker']}**{lock} | {r['close']:.2f} | "
+            f"{r['pct']:+.2f}% | {r['vol_ratio']:.2f}x | {r.get('vix', '?'):.1f} | "
+            f"~{alpha_5d:+.2f}% | NT$ **{limit_price:.2f}** |"
+        )
+    lines.append("")
+
+    # Cluster warning
+    n_today = len(today_qld)
+    if n_today >= 50:
+        lines.append("> 🚨 **>50 檔同步觸發 = 市場崩盤訊號**。建議:")
+        lines.append("> 1. 不要分散買多檔 (高度相關,避不開系統性風險)")
+        lines.append("> 2. 等 VIX > 30 + 月跌 > 15% → CRASH regime → 集中加碼 0050")
+    elif n_today >= 20:
+        lines.append("> ⚠️ partial cluster ({} 檔) — 部分賣壓,選 vol_ratio 最低 (最量縮) 1-2 檔即可".format(n_today))
+    elif n_today >= 5:
+        lines.append("> 🟡 中等候選數,可選 1-3 檔分散風險")
+    else:
+        lines.append("> ✅ 少量候選 — 高品質訊號,可挑 1-2 檔重點下注")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 def render_strategy_section(project_root: Path) -> str:
-    """主入口：6 段組合（夜盤 / 配對 / DXJ / ORB / 法人 / DCA）
+    """主入口：6 段組合(夜盤 / 配對 / DXJ / ORB / 量縮跌停 / 法人 / DCA)
 
     舊 regime_section 已撤除 (2026-05-05) — 與 V2 Regime + Hedge + Barbell 重複。
     """
@@ -421,6 +515,7 @@ def render_strategy_section(project_root: Path) -> str:
         render_pair_spread_section(project_root),
         render_dxj_timing_section(),
         render_orb_section(project_root),
+        render_quiet_limitdown_section(project_root),  # NEW: 量縮跌停 5d 短線
         render_institutional_section(project_root),
         render_dca_section(project_root),
     ]

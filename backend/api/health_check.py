@@ -132,8 +132,48 @@ def _load_chip(ticker: str) -> dict | None:
     return None
 
 
+_FUNDA_SNAPSHOT_CACHE: tuple[float, dict] | None = None
+_FUNDA_TTL = 600  # 10 min
+
+
+def _load_funda_from_supabase(ticker: str) -> dict | None:
+    """從 Supabase market_snapshot.data.stocks_funda 讀 rev_yoy + PER 等."""
+    global _FUNDA_SNAPSHOT_CACHE
+    import os as _os
+    import time as _t
+    if _FUNDA_SNAPSHOT_CACHE and (_t.time() - _FUNDA_SNAPSHOT_CACHE[0]) < _FUNDA_TTL:
+        stocks = _FUNDA_SNAPSHOT_CACHE[1]
+    else:
+        sb_url = _os.getenv("SUPABASE_URL", "")
+        sb_anon = _os.getenv("SUPABASE_ANON_KEY", "")
+        if not sb_url or not sb_anon:
+            from pathlib import Path as _P
+            secrets = _P(__file__).resolve().parents[2] / ".streamlit" / "secrets.toml"
+            if secrets.exists():
+                for line in secrets.read_text(encoding="utf-8").splitlines():
+                    s = line.strip()
+                    if s.startswith("SUPABASE_URL") and "=" in s:
+                        sb_url = s.split("=", 1)[1].strip().strip('"').strip("'")
+                    elif s.startswith("SUPABASE_ANON_KEY") and "=" in s:
+                        sb_anon = s.split("=", 1)[1].strip().strip('"').strip("'")
+        if not sb_url or not sb_anon:
+            return None
+        try:
+            from supabase import create_client
+            sb = create_client(sb_url, sb_anon)
+            r = sb.table("market_snapshot").select("data").eq("id", 1).execute()
+            if not r.data:
+                return None
+            stocks = r.data[0]["data"].get("stocks_funda", {})
+            _FUNDA_SNAPSHOT_CACHE = (_t.time(), stocks)
+        except Exception as e:
+            print(f"[funda_snapshot] {e}")
+            return None
+    return stocks.get(str(ticker))
+
+
 def _load_funda(ticker: str) -> dict:
-    """讀月營收 + PER cache — PER 缺值 fallback TWSE."""
+    """讀月營收 + PER cache — PER 缺值 fallback TWSE + Supabase snapshot."""
     out: dict = {}
     # 1) FinMind PER cache
     per_p = FINMIND_PER / f"{ticker}_per.parquet"
@@ -162,7 +202,7 @@ def _load_funda(ticker: str) -> dict:
                 out["pbr"] = twse_per["pbr"]
             if "yield" in missing and twse_per.get("dividend_yield") is not None:
                 out["yield"] = twse_per["dividend_yield"]
-    # 月營收 YoY
+    # 月營收 YoY — FinMind cache 先
     rev_p = FINMIND_REV / f"{ticker}.parquet"
     if rev_p.exists():
         try:
@@ -173,7 +213,6 @@ def _load_funda(ticker: str) -> dict:
             latest_yoy = df["yoy"].iloc[-1]
             if pd.notna(latest_yoy):
                 out["rev_yoy"] = float(latest_yoy)
-            # history 12 期 for chart
             tail12 = df.tail(12)
             out["rev_history"] = [
                 {
@@ -185,6 +224,19 @@ def _load_funda(ticker: str) -> dict:
             ]
         except Exception:
             pass
+
+    # rev_yoy 還缺 → 從 Supabase snapshot 撈(Render 用)
+    if "rev_yoy" not in out or not out.get("rev_history"):
+        snap = _load_funda_from_supabase(ticker)
+        if snap:
+            if "rev_yoy" not in out and snap.get("rev_yoy") is not None:
+                out["rev_yoy"] = snap["rev_yoy"]
+            if not out.get("rev_history") and snap.get("rev_history"):
+                out["rev_history"] = snap["rev_history"]
+            # PER 也順便補
+            for k in ("per", "pbr", "yield"):
+                if k not in out and snap.get(k) is not None:
+                    out[k] = snap[k]
     return out
 
 

@@ -38,6 +38,64 @@ def _bp_to_twd(pp: float, total_value: float) -> int:
     return int(pp / 100 * total_value)
 
 
+def _specific_action_text(key: str, twd_amount: int, is_sell: bool) -> str:
+    """根據 bucket 給「具體標的 + 股數」建議。2026-05-14 加。"""
+    from pathlib import Path
+    import json
+    try:
+        from src.report.barbell_allocation import TICKER_CATEGORY, _latest_close
+        assets_path = Path(__file__).resolve().parents[2] / "data" / "assets.json"
+        with open(assets_path, encoding="utf-8") as f:
+            assets = json.load(f)
+        holdings = assets["holdings"]["long_term"]
+    except Exception:
+        return ""
+
+    if is_sell:
+        # 找這個 bucket 內持有的標的(取最大市值)
+        candidates = []
+        for h in holdings:
+            tk = h["ticker"]
+            if TICKER_CATEGORY.get(tk) != key:
+                continue
+            sh = h.get("shares", 0)
+            if sh <= 0:
+                continue
+            price = _latest_close(tk) or h.get("cost_incl_fee", 0)
+            mv = sh * price
+            candidates.append((tk, sh, price, mv))
+        if not candidates:
+            return ""
+        candidates.sort(key=lambda x: -x[3])  # 最大市值優先
+        tk, sh, price, mv = candidates[0]
+        if price <= 0:
+            return ""
+        sell_shares = min(sh, max(1, int(twd_amount / price)))
+        return f" → **賣 {tk} {sell_shares} 股 @ ~{price:.2f}**"
+    else:
+        # 買進:bucket → primary ticker map
+        primary_buy = {
+            "core_tw": "0050",
+            "us_00646": "00646",
+            "gold": "00635U",
+            "japan_dxj": "DXJ",       # 複委託
+            "leverage": "00631L",
+            "satellite": None,        # satellite 不主動推具體
+            "legacy": None,           # legacy 不主動買
+        }
+        tk = primary_buy.get(key)
+        if not tk:
+            return ""
+        try:
+            price = _latest_close(tk)
+        except Exception:
+            price = 0
+        if not price or price <= 0:
+            return f" → 買 {tk} (現價未知,wait list 觸發時看 Discord)"
+        buy_shares = max(1, int(twd_amount / price))
+        return f" → **買 {tk} {buy_shares} 股 @ ~{price:.2f}**"
+
+
 def generate_actions(
     regime_reading,
     hedge_reading,
@@ -125,7 +183,7 @@ def generate_actions(
         "japan_dxj": "日股 (DXJ)",
         "leverage": "槓桿 ETF (00631L)",
         "satellite": "營收成長股組合",
-        "legacy": "舊有個股 (2345/2408)",
+        "legacy": "個股部位 (2345/6233/3017/009819)",
         "cash": "現金",
     }
 
@@ -141,17 +199,26 @@ def generate_actions(
     for key, label, curr_pct, tgt_pct, d in deltas[:5]:
         if abs(d) < 5:
             continue
-        amount = abs(_bp_to_twd(d, total_value))
-        if d > 0:
+
+        # 2026-05-12 漸進式減持上限 (顧問模式: 不一次叫砍光):
+        # legacy 個股、satellite 賣出建議每次最多 10pp,避免「一次砍 41%」這種失真建議
+        display_d = d
+        extra = ""
+        if d < 0 and key in ("legacy", "satellite") and abs(d) > 10:
+            display_d = -10   # cap recommendation to 10pp/month gradual
+            extra = " (每月分批,別一次砍)"
+
+        amount = abs(_bp_to_twd(display_d, total_value))
+        if display_d > 0:
             verb = "買進"
             icon = "⬆️"
         else:
             verb = "賣掉"
             icon = "⬇️"
 
-        if abs(d) >= 15:
+        if abs(display_d) >= 15:
             priority = "action"
-        elif abs(d) >= 8:
+        elif abs(display_d) >= 8:
             priority = "tweak"
         else:
             priority = "info"
@@ -161,19 +228,34 @@ def generate_actions(
             continue
 
         # In STRONG_BULL, downgrade aggressive add actions
-        if regime_reading.regime == "STRONG_BULL" and d > 0 and abs(d) >= 15:
+        if regime_reading.regime == "STRONG_BULL" and display_d > 0 and abs(display_d) >= 15:
             priority = "tweak"  # don't push aggressive buy in mean reversion zone
             extra = " (慢慢分批)"
+
+        # Reason text 顯示真實 delta + cap 後 recommendation
+        if abs(d) > abs(display_d):
+            reason = f"目前 {curr_pct:.0f}% → 終極目標 {tgt_pct}% (本月先動 {abs(display_d):.0f}%)"
         else:
-            extra = ""
+            reason = f"目前 {curr_pct:.0f}% → 該佔 {tgt_pct}%"
+
+        # 2026-05-14 加具體標的+股數建議
+        # 「慢慢分批」 → 顯示「每月建議股數」(假設 6 個月達標)
+        if "慢慢分批" in extra:
+            specific = _specific_action_text(key, amount // 6, is_sell=(display_d < 0))
+            if specific:
+                specific = specific.replace(" → **賣", " → **每月賣")
+                specific = specific.replace(" → **買", " → **每月買")
+                specific = specific + " (6 個月達標)"
+        else:
+            specific = _specific_action_text(key, amount, is_sell=(display_d < 0))
 
         actions.append(Action(
             priority=priority,
             icon=icon,
-            label=f"{verb} {label} {abs(d):.0f}% ≈ NT${amount:,}{extra}",
+            label=f"{verb} {label} {abs(display_d):.0f}% ≈ NT${amount:,}{extra}{specific}",
             amount_twd=amount,
             ticker=None,
-            reason=f"目前 {curr_pct:.0f}% → 該佔 {tgt_pct}%",
+            reason=reason,
             source="barbell",
         ))
 

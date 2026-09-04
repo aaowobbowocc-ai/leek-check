@@ -1,0 +1,162 @@
+# Backtest 期望值 — 所有策略的 single source of truth
+#
+# 用途：
+#   - alpha_decay_monitor.py 用 win_rate / mean_net 比對實單 drift
+#   - kelly_position_sizing.py 用 win_rate / avg_win / avg_loss 算倉位
+#   - monthly_health_check.py 用所有欄位產出健康報告
+#
+# 欄位定義：
+#   win_rate      — 勝率（小數）
+#   avg_win       — 贏的平均報酬 %（扣成本後）
+#   avg_loss      — 輸的平均報酬 %（扣成本後，負值）
+#   mean_net     — 全體平均報酬 % = p*avg_win + (1-p)*avg_loss
+#   n_per_year   — 年觸發次數估計
+#   regime_dep    — 是否 regime-dependent（true 則 LATE_BULL/熊市暫停）
+#   source        — 數據來源（哪份 backtest 報告）
+#   hold_days     — 預設 hold 期（用於 paper ledger 平倉）
+#   note          — 備註
+#
+# 更新規則：跑新的 backtest 後，把 win_rate / avg_win / avg_loss 等改在這裡。
+# alpha_decay_monitor 與 kelly_position_sizing 會自動讀。
+
+strategies:
+  pair_2408_2344_DRAM:
+    win_rate: 0.77
+    avg_win: 4.5
+    avg_loss: -2.1
+    mean_net: 3.16
+    n_per_year: 3.3
+    hold_days: 20
+    regime_dep: false
+    source: "DRAM Tier A 9y backtest (project_pair_trading.md)"
+    note: "Tier A 4/4 robust, market-neutral"
+
+  pair_2330_3711:
+    win_rate: 0.65
+    avg_win: 3.2
+    avg_loss: -2.0
+    mean_net: 1.85
+    n_per_year: 4.0
+    hold_days: 20
+    regime_dep: false
+    source: "半導體 Tier A backtest"
+    note: "半導體配對"
+
+  pair_2454_3711:
+    win_rate: 0.62
+    avg_win: 2.9
+    avg_loss: -2.0
+    mean_net: 1.50
+    n_per_year: 4.5
+    hold_days: 20
+    regime_dep: false
+    source: "半導體 Tier A backtest"
+    note: "半導體配對"
+
+  "0050_dealer_buy_3d":
+    win_rate: 0.58
+    avg_win: 2.4
+    avg_loss: -1.5
+    mean_net: 1.23
+    n_per_year: 8.0
+    hold_days: 20
+    regime_dep: false
+    source: "Cross-regime 4/4 robust (project_cross_regime_validation.md)"
+    note: "唯一 4/4 期 robust，最穩"
+
+  "006208_foreign_buy_3d":
+    win_rate: 0.60
+    avg_win: 6.8
+    avg_loss: -3.5
+    mean_net: 4.15
+    n_per_year: 5.0
+    hold_days: 20
+    regime_dep: true
+    source: "9y backtest"
+    note: "Bull only，MA60 過濾"
+
+  "00881_foreign_buy_3d":
+    win_rate: 0.58
+    avg_win: 4.5
+    avg_loss: -2.8
+    mean_net: 2.71
+    n_per_year: 6.0
+    hold_days: 20
+    regime_dep: true
+    source: "9y backtest"
+    note: "Bull only"
+
+  "2308_foreign_buy_3d":
+    win_rate: 0.62
+    avg_win: 11.5
+    avg_loss: -5.0
+    mean_net: 7.73
+    n_per_year: 4.0
+    hold_days: 20
+    regime_dep: true
+    source: "9y backtest"
+    note: "Bull only，大型權值單檔波動大"
+
+  orb_2408_breakout:
+    win_rate: 0.58
+    avg_win: 1.8
+    avg_loss: -1.0
+    mean_net: 0.60
+    n_per_year: 50
+    hold_days: 1
+    regime_dep: true
+    source: "MCPT bull p<0.001 (project_orb_paper_trading.md)"
+    note: "Bull only，LATE_BULL 暫停"
+
+  orb_2485_breakout:
+    win_rate: 0.55
+    avg_win: 1.5
+    avg_loss: -1.0
+    mean_net: 0.45
+    n_per_year: 30
+    hold_days: 1
+    regime_dep: true
+    source: "MCPT bull-D p=0.002, OOS only"
+    note: "OOS-only sample，警示等級"
+
+  EH_v3_monthly_scan:
+    win_rate: 0.55
+    avg_win: 22
+    avg_loss: -8
+    mean_net: 5.5
+    n_per_year: 8
+    hold_days: 252
+    regime_dep: false
+    source: "Early Hunter v3 sprint (project_eh_v3_sprint.md)"
+    note: "Long hold 12m, alpha +14.94pp/yr"
+
+  monster_limitup_foreign:
+    win_rate: 0.50
+    avg_win: 30
+    avg_loss: -10
+    mean_net: 10.0
+    n_per_year: 10
+    hold_days: 60
+    regime_dep: false
+    source: "妖股 #1 100 ticker × 9y (project_monster_limitup_foreign.md)"
+    note: "連漲+法人買，60d alpha +11pp"
+
+  multifactor_S1_S3:
+    win_rate: 0.55
+    avg_win: 20
+    avg_loss: -8
+    mean_net: 6.6
+    n_per_year: 12
+    hold_days: 60
+    regime_dep: false
+    source: "多因子 fusion (project_multifactor_fusion.md)"
+    note: "中小妖股 only，大型權值禁用"
+
+# 全域設定
+config:
+  cost_pct_round_trip: 0.34   # 3折 fee + 0.3% tax + slippage
+  default_hold_days: 20
+  drift_warn_threshold: -0.30   # alpha_decay：drift < -30% 警報
+  drift_severe_threshold: -0.50 # drift < -50% 嚴重
+  min_samples_for_eval: 10      # n < 10 不評估
+  dynamic_kelly_min_trades: 10  # 累積 ≥ N 後 Kelly 改用實單

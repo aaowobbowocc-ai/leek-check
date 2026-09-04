@@ -55,10 +55,10 @@ REGIME_RECOMMENDATIONS: dict[RegimeLevel, dict[str, str]] = {
     "overheated": {
         "icon": "🔴",
         "label": "過熱",
-        "lump_sum": "10-20%",
-        "monthly_dca": "月薪 10-15%",
-        "buffer": "60-70%",
-        "action": "高度警戒、準備崩盤加碼資金",
+        "lump_sum": "0%（暫停）",
+        "monthly_dca": "暫停（等回檔再啟動）",
+        "buffer": "60-70%（累積崩盤加碼資金）",
+        "action": "**暫停加碼、保留現金等回檔** — 與 DCA Gate PAUSED 一致",
     },
     "crashing": {
         "icon": "⚫",
@@ -230,17 +230,44 @@ def render_allocation_section(
     else:
         lines.append("\n### 市場估值狀態：**資料不足，無法判定**")
 
-    # 2. 個股追蹤
+    # 2. 個股追蹤（code block + CJK 對齊）
     if stock_trackers:
+        from src.strategy.volume_anomaly_scanner import _pad, _visual_width
         lines.append("\n### 個股追蹤")
-        lines.append("| 代號 | 名稱 | 現價 | 停損 | 停利 | 距停損 | 狀態 |")
-        lines.append("|------|------|------|------|------|--------|------|")
+        lines.append("```")
+        SEP = "  "
+        header = SEP.join([
+            _pad("代號", 6),
+            _pad("名稱", 12),
+            _pad("現價", 9, "right"),
+            _pad("成本", 9, "right"),
+            _pad("損益%", 7, "right"),
+            _pad("停損", 8, "right"),
+            _pad("停利", 8, "right"),
+            _pad("距停損", 7, "right"),
+            _pad("狀態", 12),
+        ])
+        lines.append(header)
+        lines.append("-" * _visual_width(header))
         for t in stock_trackers:
-            lines.append(
-                f"| {t.ticker} | {t.name} | {t.current:,.2f} | "
-                f"{t.stop_loss:,.0f} | {t.take_profit:,.0f} | "
-                f"{t.diff_to_stop_pct:+.1f}% | {t.status} |"
-            )
+            pnl_pct = (t.current / t.cost - 1) * 100 if t.cost > 0 else 0
+            # 截短 status 至視覺寬度 12
+            status = t.status
+            while _visual_width(status) > 12:
+                status = status[:-1]
+            row = SEP.join([
+                _pad(t.ticker, 6),
+                _pad(t.name, 12),
+                _pad(f"{t.current:,.2f}", 9, "right"),
+                _pad(f"{t.cost:,.2f}", 9, "right"),
+                _pad(f"{pnl_pct:+.1f}%", 7, "right"),
+                _pad(f"{t.stop_loss:,.0f}", 8, "right"),
+                _pad(f"{t.take_profit:,.0f}", 8, "right"),
+                _pad(f"{t.diff_to_stop_pct:+.1f}%", 7, "right"),
+                _pad(status, 12),
+            ])
+            lines.append(row)
+        lines.append("```")
 
     # 3. 季度再平衡（僅在每季初顯示）
     if is_rebalance_day:
@@ -248,15 +275,35 @@ def render_allocation_section(
         if drift_checks:
             need_action = [c for c in drift_checks if c.needs_action]
             if need_action:
+                from src.strategy.volume_anomaly_scanner import _pad, _visual_width
                 lines.append("以下類別偏離目標 > ±5%，建議再平衡：")
-                lines.append("| 類別 | 目標 % | 實際 % | 偏離 | 建議 |")
-                lines.append("|------|--------|--------|------|------|")
+                lines.append("```")
+                SEP = "  "
+                header = SEP.join([
+                    _pad("類別", 12),
+                    _pad("目標%", 6, "right"),
+                    _pad("實際%", 6, "right"),
+                    _pad("偏離", 7, "right"),
+                    _pad("建議", 12),
+                ])
+                lines.append(header)
+                lines.append("-" * _visual_width(header))
                 for c in need_action:
                     direction = "賣出" if c.deviation > 0 else "買進"
-                    lines.append(
-                        f"| {c.bucket} | {c.target_pct:.0f}% | {c.actual_pct:.1f}% | "
-                        f"{c.deviation:+.1f}% | {direction}補 {abs(c.deviation):.1f}% |"
-                    )
+                    suggestion = f"{direction}補 {abs(c.deviation):.1f}%"
+                    while _visual_width(suggestion) > 12:
+                        suggestion = suggestion[:-1]
+                    bucket = c.bucket
+                    while _visual_width(bucket) > 12:
+                        bucket = bucket[:-1]
+                    lines.append(SEP.join([
+                        _pad(bucket, 12),
+                        _pad(f"{c.target_pct:.0f}%", 6, "right"),
+                        _pad(f"{c.actual_pct:.1f}%", 6, "right"),
+                        _pad(f"{c.deviation:+.1f}%", 7, "right"),
+                        _pad(suggestion, 12),
+                    ]))
+                lines.append("```")
             else:
                 lines.append("所有類別偏離 < ±5%，**本季不需再平衡** ✅")
         else:
